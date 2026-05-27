@@ -18,7 +18,8 @@ export default async function AdminSettlementDetailPage({
   const data = await getSettlementFull(id)
   if (!data) notFound()
 
-  const { settlement: s, tour, hotels, meals, entrances, others, shoppings, options } = data
+  const { tour, hotels, meals, entrances, others, shoppings, options } = data
+  const s = data
   const meta = STATUS_META[s.status]
   const rate = s.exchange_rate
 
@@ -83,7 +84,7 @@ export default async function AdminSettlementDetailPage({
         <div className="bg-white rounded-2xl p-4 border border-gray-100">
           <p className="text-xs font-semibold text-gray-500 mb-2">투어 정보</p>
           <div className="space-y-1 text-xs text-gray-600">
-            <p>가이드: <strong>{data.settlement.guide_id}</strong></p>
+            <p>가이드: <strong>{s.guide_id}</strong></p>
             <p>{tour.agency_name}</p>
             <p>{tour.start_date} ~ {tour.end_date} ({tour.nights}박)</p>
             <p>{tour.pax_count}명 · 환율 {rate.toLocaleString()}동</p>

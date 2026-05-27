@@ -18,7 +18,8 @@ export default async function SettlementDetailPage({
   const data = await getSettlementFull(id)
   if (!data) notFound()
 
-  const { settlement: s, tour, hotels, meals, entrances, others, shoppings, options } = data
+  const { tour, hotels, meals, entrances, others, shoppings, options } = data
+  const s = data
   const meta = STATUS_META[s.status]
   const editable = canGuideEdit(s, session.id)
   const rate = s.exchange_rate

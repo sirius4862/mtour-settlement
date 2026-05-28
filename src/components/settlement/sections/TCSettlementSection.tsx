@@ -4,12 +4,47 @@ import { useSettlementFormStore } from '@/lib/stores/settlementFormStore'
 import {
   ADMIN_GUIDE_INPUT_HINT,
   canEditHeaderField,
-  COMPANY_REVIEW_FIELD_HINT,
+  GUIDE_INPUT_FIELD_HINT,
 } from '@/lib/settlement/field-ownership'
 import { ManualField, SectionCard } from '@/components/ui/FormPrimitives'
 import { useSettlementFormRole } from '../SettlementFormContext'
 import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
+
+function GuideMegugiDailyFields() {
+  const role = useSettlementFormRole()
+  const header = useSettlementFormStore((s) => s.header)
+  const patchHeader = useSettlementFormStore((s) => s.patchHeader)
+
+  return (
+    <>
+      <ManualField
+        label="메꾸기"
+        excelRef="R80"
+        suffix="$"
+        inputMode="decimal"
+        hint={GUIDE_INPUT_FIELD_HINT}
+        value={header.megugi_usd || ''}
+        disabled={!canEditHeaderField(role, 'megugi_usd')}
+        onChange={(e) =>
+          patchHeader({ megugi_usd: parseFloat(e.target.value) || 0 })
+        }
+      />
+      <ManualField
+        label="가이드 일비"
+        excelRef="R82"
+        suffix="$"
+        inputMode="decimal"
+        hint={GUIDE_INPUT_FIELD_HINT}
+        value={header.guide_daily_fee_usd || ''}
+        disabled={!canEditHeaderField(role, 'guide_daily_fee_usd')}
+        onChange={(e) =>
+          patchHeader({ guide_daily_fee_usd: parseFloat(e.target.value) || 0 })
+        }
+      />
+    </>
+  )
+}
 
 function CompanyReviewFields({ adminView }: { adminView?: boolean }) {
   const role = useSettlementFormRole()
@@ -17,7 +52,7 @@ function CompanyReviewFields({ adminView }: { adminView?: boolean }) {
   const patchHeader = useSettlementFormStore((s) => s.patchHeader)
 
   const variant = adminView ? 'adminReviewGuideInput' : 'companyReview'
-  const hint = adminView ? ADMIN_GUIDE_INPUT_HINT : COMPANY_REVIEW_FIELD_HINT
+  const hint = adminView ? ADMIN_GUIDE_INPUT_HINT : GUIDE_INPUT_FIELD_HINT
 
   return (
     <>
@@ -48,6 +83,20 @@ function CompanyReviewFields({ adminView }: { adminView?: boolean }) {
         }
       />
     </>
+  )
+}
+
+export function GuideMegugiDailySection() {
+  return (
+    <div className="space-y-3">
+      <SectionHint
+        excelRows="R80, R82"
+        hint="메꾸기와 가이드 일비를 입력하세요."
+      />
+      <SectionCard>
+        <GuideMegugiDailyFields />
+      </SectionCard>
+    </div>
   )
 }
 
@@ -90,24 +139,8 @@ export function TCSettlementSection() {
 }
 
 export function FinalAdjustmentsSection() {
-  const role = useSettlementFormRole()
   const header = useSettlementFormStore((s) => s.header)
   const patchHeader = useSettlementFormStore((s) => s.patchHeader)
-  const isAdmin = role === 'admin'
-
-  if (!isAdmin) {
-    return (
-      <div className="space-y-3">
-        <SectionHint
-          excelRows="R80, R82"
-          hint="제출 후 회사에서 확인·조정할 수 있는 항목입니다."
-        />
-        <SectionCard className="border-amber-100 bg-amber-50/30">
-          <CompanyReviewFields />
-        </SectionCard>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-3">

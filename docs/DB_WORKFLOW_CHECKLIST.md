@@ -6,6 +6,7 @@ Run after each deployment or major save/load change.
 ## Prerequisites
 
 - [ ] `.env.local` has valid `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- [ ] **RLS migration applied:** run [`supabase/settlement_status_logs_rls_migration.sql`](../supabase/settlement_status_logs_rls_migration.sql) in Supabase SQL Editor (fixes guide save/submit `settlement_status_logs` policy error)
 - [ ] Logged in as a **guide** user with `branch_id` set in `profiles`
 - [ ] At least one **tour** assigned to the guide (start_date within last 90 days, no existing settlement)
 - [ ] Logged in as **admin/staff** in a separate session for review steps

@@ -61,7 +61,7 @@ export function validateSettlementForm(
     }
 
     issues.push({
-      sectionId: 'adjustments',
+      sectionId: 'basic',
       message: '투어피(D79), 지상비(O79–O81), 정산비율(R77)은 제출 후 관리자가 입력합니다.',
       severity: 'warning',
     })

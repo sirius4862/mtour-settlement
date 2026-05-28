@@ -7,6 +7,9 @@ import { saveSettlementDraft, saveAdminSettlementEdits, submitSettlement } from 
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
+  shouldShowAdminSettlementSections,
+} from '@/lib/settlement/settlement-form-sections'
+import {
   firstErrorSection,
   validateSettlementForm,
   validationErrors,
@@ -29,7 +32,7 @@ import {
   ShoppingSection,
 } from './sections/LineItemSections'
 import { CashReconciliationSection } from './sections/CashReconciliationSection'
-import { TCSettlementSection, FinalAdjustmentsSection } from './sections/TCSettlementSection'
+import { TCSettlementSection, FinalAdjustmentsSection, GuideMegugiDailySection } from './sections/TCSettlementSection'
 import { FinalSummarySection } from './sections/FinalSummarySection'
 import { ReceiptsSection } from './sections/ReceiptsSection'
 import type { SettlementFormRole } from '@/lib/settlement/field-ownership'
@@ -84,6 +87,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
   const role: SettlementFormRole = isPreview ? 'readOnly' : (isAdminReview ? 'admin' : formRole)
   const audience = summaryAudienceFromRole(role)
   const isAdmin = role === 'admin'
+  const showAdminSections = shouldShowAdminSettlementSections(isAdmin, isAdminReview)
 
   useEffect(() => {
     if (hydrated.current) return
@@ -345,20 +349,40 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       excelRows: EXCEL_SECTIONS.tc.rows,
       children: <TCSettlementSection />,
     },
-    {
-      id: 'adjustments',
-      title: isAdmin ? '정산 조정' : '회사 확인 항목',
-      excelRows: isAdmin ? EXCEL_SECTIONS.adjustments.rows : 'R80, R82',
-      preview: calc.summary.balance_usd,
-      children: <FinalAdjustmentsSection />,
-    },
-    {
-      id: 'summary',
-      title: '정산내역 (최종)',
-      excelRows: EXCEL_SECTIONS.summary.rows,
-      preview: calc.summary.guide_payout_usd,
-      children: <FinalSummarySection calc={calc} settlementRatio={settlementRatio} audience={audience} />,
-    },
+    ...(!showAdminSections
+      ? ([
+          {
+            id: 'guide-adjustments',
+            title: '메꾸기·가이드 일비',
+            excelRows: 'R80, R82',
+            children: <GuideMegugiDailySection />,
+          },
+        ] satisfies AccordionSection[])
+      : []),
+    ...(showAdminSections
+      ? ([
+          {
+            id: 'adjustments',
+            title: '정산 조정',
+            excelRows: EXCEL_SECTIONS.adjustments.rows,
+            preview: calc.summary.balance_usd,
+            children: <FinalAdjustmentsSection />,
+          },
+          {
+            id: 'summary',
+            title: '정산내역 (최종)',
+            excelRows: EXCEL_SECTIONS.summary.rows,
+            preview: calc.summary.guide_payout_usd,
+            children: (
+              <FinalSummarySection
+                calc={calc}
+                settlementRatio={settlementRatio}
+                audience={audience}
+              />
+            ),
+          },
+        ] satisfies AccordionSection[])
+      : []),
     {
       id: 'receipts',
       title: '영수증',

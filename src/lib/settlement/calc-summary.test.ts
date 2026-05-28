@@ -6,15 +6,15 @@ describe('parseSettlementCalcSummaryJson', () => {
     expect(
       parseSettlementCalcSummaryJson({
         company_deposit_usd: 79.62,
-        guide_settlement_usd: 258.5,
-        guide_payout_usd: 258.5,
-        company_grand_total_usd: -328.88,
+        guide_settlement_usd: 268.5,
+        guide_payout_usd: 268.5,
+        company_grand_total_usd: -338.88,
       }),
     ).toEqual({
       company_deposit_usd: 79.62,
-      guide_settlement_usd: 258.5,
-      guide_payout_usd: 258.5,
-      company_grand_total_usd: -328.88,
+      guide_settlement_usd: 268.5,
+      guide_payout_usd: 268.5,
+      company_grand_total_usd: -338.88,
     })
   })
 

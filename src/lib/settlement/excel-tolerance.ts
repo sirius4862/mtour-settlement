@@ -6,12 +6,15 @@
 import {
   calcCashSubtotals,
   calcEntranceSubtotals,
+  calcGuideSettlementFromProfitPool,
   calcHotelSubtotals,
   calcMealSubtotals,
   calcOptionSubtotals,
   calcOtherSubtotals,
   calcShoppingSubtotals,
+  calcShoppingIncomeD80,
   computeSettlementMatrixValues,
+  GUIDE_SETTLEMENT_FORMULA,
 } from './calc'
 import type { SettlementCalcInput, SettlementCalcResult } from './types-calc'
 
@@ -72,7 +75,7 @@ export const EXCEL_FORMULA_CONTRACT: Record<string, string> = {
   D80: 'D72+SUM(F72)',
   R79: 'D80+D81',
   R84: 'R79−R80−R81',
-  R85: 'R84×R77+R82',
+  R85: GUIDE_SETTLEMENT_FORMULA,
   Q75: 'J75−N75−P75',
   H85: 'H84+J84+M84+O84',
   R87: 'R86+H72+S75',
@@ -114,6 +117,17 @@ export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelRe
     options,
   })
 
+  const d80 = calcShoppingIncomeD80(
+    shopping.sale_usd.value,
+    shopping.com_usd.value,
+  )
+  const guideSettlement = calcGuideSettlementFromProfitPool(
+    d80,
+    options.com_usd.value,
+    input.header.megugi_usd,
+    input.header.guide_daily_fee_usd,
+  ).guideSettlement
+
   const usesVnd =
     input.header.advance_vnd !== 0 ||
     input.meals.some((m) => !m.deleted && m.unit_price_vnd !== 0) ||
@@ -123,7 +137,7 @@ export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelRe
 
   return {
     company_deposit_usd: cash.company_deposit_usd.value,
-    guide_settlement_usd: matrix.r85,
+    guide_settlement_usd: guideSettlement,
     company_grand_total_usd: matrix.r87,
     steps: {
       d80_shopping_income_usd: matrix.d80,
@@ -221,7 +235,12 @@ export function verifyExcelFormulaFlow(
     )
   }
 
-  const expectedR85 = expectedR84 * h.settlement_ratio + h.guide_daily_fee_usd
+  const expectedR85 = calcGuideSettlementFromProfitPool(
+    expectedD80,
+    options.com_usd.value,
+    h.megugi_usd,
+    h.guide_daily_fee_usd,
+  ).guideSettlement
   if (!nearlyEqual(result.summary.guide_settlement_usd.value, expectedR85)) {
     push(
       'R85',

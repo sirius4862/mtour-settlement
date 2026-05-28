@@ -103,9 +103,9 @@ describe('verifySettlementAgainstExcel — MOCK golden', () => {
 
   it('reference finals match known Excel expectations for mock', () => {
     const ref = computeExcelReferenceFinals(MOCK_SETTLEMENT_INPUT)
-    expect(ref.guide_settlement_usd).toBe(258.5)
+    expect(ref.guide_settlement_usd).toBe(268.5)
     expect(ref.company_deposit_usd).toBeCloseTo(79.615384615, 4)
-    expect(ref.company_grand_total_usd).toBeCloseTo(-328.884615384, 4)
+    expect(ref.company_grand_total_usd).toBeCloseTo(-338.884615384, 4)
   })
 })
 
@@ -144,7 +144,7 @@ describe('verifySettlementAgainstExcel — formula direction guard', () => {
   })
 
   it('does not accept > 1 USD final gap as passing', () => {
-    const cmp = compareFinalToExcel('R85', '가이드 정산금액', 260, 258.5, false)
+    const cmp = compareFinalToExcel('R85', '가이드 정산금액', 270, 268.5, false)
     expect(cmp.withinTolerance).toBe(false)
     expect(Math.abs(cmp.differenceUsd)).toBeGreaterThan(EXCEL_FINAL_TOLERANCE_USD)
   })

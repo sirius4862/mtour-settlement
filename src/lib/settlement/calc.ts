@@ -253,6 +253,30 @@ export interface SettlementMatrixValues {
   r87: number
 }
 
+/** Fixed guide profit share — operational policy (not Excel R77 slider). */
+export const GUIDE_PROFIT_SHARE_RATIO = 0.5
+
+export const GUIDE_SETTLEMENT_FORMULA = 'MAX((D80+D81−R80)×50%,0)+R82'
+
+export function calcGuideSettlementFromProfitPool(
+  shoppingActualProfitUsd: number,
+  optionActualProfitUsd: number,
+  megugiUsd: number,
+  guideDailyFeeUsd: number,
+  profitShareRatio = GUIDE_PROFIT_SHARE_RATIO,
+): {
+  actualProfitPool: number
+  guideProfitShare: number
+  guideSettlement: number
+  guidePayout: number
+} {
+  const actualProfitPool = shoppingActualProfitUsd + optionActualProfitUsd - megugiUsd
+  const guideProfitShare = Math.max(actualProfitPool * profitShareRatio, 0)
+  const guideSettlement = guideProfitShare + guideDailyFeeUsd
+  const guidePayout = Math.max(guideSettlement, 0)
+  return { actualProfitPool, guideProfitShare, guideSettlement, guidePayout }
+}
+
 /** Excel R79–R87 matrix — shared by calcSettlement and verification. */
 export function computeSettlementMatrixValues(
   header: SettlementCalcInput['header'],
@@ -297,8 +321,12 @@ export function computeSettlementMatrixValues(
   const r80 = h.megugi_usd
   const r81 = h83 + j83
   const r84 = r79 - r80 - r81
-  const r85 = r84 * h.settlement_ratio + h.guide_daily_fee_usd
-  const guidePayout = Math.max(r85, 0)
+  const { guideSettlement: r85, guidePayout } = calcGuideSettlementFromProfitPool(
+    d80,
+    d81,
+    r80,
+    h.guide_daily_fee_usd,
+  )
 
   const f86 = d84 - h85
   const r86 = f86 - r85
@@ -517,12 +545,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
       expenseLabel: '지출 총액',
       guideExpense: annotate(h85, '지출 총액', 'H85', 'H84+J84+M84+O84'),
       settlementLabel: '가이드정산',
-      settlement: annotate(
-        r85,
-        '가이드정산',
-        'R85',
-        `R84×${h.settlement_ratio}+R82`,
-      ),
+      settlement: annotate(r85, '가이드정산', 'R85', GUIDE_SETTLEMENT_FORMULA),
       isSubtotal: true,
       isHighlight: true,
     },
@@ -551,7 +574,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
       expense_total_usd: annotate(h85, '지출 총액', 'H85', 'H84+J84+M84+O84'),
       company_gross_usd: annotate(f86, '회사총수익', 'F86', 'D84−H85'),
       balance_usd: annotate(r84, '차액(밸런스)', 'R84', 'R79−R80−R81'),
-      guide_settlement_usd: annotate(r85, '가이드정산', 'R85', 'R84×R77+R82'),
+      guide_settlement_usd: annotate(r85, '가이드정산', 'R85', GUIDE_SETTLEMENT_FORMULA),
       guide_payout_usd: annotate(guidePayout, '실제 지급액', 'P85', 'MAX(R85,0)'),
       company_profit_usd: annotate(r86, '회사수익', 'R86', 'F86−R85'),
       company_grand_total_usd: annotate(r87, '최종 회사총수익', 'R87', 'R86+H72+S75'),

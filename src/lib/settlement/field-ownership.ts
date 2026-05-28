@@ -209,6 +209,7 @@ export const CONFIRM_DIFF_HEADER_KEYS = [
 ] as const satisfies readonly (keyof SettlementHeaderCalc)[]
 
 export const COMPANY_REVIEW_FIELD_HINT = '회사 확인 대상'
+export const GUIDE_INPUT_FIELD_HINT = '가이드 입력 항목'
 export const ADMIN_GUIDE_INPUT_HINT = '가이드 입력값 · 회사 확인 필요'
 
 export function canGuideEditCompanyReviewFields(status: SettlementStatus): boolean {

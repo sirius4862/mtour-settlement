@@ -60,8 +60,11 @@ function LoginForm() {
         !nextPath.startsWith('//') &&
         nextPath !== '/login'
 
+      const destination =
+        isSafeNext && nextPath !== '/' ? nextPath : '/guide'
+
       router.refresh()
-      router.push(isSafeNext ? nextPath : '/')
+      router.push(destination)
     })
   }
 

@@ -39,9 +39,9 @@ export async function middleware(request: NextRequest) {
   const isLoggedIn = !!user
   const { pathname } = request.nextUrl
 
-  // 로그인된 사용자가 /login 접근 → / (role 분기는 app/page.tsx)
+  // 로그인된 사용자가 /login 접근 → 가이드 홈 (역할 분기는 / 또는 admin 링크)
   if (pathname === '/login' && isLoggedIn) {
-    return redirectWithSessionCookies(new URL('/', request.url), sessionResponse)
+    return redirectWithSessionCookies(new URL('/guide', request.url), sessionResponse)
   }
 
   // 공개 경로

@@ -337,9 +337,9 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => router.push('/guide')}
             className="text-gray-500 min-w-[44px] min-h-[44px] flex items-center justify-center"
-            aria-label="뒤로"
+            aria-label="홈으로"
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M12.5 15L7.5 10l5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>

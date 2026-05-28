@@ -6,6 +6,25 @@ export type UserRole = 'guide' | 'staff' | 'admin'
 export type SettlementStatus =
   | 'draft' | 'submitted' | 'approved'
   | 'rejected' | 'edit_requested' | 'paid'
+  | 'pending_guide_confirmation' | 'clarification_requested'
+
+export type SettlementSnapshotKind =
+  | 'guide_submit' | 'admin_pre_confirm' | 'guide_confirmed'
+
+export type SettlementConfirmationStatus = 'pending' | 'confirmed' | 'superseded'
+
+export type SettlementAuditAction =
+  | 'guide_submit'
+  | 'admin_save'
+  | 'send_for_confirmation'
+  | 'guide_confirm'
+  | 'guide_clarification'
+  | 'admin_reject'
+  | 'admin_request_edit'
+  | 'admin_pay'
+  | 'status_change'
+
+export type SettlementFieldOwner = 'guide' | 'admin' | 'calculated'
 
 // ── DB Row 타입 ────────────────────────────────────────────────
 
@@ -49,6 +68,14 @@ export interface Settlement {
   submitted_at: string | null; reviewed_at: string | null
   paid_at: string | null; edit_requested_at: string | null
   reviewed_by: string | null; edit_requested_by: string | null
+  sent_for_confirmation_at: string | null
+  sent_for_confirmation_by: string | null
+  guide_confirmed_at: string | null
+  guide_confirmed_by: string | null
+  clarification_requested_at: string | null
+  clarification_message: string | null
+  active_confirmation_id: string | null
+  guide_submit_snapshot_id: string | null
   created_at: string; updated_at: string
 }
 
@@ -116,6 +143,62 @@ export interface StatusLog {
   note: string | null; created_at: string
 }
 
+export interface SettlementSnapshot {
+  id: string
+  settlement_id: string
+  kind: SettlementSnapshotKind
+  payload_json: Record<string, unknown>
+  calc_summary_json: Record<string, unknown> | null
+  created_by: string
+  created_at: string
+}
+
+export interface SettlementAuditEvent {
+  id: string
+  settlement_id: string
+  actor_id: string
+  actor_role: UserRole
+  action: SettlementAuditAction
+  from_status: SettlementStatus | null
+  to_status: SettlementStatus | null
+  note: string | null
+  created_at: string
+}
+
+export interface SettlementConfirmation {
+  id: string
+  settlement_id: string
+  snapshot_before_id: string
+  snapshot_after_id: string
+  status: SettlementConfirmationStatus
+  sent_by: string
+  sent_at: string
+  confirmed_by: string | null
+  confirmed_at: string | null
+  r85_before: number | null
+  r85_after: number | null
+  r87_before: number | null
+  r87_after: number | null
+  change_count: number
+  created_at: string
+}
+
+export interface SettlementFieldChange {
+  id: string
+  settlement_id: string
+  confirmation_id: string | null
+  audit_event_id: string | null
+  field_path: string
+  excel_ref: string | null
+  label: string
+  owner: SettlementFieldOwner
+  old_value_json: unknown
+  new_value_json: unknown
+  old_display: string | null
+  new_display: string | null
+  created_at: string
+}
+
 // ── JOIN 타입 ──────────────────────────────────────────────────
 
 export interface SettlementWithTour extends Settlement { tour: Tour }
@@ -130,19 +213,29 @@ export interface SettlementFull extends Settlement {
 // ── 상태 메타 ─────────────────────────────────────────────────
 
 export const STATUS_META: Record<SettlementStatus, { label: string; bg: string; text: string }> = {
-  draft:          { label: '작성중',   bg: 'bg-gray-100',    text: 'text-gray-600'    },
-  submitted:      { label: '제출됨',   bg: 'bg-amber-100',   text: 'text-amber-700'   },
-  approved:       { label: '승인됨',   bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  rejected:       { label: '반려됨',   bg: 'bg-red-100',     text: 'text-red-600'     },
-  edit_requested: { label: '수정요청', bg: 'bg-blue-100',    text: 'text-blue-700'    },
-  paid:           { label: '지급완료', bg: 'bg-purple-100',  text: 'text-purple-700'  },
+  draft:          { label: '작성중',       bg: 'bg-gray-100',    text: 'text-gray-600'    },
+  submitted:      { label: '제출됨',       bg: 'bg-amber-100',   text: 'text-amber-700'   },
+  pending_guide_confirmation: { label: '최종확인 대기', bg: 'bg-orange-100', text: 'text-orange-700' },
+  clarification_requested:    { label: '확인 이의',     bg: 'bg-rose-100',   text: 'text-rose-700'   },
+  approved:       { label: '최종확인 완료', bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  rejected:       { label: '반려됨',       bg: 'bg-red-100',     text: 'text-red-600'     },
+  edit_requested: { label: '수정요청',     bg: 'bg-blue-100',    text: 'text-blue-700'    },
+  paid:           { label: '지급완료',     bg: 'bg-purple-100',  text: 'text-purple-700'  },
 }
 
-export const GUIDE_EDITABLE: SettlementStatus[] = ['draft', 'rejected', 'edit_requested']
-
-export function canGuideEdit(
-  s: Pick<Settlement, 'status' | 'guide_id'>,
-  uid: string,
-): boolean {
-  return s.guide_id === uid && GUIDE_EDITABLE.includes(s.status)
-}
+export {
+  GUIDE_EDITABLE,
+  GUIDE_CONFIRM_ONLY,
+  ADMIN_EDITABLE,
+  ADMIN_PRE_CONFIRM_REVIEW,
+  GUIDE_READ_ONLY,
+  canGuideEdit,
+  canGuideConfirm,
+  canGuideRequestClarification,
+  canAdminEditSettlement,
+  canAdminDirectApprove,
+  canAdminReject,
+  canAdminRequestEdit,
+  canAdminPaySettlement,
+  assertAdminReviewAction,
+} from '@/lib/settlement/status-guards'

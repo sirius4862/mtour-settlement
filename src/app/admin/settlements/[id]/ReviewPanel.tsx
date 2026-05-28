@@ -7,12 +7,20 @@ import { useRouter } from 'next/navigation'
 interface Props {
   settlementId: string
   canReview: boolean
+  canReject: boolean
   canRequestEdit: boolean
   canPay: boolean
   currentAdminNote: string
 }
 
-export function ReviewPanel({ settlementId, canReview, canRequestEdit, canPay, currentAdminNote }: Props) {
+export function ReviewPanel({
+  settlementId,
+  canReview,
+  canReject,
+  canRequestEdit,
+  canPay,
+  currentAdminNote,
+}: Props) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [adminNote, setAdminNote] = useState(currentAdminNote)
@@ -55,20 +63,21 @@ export function ReviewPanel({ settlementId, canReview, canRequestEdit, canPay, c
       )}
 
       <div className="flex gap-2 flex-wrap">
-        {canReview && !showReject && (
-          <>
-            <button onClick={() => setShowReject(true)} disabled={pending}
-              className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-40">
-              반려
-            </button>
-            <button onClick={() => handle('approve')} disabled={pending}
-              className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-40">
-              {pending ? '처리 중…' : '✓ 승인'}
-            </button>
-          </>
+        {(canReview || canReject) && !showReject && canReject && (
+          <button onClick={() => setShowReject(true)} disabled={pending}
+            className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-40">
+            반려
+          </button>
         )}
 
-        {canReview && showReject && (
+        {canReview && !showReject && (
+          <button onClick={() => handle('approve')} disabled={pending}
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-40">
+            {pending ? '처리 중…' : '✓ 승인'}
+          </button>
+        )}
+
+        {(canReview || canReject) && showReject && (
           <>
             <button onClick={() => { setShowReject(false); setRejectReason('') }}
               className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm">

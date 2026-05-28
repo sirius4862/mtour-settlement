@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
-import { STATUS_META } from '@/types'
+import { STATUS_META, canAdminPaySettlement, canAdminReject, canAdminRequestEdit } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
 export const dynamic = 'force-dynamic'
@@ -57,9 +57,10 @@ export default async function AdminSettlementDetailPage({
   // 엑셀 R87 최종회사총수익
   const compGrand = compFinal + shopKb + extraVehicle
 
-  const canReview  = s.status === 'submitted'
-  const canReqEdit = ['submitted', 'approved'].includes(s.status)
-  const canPay     = s.status === 'approved'
+  const canReview  = false
+  const canReqEdit = canAdminRequestEdit(s.status)
+  const canReject  = canAdminReject(s.status)
+  const canPay     = canAdminPaySettlement(s)
 
   return (
     <div className="max-w-2xl mx-auto space-y-4 pb-32">
@@ -174,10 +175,11 @@ export default async function AdminSettlementDetailPage({
       )}
 
       {/* 관리자 액션 패널 */}
-      {(canReview || canReqEdit || canPay) && (
+      {(canReview || canReject || canReqEdit || canPay) && (
         <ReviewPanel
           settlementId={s.id}
           canReview={canReview}
+          canReject={canReject}
           canRequestEdit={canReqEdit}
           canPay={canPay}
           currentAdminNote={s.admin_note ?? ''}

@@ -13,6 +13,7 @@ import {
   type SettlementDraftPayload,
   type SettlementSyncPayload,
 } from '@/lib/settlement/mappers'
+import { assertAdminReviewAction } from '@/lib/settlement/status-guards'
 
 // ── 인증 헬퍼 ─────────────────────────────────────────────────
 
@@ -347,42 +348,66 @@ export async function reviewSettlement(params: {
   }
 
   const supabase = await createClient()
+
+  const { data: current } = await supabase
+    .from('settlements')
+    .select('id, status, guide_confirmed_at, guide_submit_snapshot_id')
+    .eq('id', params.id)
+    .single()
+
+  if (!current) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+
+  const guard = assertAdminReviewAction(
+    {
+      status: current.status as import('@/types').SettlementStatus,
+      guide_confirmed_at: current.guide_confirmed_at,
+      guide_submit_snapshot_id: current.guide_submit_snapshot_id,
+    },
+    params.action,
+  )
+  if (!guard.ok) return { ok: false, error: guard.error }
+
   const now = new Date().toISOString()
 
   const updates: Record<string, unknown> = {
     reviewed_by: profile.id,
-    admin_note:  params.adminNote ?? null,
+    admin_note: params.adminNote ?? null,
   }
 
   switch (params.action) {
     case 'approve':
-      updates.status       = 'approved'
-      updates.reviewed_at  = now
+      updates.status = 'approved'
+      updates.reviewed_at = now
       updates.reject_reason = null
       break
     case 'reject':
       if (!params.rejectReason?.trim()) return { ok: false, error: '반려 사유를 입력해주세요.' }
-      updates.status        = 'rejected'
-      updates.reviewed_at   = now
+      updates.status = 'rejected'
+      updates.reviewed_at = now
       updates.reject_reason = params.rejectReason.trim()
       break
     case 'request_edit':
-      updates.status             = 'edit_requested'
-      updates.edit_requested_at  = now
-      updates.edit_requested_by  = profile.id
+      updates.status = 'edit_requested'
+      updates.edit_requested_at = now
+      updates.edit_requested_by = profile.id
       break
     case 'pay':
-      updates.status  = 'paid'
+      updates.status = 'paid'
       updates.paid_at = now
       break
   }
 
   const { error } = await supabase
-    .from('settlements').update(updates).eq('id', params.id)
+    .from('settlements')
+    .update(updates)
+    .eq('id', params.id)
+    .eq('status', current.status)
 
   if (error) return { ok: false, error: error.message }
 
   revalidatePath('/admin/settlements')
   revalidatePath(`/admin/settlements/${params.id}`)
+  revalidatePath('/guide/settlements')
+  revalidatePath(`/guide/settlements/${params.id}`)
   return { ok: true }
 }

@@ -2,7 +2,9 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
-import { STATUS_META, canAdminPaySettlement, canAdminReject, canAdminRequestEdit } from '@/types'
+import { calcSettlement } from '@/lib/settlement/calc'
+import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
+import { STATUS_META, canAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
 export const dynamic = 'force-dynamic'
@@ -52,12 +54,17 @@ export default async function AdminSettlementDetailPage({
   const balance = (shopCom + optCom) - s.megugi_usd - (s.tc_guide_usd + s.tc_company_usd)
   // 엑셀 R85 가이드정산
   const guideFinal = balance * s.settlement_ratio + s.guide_daily_fee_usd
-  // 엑셀 R86 회사수익
+  // 엑셀 R87 최종회사총수익 (admin summary uses calc.summary.company_grand_total_usd)
   const compFinal = compRevenue - guideFinal
-  // 엑셀 R87 최종회사총수익
-  const compGrand = compFinal + shopKb + extraVehicle
 
-  const canReview  = false
+  const calc = calcSettlement(toCalcInput(stateFromSettlementFull(data, '')))
+  const guideSettlement = calc.summary.guide_settlement_usd.value
+  const guidePayout = calc.summary.guide_payout_usd.value
+  const companyProfit = calc.summary.company_grand_total_usd.value
+  const payoutIsFloored = guideSettlement < 0
+
+  const canSendForConfirmation = canAdminSendForConfirmation(s.status)
+  const canAdminEdit = canAdminEditSettlement(s.status)
   const canReqEdit = canAdminRequestEdit(s.status)
   const canReject  = canAdminReject(s.status)
   const canPay     = canAdminPaySettlement(s)
@@ -96,11 +103,23 @@ export default async function AdminSettlementDetailPage({
           <div className="space-y-1 text-xs">
             <p className="text-gray-600">수익: <span className="font-mono">{fmt2(income)}</span></p>
             <p className="text-gray-600">지출: <span className="font-mono">{fmt2(totalExp)}</span></p>
-            <p className="text-amber-700 font-semibold">
-              가이드정산: <span className="font-mono">{fmt2(guideFinal)}</span>
+            <p className={`font-semibold ${payoutIsFloored ? 'text-red-700' : 'text-amber-700'}`}>
+              계산상 가이드정산 (R85): <span className="font-mono">{fmt2(guideSettlement)}</span>
             </p>
-            <p className="text-gray-600">회사수익: <span className="font-mono">{fmt2(compFinal)}</span></p>
-            <p className="text-gray-600">최종회사총: <span className="font-mono">{fmt2(compGrand)}</span></p>
+            <p className="text-amber-700 font-semibold">
+              실제 지급액 (P85): <span className="font-mono">{fmt2(guidePayout)}</span>
+            </p>
+            {payoutIsFloored && (
+              <p className="text-amber-700 text-[10px]">
+                가이드 정산금액이 마이너스라 지급액은 $0으로 처리됩니다.
+              </p>
+            )}
+            <p className="text-emerald-700 font-semibold">
+              회사수익: <span className="font-mono">{fmt2(companyProfit)}</span>
+            </p>
+            <p className="text-gray-500 text-[10px] pt-1">
+              R86 중간값: <span className="font-mono">{fmt2(compFinal)}</span>
+            </p>
           </div>
         </div>
       </div>
@@ -124,17 +143,20 @@ export default async function AdminSettlementDetailPage({
             ['T/C 회사 (J83)', fmt2(s.tc_company_usd)],
             ['차량비+인두세+서울 (기타포함)', fmt2(otherIncl)],
             ['─ 지출합계 (H85)', fmt2(totalExp), true],
-            ['─ 회사총수익 (F86)', fmt2(compRevenue), true],
+            ['─ 수익−지출 (F86)', fmt2(compRevenue), true],
             ['쇼핑COM+옵션COM (R79)', fmt2(shopCom + optCom)],
             ['메꾸기 (R80)', `- ${fmt2(s.megugi_usd)}`],
             ['T/C정산공제 (R81)', `- ${fmt2(s.tc_guide_usd + s.tc_company_usd)}`],
             ['─ 차액밸런스 (R84)', fmt2(balance), true],
             ['가이드일비 (R82)', fmt2(s.guide_daily_fee_usd)],
-            [`─ 가이드정산 × ${Math.round(s.settlement_ratio*100)}% (R85)`, fmt2(guideFinal), true, true],
-            ['─ 회사수익 (R86)', fmt2(compFinal), true],
+            [`─ 계산상 가이드정산 × ${Math.round(s.settlement_ratio*100)}% (R85)`, fmt2(guideSettlement), true, true],
+            ...(payoutIsFloored
+              ? [['─ 실제 지급액 (P85)', fmt2(guidePayout), true] as const]
+              : []),
+            ['─ R86 중간값', fmt2(compFinal), true],
             ['KB합계 (H72)', fmt2(shopKb)],
             ['추가차량비 (S75)', fmt2(extraVehicle)],
-            ['─ 최종회사총수익 (R87)', fmt2(compGrand), true],
+            ['─ 회사수익', fmt2(companyProfit), true],
           ].map(([l, v, bold, accent]) => (
             <div key={l as string} className={`flex justify-between py-1 ${bold ? 'border-t border-gray-100 mt-1 pt-1.5' : ''}`}>
               <span className={`${accent ? 'text-amber-700 font-semibold' : bold ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
@@ -174,11 +196,22 @@ export default async function AdminSettlementDetailPage({
         </div>
       )}
 
+      {/* 관리자 검토 수정 */}
+      {canAdminEdit && (
+        <Link
+          href={`/admin/settlements/${s.id}/edit`}
+          className="block bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 hover:border-blue-200"
+        >
+          <p className="text-sm font-semibold text-blue-800">회사 전용 필드 수정</p>
+          <p className="text-xs text-blue-600 mt-0.5">지상비·호텔 단가·KB·추가차량 등 admin 필드 저장 →</p>
+        </Link>
+      )}
+
       {/* 관리자 액션 패널 */}
-      {(canReview || canReject || canReqEdit || canPay) && (
+      {(canSendForConfirmation || canReject || canReqEdit || canPay) && (
         <ReviewPanel
           settlementId={s.id}
-          canReview={canReview}
+          canSendForConfirmation={canSendForConfirmation}
           canReject={canReject}
           canRequestEdit={canReqEdit}
           canPay={canPay}

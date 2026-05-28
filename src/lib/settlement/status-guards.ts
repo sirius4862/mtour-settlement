@@ -1,4 +1,4 @@
-import type { Settlement, SettlementStatus } from '@/types'
+import type { Settlement, SettlementStatus, UserRole } from '@/types'
 
 /** Guide may edit settlement content */
 export const GUIDE_EDITABLE: SettlementStatus[] = ['draft', 'rejected', 'edit_requested']
@@ -60,6 +60,52 @@ export function canAdminReject(status: SettlementStatus): boolean {
 
 export function canAdminRequestEdit(status: SettlementStatus): boolean {
   return ADMIN_PRE_CONFIRM_REVIEW.includes(status)
+}
+
+/** Admin sends guide the confirmation packet after review/edit. */
+export function canAdminSendForConfirmation(status: SettlementStatus): boolean {
+  return status === 'submitted' || status === 'clarification_requested'
+}
+
+export function assertGuideConfirmAction(
+  s: Pick<Settlement, 'status' | 'guide_id'>,
+  uid: string,
+  action: 'confirm' | 'clarification',
+): { ok: true } | { ok: false; error: string } {
+  if (s.guide_id !== uid) {
+    return { ok: false, error: '본인에게 배정된 정산서만 처리할 수 있습니다.' }
+  }
+  if (s.status !== 'pending_guide_confirmation') {
+    return { ok: false, error: '최종 확인 대기 상태에서만 처리할 수 있습니다.' }
+  }
+  if (action === 'clarification') return { ok: true }
+  return { ok: true }
+}
+
+export function assertAdminSendForConfirmation(
+  status: SettlementStatus,
+  guideSubmitSnapshotId: string | null,
+): { ok: true } | { ok: false; error: string } {
+  if (!canAdminSendForConfirmation(status)) {
+    return { ok: false, error: '제출됨 또는 확인 이의 상태에서만 확인 요청을 보낼 수 있습니다.' }
+  }
+  if (!guideSubmitSnapshotId) {
+    return { ok: false, error: '가이드 제출 스냅샷이 없습니다. 가이드가 다시 제출해야 합니다.' }
+  }
+  return { ok: true }
+}
+
+export function assertAdminSaveSettlement(
+  role: UserRole,
+  status: SettlementStatus,
+): { ok: true } | { ok: false; error: string } {
+  if (role !== 'admin' && role !== 'staff') {
+    return { ok: false, error: '관리자 권한이 필요합니다.' }
+  }
+  if (!canAdminEditSettlement(status)) {
+    return { ok: false, error: '제출됨 또는 확인 이의 상태에서만 수정할 수 있습니다.' }
+  }
+  return { ok: true }
 }
 
 /**

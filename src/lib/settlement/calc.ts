@@ -294,6 +294,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
   const r81 = h83 + j83
   const r84 = r79 - r80 - r81
   const r85 = r84 * h.settlement_ratio + h.guide_daily_fee_usd
+  const guidePayout = Math.max(r85, 0)
 
   const f86 = d84 - h85
   const r86 = f86 - r85
@@ -403,6 +404,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
       company_gross_usd: annotate(f86, '회사총수익', 'F86', 'D84−H85'),
       balance_usd: annotate(r84, '차액(밸런스)', 'R84', 'R79−R80−R81'),
       guide_settlement_usd: annotate(r85, '가이드정산', 'R85', 'R84×R77+R82'),
+      guide_payout_usd: annotate(guidePayout, '실제 지급액', 'P85', 'MAX(R85,0)'),
       company_profit_usd: annotate(r86, '회사수익', 'R86', 'F86−R85'),
       company_grand_total_usd: annotate(r87, '최종 회사총수익', 'R87', 'R86+H72+S75'),
     },

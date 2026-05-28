@@ -1,0 +1,151 @@
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { MOCK_SETTLEMENT_INPUT } from './mock-data'
+import {
+  buildSnapshotPayload,
+  diffSnapshotPayloads,
+  filterGuideConfirmationChanges,
+  isGuideHiddenConfirmChange,
+} from './snapshot'
+import type { SettlementFull } from '@/types'
+
+function minimalSettlementFull(overrides: Partial<SettlementFull> = {}): SettlementFull {
+  return {
+    id: 'settlement-1',
+    tour_id: 'tour-1',
+    guide_id: 'guide-1',
+    branch_id: 'branch-1',
+    status: 'submitted',
+    year_month: '2025-11',
+    exchange_rate: MOCK_SETTLEMENT_INPUT.exchange_rate,
+    advance_vnd: MOCK_SETTLEMENT_INPUT.header.advance_vnd,
+    tour_fee_usd: MOCK_SETTLEMENT_INPUT.header.tour_fee_usd,
+    charming_other_usd: MOCK_SETTLEMENT_INPUT.header.charming_other_usd,
+    tip_received_usd: MOCK_SETTLEMENT_INPUT.header.tip_received_usd,
+    option_credit_usd: MOCK_SETTLEMENT_INPUT.header.option_credit_usd,
+    vehicle_fee_usd: MOCK_SETTLEMENT_INPUT.header.vehicle_fee_usd,
+    head_tax_usd: MOCK_SETTLEMENT_INPUT.header.head_tax_usd,
+    seoul_biz_fee_usd: MOCK_SETTLEMENT_INPUT.header.seoul_biz_fee_usd,
+    tc_guide_usd: MOCK_SETTLEMENT_INPUT.header.tc_guide_usd,
+    tc_company_usd: MOCK_SETTLEMENT_INPUT.header.tc_company_usd,
+    megugi_usd: MOCK_SETTLEMENT_INPUT.header.megugi_usd,
+    guide_daily_fee_usd: MOCK_SETTLEMENT_INPUT.header.guide_daily_fee_usd,
+    settlement_ratio: MOCK_SETTLEMENT_INPUT.header.settlement_ratio,
+    guide_note: null,
+    admin_note: null,
+    reject_reason: null,
+    submitted_at: null,
+    reviewed_at: null,
+    paid_at: null,
+    edit_requested_at: null,
+    reviewed_by: null,
+    edit_requested_by: null,
+    sent_for_confirmation_at: null,
+    sent_for_confirmation_by: null,
+    guide_confirmed_at: null,
+    guide_confirmed_by: null,
+    clarification_requested_at: null,
+    clarification_message: null,
+    active_confirmation_id: null,
+    guide_submit_snapshot_id: null,
+    created_at: '',
+    updated_at: '',
+    tour: {
+      id: 'tour-1',
+      tour_code: 'TEST',
+      pattern: 'Test',
+      agency_name: 'Agency',
+      start_date: '2025-11-01',
+      end_date: '2025-11-04',
+      nights: 3,
+      pax_count: 18,
+      vehicle_type: '29',
+      guide_id: 'guide-1',
+      tc_name: null,
+      branch_id: 'branch-1',
+      created_by: 'admin',
+      created_at: '',
+      updated_at: '',
+    },
+    hotels: [],
+    meals: [],
+    entrances: [],
+    others: [],
+    shoppings: [],
+    options: [],
+    receipts: [],
+    ...overrides,
+  }
+}
+
+describe('guide confirm packet policy', () => {
+  it('excludes company_grand_total_usd / R87 from diffSnapshotPayloads', () => {
+    const before = buildSnapshotPayload(minimalSettlementFull())
+    const after = buildSnapshotPayload(
+      minimalSettlementFull({
+        vehicle_fee_usd: before.header.vehicle_fee_usd as number + 50,
+      }),
+    )
+
+    const changes = diffSnapshotPayloads(before, after)
+
+    expect(changes.some((c) => c.field_path === 'calc_summary.company_grand_total_usd')).toBe(false)
+    expect(changes.some((c) => c.excel_ref === 'R87')).toBe(false)
+    expect(changes.some((c) => c.label === '회사수익')).toBe(false)
+    expect(changes.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
+  })
+
+  it('filterGuideConfirmationChanges removes legacy R87 rows', () => {
+    const legacy = [
+      {
+        field_path: 'calc_summary.company_grand_total_usd',
+        excel_ref: 'R87',
+        label: '회사수익',
+      },
+      {
+        field_path: 'header.megugi_usd',
+        excel_ref: 'R80',
+        label: '메꾸기',
+      },
+    ]
+
+    expect(isGuideHiddenConfirmChange(legacy[0])).toBe(true)
+    expect(filterGuideConfirmationChanges(legacy)).toEqual([legacy[1]])
+  })
+
+  it('guide packet summary uses deposit and payout only (no R87 fields)', () => {
+    const before = buildSnapshotPayload(minimalSettlementFull())
+    const after = buildSnapshotPayload(
+      minimalSettlementFull({ megugi_usd: (before.header.megugi_usd as number) + 5 }),
+    )
+
+    const packetSummary = {
+      companyDepositBefore: before.calc_summary.company_deposit_usd,
+      companyDepositAfter: after.calc_summary.company_deposit_usd,
+      guidePayoutBefore: before.calc_summary.guide_payout_usd,
+      guidePayoutAfter: after.calc_summary.guide_payout_usd,
+    }
+
+    expect(packetSummary).not.toHaveProperty('r87Before')
+    expect(packetSummary).not.toHaveProperty('r87After')
+    expect(packetSummary).not.toHaveProperty('company_grand_total_usd')
+    expect(typeof packetSummary.companyDepositBefore).toBe('number')
+    expect(typeof packetSummary.guidePayoutAfter).toBe('number')
+  })
+})
+
+describe('guide confirm page source', () => {
+  it('does not render 회사수익 or R87 summary labels', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/app/guide/settlements/[id]/confirm/page.tsx'),
+      'utf8',
+    )
+
+    expect(source).not.toContain('회사수익')
+    expect(source).not.toContain('r87Before')
+    expect(source).not.toContain('r87After')
+    expect(source).toContain('GUIDE_FOOTER_LABELS.companyDeposit')
+    expect(source).toContain('GUIDE_FOOTER_LABELS.guideSettlement')
+  })
+})

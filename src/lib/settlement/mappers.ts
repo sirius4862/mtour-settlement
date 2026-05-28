@@ -12,6 +12,17 @@ import type {
 } from './form-types'
 import { defaultHeader, newClientId } from './defaults'
 import {
+  mergeAdminHeaderForSave,
+  mergeAdminHotelRowsForSave,
+  mergeAdminOptionRowsForSave,
+  mergeAdminShoppingRowsForSave,
+  mergeGuideHeaderForSave,
+  mergeGuideHotelRowsForSave,
+  mergeGuideOptionRowsForSave,
+  mergeGuideShoppingRowsForSave,
+  pickAdminHeaderFields,
+} from './field-ownership'
+import {
   calcEntranceAmountVnd,
   calcHotelCompanyUsd,
   calcMealAmountVnd,
@@ -177,6 +188,48 @@ export function toDraftPayload(state: SettlementFormState): SettlementDraftPaylo
     others: state.others,
     shoppings: state.shoppings,
     options: state.options,
+  }
+}
+
+/** Strip admin-owned fields from guide draft saves; preserve DB values when updating. */
+export function sanitizeGuideDraftPayload(
+  payload: SettlementDraftPayload,
+  existing: SettlementFull | null,
+): SettlementDraftPayload {
+  if (!existing) {
+    return {
+      ...payload,
+      header: mergeGuideHeaderForSave(payload.header, null),
+    }
+  }
+
+  const existingState = stateFromSettlementFull(existing, '')
+  return {
+    ...payload,
+    header: mergeGuideHeaderForSave(payload.header, pickAdminHeaderFields(existingState.header)),
+    hotels: mergeGuideHotelRowsForSave(payload.hotels, existingState.hotels),
+    shoppings: mergeGuideShoppingRowsForSave(payload.shoppings, existingState.shoppings),
+    options: mergeGuideOptionRowsForSave(payload.options, existingState.options),
+  }
+}
+
+/** Strip guide-owned fields from admin review saves; preserve DB guide values. */
+export function sanitizeAdminDraftPayload(
+  payload: SettlementDraftPayload,
+  existing: SettlementFull,
+): SettlementDraftPayload {
+  const existingState = stateFromSettlementFull(existing, '')
+  return {
+    settlementId: existing.id,
+    tourId: existing.tour_id,
+    exchange_rate: existing.exchange_rate,
+    header: mergeAdminHeaderForSave(payload.header, existingState.header),
+    hotels: mergeAdminHotelRowsForSave(payload.hotels, existingState.hotels),
+    meals: existingState.meals,
+    entrances: existingState.entrances,
+    others: existingState.others,
+    shoppings: mergeAdminShoppingRowsForSave(payload.shoppings, existingState.shoppings),
+    options: mergeAdminOptionRowsForSave(payload.options, existingState.options),
   }
 }
 

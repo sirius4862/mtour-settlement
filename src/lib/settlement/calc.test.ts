@@ -255,6 +255,46 @@ describe('settlement matrix', () => {
       expect(field.formula).toBeTruthy()
     }
   })
+
+  it('floors guide payout at zero when R85 is negative (megugi not covered)', () => {
+    const result = calcSettlement(
+      emptyInput({
+        header: {
+          ...emptyInput().header,
+          megugi_usd: 200,
+          settlement_ratio: 0.5,
+          guide_daily_fee_usd: 5,
+          tc_guide_usd: 30,
+          tc_company_usd: 20,
+        },
+        shoppings: [{ sale_usd: 20, com_usd: 10, kb_usd: 0 }],
+        options: [{ unit_price_usd: 10, pax: 3, expense_usd: 5, expense_vnd: 0 }],
+      }),
+    )
+
+    expect(result.summary.guide_settlement_usd.excelRef).toBe('R85')
+    expect(result.summary.guide_settlement_usd.value).toBeLessThan(0)
+    expect(result.summary.guide_payout_usd.value).toBe(0)
+    expect(result.summary.guide_payout_usd.formula).toBe('MAX(R85,0)')
+  })
+
+  it('passes through guide payout when R85 is non-negative', () => {
+    const result = calcSettlement(
+      emptyInput({
+        header: {
+          ...emptyInput().header,
+          megugi_usd: 2,
+          settlement_ratio: 0.5,
+          guide_daily_fee_usd: 15,
+        },
+        shoppings: [{ sale_usd: 50, com_usd: 20, kb_usd: 5 }],
+        options: [{ unit_price_usd: 10, pax: 5, expense_usd: 5, expense_vnd: 0 }],
+      }),
+    )
+
+    expect(result.summary.guide_settlement_usd.value).toBeGreaterThan(0)
+    expect(result.summary.guide_payout_usd.value).toBe(result.summary.guide_settlement_usd.value)
+  })
 })
 
 describe('MOCK_SETTLEMENT_INPUT golden totals', () => {

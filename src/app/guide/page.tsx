@@ -22,8 +22,11 @@ export default async function GuidePage() {
   const counts = {
     draft: thisMonth.filter((s) => s.status === 'draft').length,
     submitted: thisMonth.filter((s) => s.status === 'submitted').length,
+    pendingConfirm: thisMonth.filter((s) => s.status === 'pending_guide_confirmation').length,
     approved: thisMonth.filter((s) => ['approved', 'paid'].includes(s.status)).length,
   }
+
+  const pendingConfirmation = settlements.filter((s) => s.status === 'pending_guide_confirmation')
 
   const needingAction = settlements.filter((s) => ACTION_STATUSES.includes(s.status))
   const rejectedOrEdit = settlements.filter((s) =>
@@ -40,10 +43,11 @@ export default async function GuidePage() {
 
       <div className="bg-blue-600 rounded-2xl p-5 text-white">
         <p className="text-blue-200 text-sm mb-3">{ym} 정산 현황</p>
-        <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="grid grid-cols-4 gap-2 text-center">
           {[
             { label: '작성중', value: counts.draft, color: 'text-blue-200' },
             { label: '검토중', value: counts.submitted, color: 'text-amber-300' },
+            { label: '확인대기', value: counts.pendingConfirm, color: 'text-orange-300' },
             { label: '완료', value: counts.approved, color: 'text-emerald-300' },
           ].map(({ label, value, color }) => (
             <div key={label}>
@@ -53,6 +57,30 @@ export default async function GuidePage() {
           ))}
         </div>
       </div>
+
+      {pendingConfirmation.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-orange-700">최종 확인 필요</h2>
+          {pendingConfirmation.map((s) => (
+            <Link
+              key={s.id}
+              href={`/guide/settlements/${s.id}/confirm`}
+              className="block bg-orange-50 rounded-xl border border-orange-100 px-4 py-3 hover:border-orange-200"
+            >
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{s.tour?.pattern}</p>
+                  <p className="text-xs text-gray-400 font-mono">{s.tour?.tour_code}</p>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 shrink-0">
+                  확인 필요
+                </span>
+              </div>
+              <p className="text-xs text-orange-600 mt-2">변경사항 확인 →</p>
+            </Link>
+          ))}
+        </section>
+      )}
 
       {rejectedOrEdit.length > 0 && (
         <section className="space-y-2">
@@ -146,7 +174,9 @@ export default async function GuidePage() {
           {recent.map((s) => {
             const meta = STATUS_META[s.status]
             const href =
-              s.status === 'draft' || s.status === 'rejected' || s.status === 'edit_requested'
+              s.status === 'pending_guide_confirmation'
+                ? `/guide/settlements/${s.id}/confirm`
+                : s.status === 'draft' || s.status === 'rejected' || s.status === 'edit_requested'
                 ? `/guide/settlements/${s.id}/edit`
                 : `/guide/settlements/${s.id}`
             return (

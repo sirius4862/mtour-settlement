@@ -1,4 +1,5 @@
 import type { SettlementFormState } from './form-types'
+import { hasGuideOwnedLineItemData } from './field-ownership'
 
 export type ValidationSeverity = 'error' | 'warning'
 
@@ -9,6 +10,7 @@ export interface ValidationIssue {
 }
 
 export type ValidationIntent = 'draft' | 'submit'
+export type ValidationActor = 'guide' | 'admin'
 
 function activeRows<T extends { deleted?: boolean }>(rows: T[] | undefined): T[] {
   return (rows ?? []).filter((r) => !r.deleted)
@@ -18,6 +20,7 @@ function activeRows<T extends { deleted?: boolean }>(rows: T[] | undefined): T[]
 export function validateSettlementForm(
   state: SettlementFormState,
   intent: ValidationIntent,
+  actor: ValidationActor = 'guide',
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = []
 
@@ -47,12 +50,8 @@ export function validateSettlementForm(
 
   const hotels = activeRows(state.hotels)
   const meals = activeRows(state.meals)
-  const entrances = activeRows(state.entrances)
-  const others = activeRows(state.others)
-  const shoppings = activeRows(state.shoppings)
-  const options = activeRows(state.options)
 
-  if (intent === 'submit') {
+  if (intent === 'submit' && actor === 'guide') {
     if (state.header.tour_fee_usd <= 0) {
       issues.push({
         sectionId: 'basic',
@@ -61,17 +60,22 @@ export function validateSettlementForm(
       })
     }
 
-    const hasLineItems =
-      hotels.length + meals.length + entrances.length + others.length + shoppings.length + options.length > 0
-
-    if (!hasLineItems) {
+    if (!hasGuideOwnedLineItemData(state)) {
       issues.push({
         sectionId: 'hotels',
-        message: '최소 1개 이상의 지출/수익 항목을 입력해주세요.',
+        message: '최소 1개 이상의 가이드 입력 항목(호텔·식사·쇼핑 등)을 입력해주세요.',
         severity: 'error',
       })
     }
 
+    issues.push({
+      sectionId: 'adjustments',
+      message: '지상비(O79–O81)와 정산비율(R77)은 제출 후 관리자가 입력합니다.',
+      severity: 'warning',
+    })
+  }
+
+  if (intent === 'submit') {
     hotels.forEach((row, i) => {
       if (!row.hotel_name.trim()) {
         issues.push({

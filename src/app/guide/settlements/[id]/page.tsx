@@ -2,7 +2,10 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { requireGuide } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
-import { STATUS_META, canGuideEdit } from '@/types'
+import { calcSettlement } from '@/lib/settlement/calc'
+import { GUIDE_FOOTER_LABELS, GUIDE_PAYOUT_FLOOR_WARNING } from '@/lib/settlement/display-labels'
+import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
+import { STATUS_META, canGuideEdit, canGuideConfirm } from '@/types'
 import { SubmitButton } from './SubmitButton'
 
 export const dynamic = 'force-dynamic'
@@ -23,42 +26,13 @@ export default async function SettlementDetailPage({
   const s = data
   const meta = STATUS_META[s.status]
   const editable = canGuideEdit(s, session.id)
+  const needsConfirm = canGuideConfirm(s, session.id)
   const rate = s.exchange_rate
 
-  // 간단 계산 (calcSettlement 함수 없이 기본 표시)
-  const hotelCompany = hotels.reduce((a, h) => a + h.company_amount_usd, 0)
-  const hotelGuide   = hotels.reduce((a, h) => a + h.guide_amount_usd, 0)
-  const mealTotal    = meals.reduce((a, m) => a + m.amount_vnd, 0)
-  const entrTotal    = entrances.reduce((a, e) => a + e.amount_vnd, 0)
-  const otherUsd     = others.reduce((a, o) => a + o.amount_usd, 0)
-  const otherVnd     = others.reduce((a, o) => a + o.amount_vnd, 0)
-  const shopSale     = shoppings.reduce((a, s) => a + s.sale_usd, 0)
-  const shopCom      = shoppings.reduce((a, s) => a + s.com_usd, 0)
-  const shopKb       = shoppings.reduce((a, s) => a + s.kb_usd, 0)
-  const optCom       = options.filter(o => !o.is_extra_vehicle).reduce((a, o) => a + o.com_usd, 0)
-  const extraVehicle = options.filter(o => o.is_extra_vehicle)
-    .reduce((a, o) => a + o.expense_usd + o.expense_vnd / rate, 0)
-
-  // 수익 합계
-  const incomeUsd = s.tour_fee_usd + shopSale + shopCom + optCom + s.tip_received_usd + s.charming_other_usd
-  // 가이드지출
-  const guideExpUsd = hotelGuide + (mealTotal + entrTotal + otherVnd) / rate + otherUsd + s.tc_guide_usd
-  // 회사지출
-  const compExpUsd  = hotelCompany + s.tc_company_usd
-  // 기타포함
-  const otherIncl   = s.vehicle_fee_usd + s.head_tax_usd + s.seoul_biz_fee_usd
-  // 지출합계
-  const totalExp    = guideExpUsd + compExpUsd + otherIncl
-  // 회사총수익
-  const compRevenue = incomeUsd - totalExp
-  // 차액(밸런스)
-  const balance     = (shopCom + optCom) - s.megugi_usd - (s.tc_guide_usd + s.tc_company_usd)
-  // 가이드 정산
-  const guideFinal  = balance * s.settlement_ratio + s.guide_daily_fee_usd
-  // 회사수익
-  const compFinal   = compRevenue - guideFinal
-  // 최종회사총수익
-  const compGrand   = compFinal + shopKb + extraVehicle
+  const calc = calcSettlement(toCalcInput(stateFromSettlementFull(data, '')))
+  const companyDeposit = calc.sections.cash.company_deposit_usd.value
+  const guidePayout = calc.summary.guide_payout_usd.value
+  const payoutIsFloored = calc.summary.guide_settlement_usd.value < 0
 
   return (
     <div className="px-4 py-5 pb-32 space-y-4">
@@ -78,6 +52,25 @@ export default async function SettlementDetailPage({
         </span>
       </div>
 
+      {needsConfirm && (
+        <Link
+          href={`/guide/settlements/${s.id}/confirm`}
+          className="block bg-orange-50 border border-orange-200 rounded-xl p-4 hover:border-orange-300"
+        >
+          <p className="text-sm font-semibold text-orange-800 mb-1">관리자 확인 요청</p>
+          <p className="text-sm text-orange-700">변경된 정산 내용을 확인하고 최종 승인해 주세요.</p>
+          <p className="text-xs text-orange-600 mt-2 font-medium">변경사항 확인 →</p>
+        </Link>
+      )}
+
+      {s.status === 'clarification_requested' && s.clarification_message && (
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+          <p className="text-sm font-semibold text-rose-700 mb-1">이의 요청 접수됨</p>
+          <p className="text-sm text-rose-600">{s.clarification_message}</p>
+          <p className="text-xs text-gray-500 mt-2">관리자 검토 후 다시 연락드립니다.</p>
+        </div>
+      )}
+
       {/* 반려 사유 */}
       {s.reject_reason && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
@@ -92,21 +85,19 @@ export default async function SettlementDetailPage({
           ['여행사', tour.agency_name], ['기간', `${tour.start_date} ~ ${tour.end_date}`],
           ['인원', `${tour.pax_count}명`], ['박수', `${tour.nights}박`],
           ['환율', `${s.exchange_rate.toLocaleString()}동/달러`],
-          ['정산비율', `${Math.round(s.settlement_ratio * 100)}%`],
         ]} />
       </Card>
 
       {/* 정산 요약 */}
       <Card title="정산 요약" accent>
         <div className="space-y-1.5 text-sm">
-          <Row label="수익 합계" value={fmt2(incomeUsd)} bold />
-          <Row label="지출 합계" value={fmt2(totalExp)} />
-          <Row label="회사총수익" value={fmt2(compRevenue)} />
-          <div className="border-t border-blue-200 pt-1.5 mt-1.5 space-y-1">
-            <Row label={`가이드 정산 (${Math.round(s.settlement_ratio * 100)}%)`} value={fmt2(guideFinal)} bold accent />
-            <Row label="회사 수익" value={fmt2(compFinal)} />
-            <Row label="최종 회사총수익" value={fmt2(compGrand)} />
-          </div>
+          <Row label={GUIDE_FOOTER_LABELS.companyDeposit} value={fmt2(companyDeposit)} />
+          <Row label={GUIDE_FOOTER_LABELS.guideSettlement} value={fmt2(guidePayout)} bold accent />
+          {payoutIsFloored && (
+            <p className="text-xs text-amber-700 pt-1">
+              {GUIDE_PAYOUT_FLOOR_WARNING}
+            </p>
+          )}
         </div>
       </Card>
 
@@ -143,7 +134,6 @@ export default async function SettlementDetailPage({
               <div className="flex gap-3 text-xs text-gray-500 mt-0.5">
                 <span>SALE: {fmt2(sh.sale_usd)}</span>
                 <span>COM: {fmt2(sh.com_usd)}</span>
-                <span>KB: {fmt2(sh.kb_usd)}</span>
               </div>
             </div>
           ))}
@@ -151,13 +141,13 @@ export default async function SettlementDetailPage({
       )}
 
       {/* 옵션 */}
-      {options.length > 0 && (
-        <Card title={`옵션 수익 (${options.length}건)`}>
-          {options.map((op, i) => (
+      {options.filter((o) => !o.is_extra_vehicle).length > 0 && (
+        <Card title={`옵션 수익 (${options.filter((o) => !o.is_extra_vehicle).length}건)`}>
+          {options.filter((o) => !o.is_extra_vehicle).map((op, i) => (
             <div key={op.id} className="py-1.5 border-b border-gray-50 last:border-0">
               <div className="flex justify-between">
                 <span className="text-sm text-gray-700">
-                  {op.is_extra_vehicle ? '🚌 추가차량비' : op.option_name || `옵션 ${i+1}`}
+                  {op.option_name || `옵션 ${i + 1}`}
                 </span>
                 <span className="text-xs font-mono text-gray-700">COM: {fmt2(op.com_usd)}</span>
               </div>
@@ -179,7 +169,6 @@ export default async function SettlementDetailPage({
                 <p className="text-xs text-gray-400">{h.check_in_date} · {h.nights}박</p>
               </div>
               <div className="text-right text-xs text-gray-600">
-                <p>회사: {fmt2(h.company_amount_usd)}</p>
                 <p>가이드: {fmt2(h.guide_amount_usd)}</p>
               </div>
             </div>

@@ -35,12 +35,14 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
   onAdd,
   addLabel = '+ 행 추가',
   emptyLabel = '항목이 없습니다. 아래 버튼으로 추가하세요.',
+  hideAdd = false,
 }: {
   rows: T[]
   renderRow: (row: T, index: number) => ReactNode
   onAdd: () => void
   addLabel?: string
   emptyLabel?: string
+  hideAdd?: boolean
 }) {
   const visible = rows.filter((r) => !r.deleted)
 
@@ -61,6 +63,7 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
           </div>
         ))
       )}
+      {!hideAdd && (
       <button
         type="button"
         onClick={onAdd}
@@ -68,6 +71,7 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
       >
         {addLabel}
       </button>
+      )}
     </div>
   )
 }

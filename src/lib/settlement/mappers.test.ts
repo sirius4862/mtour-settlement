@@ -12,6 +12,7 @@ import {
   stateFromSettlementFull,
   toCalcInput,
   toDraftPayload,
+  type SettlementSyncPayload,
 } from './mappers'
 import type { SettlementFull } from '@/types'
 
@@ -237,7 +238,7 @@ describe('DB round-trip mappers', () => {
       options: state.options,
     }
 
-    const merged = mergeServerSync(state, sync)
+    const merged = mergeServerSync(state, sync as unknown as SettlementSyncPayload)
     expect(merged.hotels?.find((h) => h.clientId === 'new-hotel')?.id).toBe('hotel-new')
   })
 })

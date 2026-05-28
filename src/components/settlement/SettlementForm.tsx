@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SettlementFull, Tour } from '@/types'
-import { saveSettlementDraft, submitSettlement } from '@/lib/actions/settlementActions'
+import { saveSettlementDraft, saveAdminSettlementEdits, submitSettlement } from '@/lib/actions/settlementActions'
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
@@ -32,6 +32,8 @@ import { CashReconciliationSection } from './sections/CashReconciliationSection'
 import { TCSettlementSection, FinalAdjustmentsSection } from './sections/TCSettlementSection'
 import { FinalSummarySection } from './sections/FinalSummarySection'
 import { ReceiptsSection } from './sections/ReceiptsSection'
+import type { SettlementFormRole } from '@/lib/settlement/field-ownership'
+import { SettlementFormProvider, summaryAudienceFromRole } from './SettlementFormContext'
 
 export type SettlementFormMode = 'new' | 'edit' | 'preview'
 
@@ -40,9 +42,15 @@ interface Props {
   guideName: string
   mode: SettlementFormMode
   initialFull?: SettlementFull
+  /** Who may edit admin-owned (지상비) fields. Defaults to guide. */
+  formRole?: SettlementFormRole
+  /** Admin review edit — save admin fields only, no submit. */
+  adminEdit?: {
+    backHref: string
+  }
 }
 
-export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
+export function SettlementForm({ tours, guideName, mode, initialFull, formRole = 'guide', adminEdit }: Props) {
   const router = useRouter()
   const hydrated = useRef(false)
   const [pending, setPending] = useState(false)
@@ -72,6 +80,10 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
   const calc = useSettlementFormCalc()
   const { sections } = calc
   const isPreview = mode === 'preview'
+  const isAdminReview = !!adminEdit
+  const role: SettlementFormRole = isPreview ? 'readOnly' : (isAdminReview ? 'admin' : formRole)
+  const audience = summaryAudienceFromRole(role)
+  const isAdmin = role === 'admin'
 
   useEffect(() => {
     if (hydrated.current) return
@@ -106,13 +118,14 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
   }, [mode, initialFull, guideName, hydrateFromFull, resetNew])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
-    const issues = validateSettlementForm(useSettlementFormStore.getState(), intent)
+    const actor = isAdminReview ? 'admin' : 'guide'
+    const issues = validateSettlementForm(useSettlementFormStore.getState(), intent, actor)
     setValidationIssues(issues)
     const section = firstErrorSection(issues)
     if (section) setOpenSectionId(section)
     const errors = validationErrors(issues)
     return { ok: errors.length === 0, errors }
-  }, [])
+  }, [isAdminReview])
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     if (isPreview) return false
@@ -129,6 +142,18 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
 
     try {
       const payload = toDraftPayload(state)
+
+      if (isAdminReview) {
+        const result = await saveAdminSettlementEdits(payload)
+        if (result.ok) {
+          markSaved(state.settlementId!)
+          if (result.sync) mergeServerSync(result.sync)
+          return true
+        }
+        setSaveError(result.error ?? '저장 실패')
+        return false
+      }
+
       const result = await saveSettlementDraft(payload)
 
       if (result.ok && result.id) {
@@ -145,7 +170,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     } finally {
       setPending(false)
     }
-  }, [isPreview, runValidation, setSaving, markSaved, mergeServerSync, setSaveError])
+  }, [isPreview, isAdminReview, runValidation, setSaving, markSaved, mergeServerSync, setSaveError])
 
   const handleSubmit = useCallback(async () => {
     if (isPreview) return
@@ -180,9 +205,12 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
   }, [isPreview, handleSave, router, setSaveError])
 
   const title =
-    mode === 'edit' ? '정산서 수정'
+    isAdminReview ? '관리자 검토 수정'
+    : mode === 'edit' ? '정산서 수정'
     : mode === 'preview' ? '정산서 (미리보기)'
     : '새 정산서'
+
+  const backHref = isAdminReview ? adminEdit!.backHref : '/guide'
 
   const accordionSections: AccordionSection[] = [
     {
@@ -201,13 +229,17 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
       id: 'hotels',
       title: '호텔',
       excelRows: EXCEL_SECTIONS.hotels.rows,
-      preview: sections.hotels.company_total_usd,
+      preview: isAdmin ? sections.hotels.company_total_usd : sections.hotels.guide_total_usd,
       badge: `${hotelRowCount}행`,
       children: <HotelsSection />,
       footer: (
         <SectionSubtotal
           sticky
-          fields={[sections.hotels.company_total_usd, sections.hotels.guide_total_usd]}
+          fields={
+            isAdmin
+              ? [sections.hotels.company_total_usd, sections.hotels.guide_total_usd]
+              : [sections.hotels.guide_total_usd]
+          }
         />
       ),
     },
@@ -264,11 +296,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
       footer: (
         <SectionSubtotal
           sticky
-          fields={[
-            sections.shopping.sale_usd,
-            sections.shopping.com_usd,
-            sections.shopping.kb_usd,
-          ]}
+          fields={
+            isAdmin
+              ? [sections.shopping.sale_usd, sections.shopping.com_usd, sections.shopping.kb_usd]
+              : [sections.shopping.sale_usd, sections.shopping.com_usd]
+          }
         />
       ),
     },
@@ -282,7 +314,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
       footer: (
         <SectionSubtotal
           sticky
-          fields={[sections.options.com_usd, sections.options.extra_vehicle_usd]}
+          fields={
+            isAdmin
+              ? [sections.options.com_usd, sections.options.extra_vehicle_usd]
+              : [sections.options.com_usd]
+          }
         />
       ),
     },
@@ -311,8 +347,8 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     },
     {
       id: 'adjustments',
-      title: '정산 조정',
-      excelRows: EXCEL_SECTIONS.adjustments.rows,
+      title: isAdmin ? '정산 조정' : '회사 확인 항목',
+      excelRows: isAdmin ? EXCEL_SECTIONS.adjustments.rows : 'R80, R82',
       preview: calc.summary.balance_usd,
       children: <FinalAdjustmentsSection />,
     },
@@ -320,26 +356,27 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
       id: 'summary',
       title: '정산내역 (최종)',
       excelRows: EXCEL_SECTIONS.summary.rows,
-      preview: calc.summary.guide_settlement_usd,
-      children: <FinalSummarySection calc={calc} settlementRatio={settlementRatio} />,
+      preview: calc.summary.guide_payout_usd,
+      children: <FinalSummarySection calc={calc} settlementRatio={settlementRatio} audience={audience} />,
     },
     {
       id: 'receipts',
       title: '영수증',
       badge: receiptCount > 0 ? `${receiptCount}장` : undefined,
-      children: <ReceiptsSection readOnly={isPreview} />,
+      children: <ReceiptsSection readOnly={isPreview || isAdminReview} />,
     },
   ]
 
   return (
+    <SettlementFormProvider role={role} adminReviewEdit={isAdminReview}>
     <div className="flex flex-col min-h-screen pb-36">
       <div className="sticky top-14 z-20 bg-white border-b border-gray-100 px-4 py-3">
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => router.push('/guide')}
+            onClick={() => router.push(backHref)}
             className="text-gray-500 min-w-[44px] min-h-[44px] flex items-center justify-center"
-            aria-label="홈으로"
+            aria-label={isAdminReview ? '상세로' : '홈으로'}
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M12.5 15L7.5 10l5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -351,7 +388,9 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
               {isPreview && <MockBadge />}
             </div>
             <p className="text-[11px] text-gray-400">
-              {isPreview ? 'mock 데이터 · calcSettlement() live' : 'Excel 양식 · calcSettlement()'}
+              {isPreview ? 'mock 데이터 · calcSettlement() live'
+                : isAdminReview ? '회사 전용 필드만 저장 · calcSettlement()'
+                : 'Excel 양식 · calcSettlement()'}
             </p>
           </div>
         </div>
@@ -380,6 +419,8 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
       ) : (
         <SettlementFormFooter
           calc={calc}
+          companyDeposit={sections.cash.company_deposit_usd}
+          audience={audience}
           saveStatus={saveStatus}
           dirty={dirty}
           lastSavedAt={lastSavedAt}
@@ -387,8 +428,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
           onSave={handleSave}
           onSubmit={handleSubmit}
           pending={pending}
+          hideSubmit={isAdminReview}
+          saveLabel={isAdminReview ? '저장' : '임시저장'}
         />
       )}
     </div>
+    </SettlementFormProvider>
   )
 }

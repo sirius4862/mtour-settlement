@@ -1,13 +1,61 @@
 'use client'
 
 import { useSettlementFormStore } from '@/lib/stores/settlementFormStore'
+import {
+  ADMIN_GUIDE_INPUT_HINT,
+  canEditHeaderField,
+  COMPANY_REVIEW_FIELD_HINT,
+} from '@/lib/settlement/field-ownership'
 import { ManualField, SectionCard } from '@/components/ui/FormPrimitives'
+import { useSettlementFormRole } from '../SettlementFormContext'
 import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 
-export function TCSettlementSection() {
+function CompanyReviewFields({ adminView }: { adminView?: boolean }) {
+  const role = useSettlementFormRole()
   const header = useSettlementFormStore((s) => s.header)
   const patchHeader = useSettlementFormStore((s) => s.patchHeader)
+
+  const variant = adminView ? 'adminReviewGuideInput' : 'companyReview'
+  const hint = adminView ? ADMIN_GUIDE_INPUT_HINT : COMPANY_REVIEW_FIELD_HINT
+
+  return (
+    <>
+      <ManualField
+        label="메꾸기"
+        excelRef="R80"
+        suffix="$"
+        inputMode="decimal"
+        variant={variant}
+        hint={hint}
+        value={header.megugi_usd || ''}
+        disabled={!canEditHeaderField(role, 'megugi_usd')}
+        onChange={(e) =>
+          patchHeader({ megugi_usd: parseFloat(e.target.value) || 0 })
+        }
+      />
+      <ManualField
+        label="가이드 일비"
+        excelRef="R82"
+        suffix="$"
+        inputMode="decimal"
+        variant={variant}
+        hint={hint}
+        value={header.guide_daily_fee_usd || ''}
+        disabled={!canEditHeaderField(role, 'guide_daily_fee_usd')}
+        onChange={(e) =>
+          patchHeader({ guide_daily_fee_usd: parseFloat(e.target.value) || 0 })
+        }
+      />
+    </>
+  )
+}
+
+export function TCSettlementSection() {
+  const role = useSettlementFormRole()
+  const header = useSettlementFormStore((s) => s.header)
+  const patchHeader = useSettlementFormStore((s) => s.patchHeader)
+  const isAdmin = role === 'admin'
 
   return (
     <div className="space-y-3">
@@ -19,28 +67,47 @@ export function TCSettlementSection() {
           suffix="$"
           inputMode="decimal"
           value={header.tc_guide_usd || ''}
+          disabled={!canEditHeaderField(role, 'tc_guide_usd')}
           onChange={(e) =>
             patchHeader({ tc_guide_usd: parseFloat(e.target.value) || 0 })
           }
         />
-        <ManualField
-          label="T/C 정산 — 회사분 (USD)"
-          excelRef="J83"
-          suffix="$"
-          inputMode="decimal"
-          value={header.tc_company_usd || ''}
-          onChange={(e) =>
-            patchHeader({ tc_company_usd: parseFloat(e.target.value) || 0 })
-          }
-        />
+        {isAdmin && (
+          <ManualField
+            label="T/C 정산 — 회사분 (USD)"
+            excelRef="J83"
+            suffix="$"
+            inputMode="decimal"
+            value={header.tc_company_usd || ''}
+            onChange={(e) =>
+              patchHeader({ tc_company_usd: parseFloat(e.target.value) || 0 })
+            }
+          />
+        )}
       </SectionCard>
     </div>
   )
 }
 
 export function FinalAdjustmentsSection() {
+  const role = useSettlementFormRole()
   const header = useSettlementFormStore((s) => s.header)
   const patchHeader = useSettlementFormStore((s) => s.patchHeader)
+  const isAdmin = role === 'admin'
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-3">
+        <SectionHint
+          excelRows="R80, R82"
+          hint="제출 후 회사에서 확인·조정할 수 있는 항목입니다."
+        />
+        <SectionCard className="border-amber-100 bg-amber-50/30">
+          <CompanyReviewFields />
+        </SectionCard>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
@@ -76,26 +143,7 @@ export function FinalAdjustmentsSection() {
             patchHeader({ seoul_biz_fee_usd: parseFloat(e.target.value) || 0 })
           }
         />
-        <ManualField
-          label="메꾸기"
-          excelRef="R80"
-          suffix="$"
-          inputMode="decimal"
-          value={header.megugi_usd || ''}
-          onChange={(e) =>
-            patchHeader({ megugi_usd: parseFloat(e.target.value) || 0 })
-          }
-        />
-        <ManualField
-          label="가이드 일비"
-          excelRef="R82"
-          suffix="$"
-          inputMode="decimal"
-          value={header.guide_daily_fee_usd || ''}
-          onChange={(e) =>
-            patchHeader({ guide_daily_fee_usd: parseFloat(e.target.value) || 0 })
-          }
-        />
+        <CompanyReviewFields adminView />
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
             정산비율{' '}

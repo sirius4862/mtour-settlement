@@ -3,8 +3,19 @@
 import type { InputHTMLAttributes, ReactNode } from 'react'
 
 const baseInput =
-  'w-full min-h-12 px-3 py-2.5 border border-gray-200 rounded-xl bg-white text-gray-900 ' +
-  'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400'
+  'w-full min-h-12 px-3 py-2.5 border rounded-xl text-gray-900 ' +
+  'focus:outline-none focus:ring-2 disabled:bg-gray-50 disabled:text-gray-400'
+
+const inputVariants = {
+  default:
+    'border-gray-200 bg-white focus:ring-blue-500 focus:border-blue-500',
+  companyReview:
+    'border-amber-400 bg-amber-50 focus:ring-amber-500 focus:border-amber-500',
+  adminReviewGuideInput:
+    'border-blue-200 bg-blue-50/60 focus:ring-blue-500 focus:border-blue-500',
+} as const
+
+export type ManualFieldVariant = keyof typeof inputVariants
 
 export function FieldLabel({ children, required }: { children: ReactNode; required?: boolean }) {
   return (
@@ -20,6 +31,8 @@ export function ManualField({
   excelRef,
   suffix,
   required,
+  variant = 'default',
+  hint,
   className = '',
   ...props
 }: {
@@ -27,6 +40,8 @@ export function ManualField({
   excelRef?: string
   suffix?: string
   required?: boolean
+  variant?: ManualFieldVariant
+  hint?: string
 } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className={className}>
@@ -38,8 +53,18 @@ export function ManualField({
           </span>
         )}
       </div>
+      {hint && (
+        <p className={`text-[11px] mb-1.5 ${
+          variant === 'companyReview' ? 'text-amber-700' : 'text-blue-600'
+        }`}>
+          {hint}
+        </p>
+      )}
       <div className="relative">
-        <input className={baseInput + (suffix ? ' pr-12 text-right font-mono' : '')} {...props} />
+        <input
+          className={`${baseInput} ${inputVariants[variant]}${suffix ? ' pr-12 text-right font-mono' : ''}`}
+          {...props}
+        />
         {suffix && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
             {suffix}

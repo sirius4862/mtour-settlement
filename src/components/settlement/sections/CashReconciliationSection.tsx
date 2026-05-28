@@ -6,8 +6,10 @@ import { CalculatedField } from '../CalculatedField'
 import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import { useSettlementFormCalc } from '@/hooks/useSettlementFormCalc'
+import { useSettlementFormRole } from '../SettlementFormContext'
 
 export function CashReconciliationSection() {
+  const role = useSettlementFormRole()
   const header = useSettlementFormStore((s) => s.header)
   const patchHeader = useSettlementFormStore((s) => s.patchHeader)
   const cash = useSettlementFormCalc().sections.cash
@@ -23,6 +25,7 @@ export function CashReconciliationSection() {
             suffix="$"
             inputMode="decimal"
             value={header.charming_other_usd || ''}
+            disabled={role === 'admin'}
             onChange={(e) =>
               patchHeader({ charming_other_usd: parseFloat(e.target.value) || 0 })
             }
@@ -33,6 +36,7 @@ export function CashReconciliationSection() {
             suffix="$"
             inputMode="decimal"
             value={header.tip_received_usd || ''}
+            disabled={role === 'admin'}
             onChange={(e) =>
               patchHeader({ tip_received_usd: parseFloat(e.target.value) || 0 })
             }
@@ -43,6 +47,7 @@ export function CashReconciliationSection() {
             suffix="$"
             inputMode="decimal"
             value={header.option_credit_usd || ''}
+            disabled={role === 'admin'}
             onChange={(e) =>
               patchHeader({ option_credit_usd: parseFloat(e.target.value) || 0 })
             }

@@ -8,6 +8,7 @@ import { CalculatedField } from '../CalculatedField'
 import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import { useSettlementFormStore } from '@/lib/stores/settlementFormStore'
+import { useSettlementFormRole } from '../SettlementFormContext'
 
 interface Props {
   tours: Tour[]
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
+  const role = useSettlementFormRole()
   const tour = useSettlementFormStore((s) => s.tour)
   const tourId = useSettlementFormStore((s) => s.tourId)
   const exchange_rate = useSettlementFormStore((s) => s.exchange_rate)
@@ -72,6 +74,7 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
           required
           inputMode="decimal"
           value={exchange_rate || ''}
+          disabled={role === 'admin'}
           onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
         />
         <ManualField
@@ -80,6 +83,7 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
           suffix="₫"
           inputMode="decimal"
           value={header.advance_vnd || ''}
+          disabled={role === 'admin'}
           onChange={(e) => patchHeader({ advance_vnd: parseFloat(e.target.value) || 0 })}
         />
         <CalculatedField field={advanceUsd} />
@@ -90,11 +94,13 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
           required
           inputMode="decimal"
           value={header.tour_fee_usd || ''}
+          disabled={role === 'admin'}
           onChange={(e) => patchHeader({ tour_fee_usd: parseFloat(e.target.value) || 0 })}
         />
         <ManualField
           label="가이드 메모"
           value={header.guide_note ?? ''}
+          disabled={role === 'admin'}
           onChange={(e) => patchHeader({ guide_note: e.target.value.trim() || null })}
         />
       </SectionCard>

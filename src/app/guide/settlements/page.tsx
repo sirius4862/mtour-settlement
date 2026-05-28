@@ -33,8 +33,12 @@ export default async function SettlementsPage() {
           {settlements.map((s) => {
             const meta = STATUS_META[s.status]
             const isEditable = ['draft', 'rejected', 'edit_requested'].includes(s.status)
+            const href =
+              s.status === 'pending_guide_confirmation'
+                ? `/guide/settlements/${s.id}/confirm`
+                : `/guide/settlements/${s.id}`
             return (
-              <Link key={s.id} href={`/guide/settlements/${s.id}`}
+              <Link key={s.id} href={href}
                 className="block bg-white rounded-2xl p-4 border border-gray-100 hover:border-gray-200 transition-colors">
                 <div className="flex justify-between items-start mb-2">
                   <div>
@@ -57,6 +61,10 @@ export default async function SettlementsPage() {
                   <div className="mt-2 px-3 py-2 bg-red-50 rounded-lg">
                     <p className="text-xs text-red-600">반려: {s.reject_reason}</p>
                   </div>
+                )}
+
+                {s.status === 'pending_guide_confirmation' && (
+                  <p className="mt-2 text-xs text-orange-600">최종 확인 필요 →</p>
                 )}
 
                 {isEditable && (

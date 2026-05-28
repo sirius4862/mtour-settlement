@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   assertAdminReviewAction,
+  assertAdminSendForConfirmation,
+  assertGuideConfirmAction,
   canAdminDirectApprove,
   canAdminEditSettlement,
   canAdminPaySettlement,
+  canAdminSendForConfirmation,
   canGuideConfirm,
   canGuideEdit,
+  canGuideRequestClarification,
   GUIDE_EDITABLE,
 } from './status-guards'
 import type { SettlementStatus } from '@/types'
@@ -85,6 +89,73 @@ describe('canAdminPaySettlement', () => {
         guide_confirmed_at: '2026-05-27T00:00:00Z',
       }),
     ).toBe(true)
+  })
+})
+
+describe('canGuideRequestClarification', () => {
+  it('allows only pending_guide_confirmation for owner', () => {
+    expect(
+      canGuideRequestClarification(
+        { status: 'pending_guide_confirmation', guide_id: 'guide-1' },
+        'guide-1',
+      ),
+    ).toBe(true)
+    expect(
+      canGuideRequestClarification({ status: 'submitted', guide_id: 'guide-1' }, 'guide-1'),
+    ).toBe(false)
+  })
+})
+
+describe('canAdminSendForConfirmation', () => {
+  it('allows submitted and clarification_requested only', () => {
+    expect(canAdminSendForConfirmation('submitted')).toBe(true)
+    expect(canAdminSendForConfirmation('clarification_requested')).toBe(true)
+    expect(canAdminSendForConfirmation('pending_guide_confirmation')).toBe(false)
+    expect(canAdminSendForConfirmation('approved')).toBe(false)
+  })
+})
+
+describe('assertAdminSendForConfirmation', () => {
+  it('requires admin/staff role context via snapshot id', () => {
+    expect(assertAdminSendForConfirmation('submitted', null).ok).toBe(false)
+    expect(assertAdminSendForConfirmation('submitted', 'snap-1').ok).toBe(true)
+    expect(assertAdminSendForConfirmation('approved', 'snap-1').ok).toBe(false)
+  })
+})
+
+describe('assertGuideConfirmAction', () => {
+  it('allows confirm only for owner in pending_guide_confirmation', () => {
+    expect(
+      assertGuideConfirmAction(
+        { status: 'pending_guide_confirmation', guide_id: 'guide-1' },
+        'guide-1',
+        'confirm',
+      ).ok,
+    ).toBe(true)
+    expect(
+      assertGuideConfirmAction(
+        { status: 'pending_guide_confirmation', guide_id: 'guide-1' },
+        'guide-2',
+        'confirm',
+      ).ok,
+    ).toBe(false)
+    expect(
+      assertGuideConfirmAction({ status: 'submitted', guide_id: 'guide-1' }, 'guide-1', 'confirm').ok,
+    ).toBe(false)
+  })
+
+  it('allows clarification request under same rules as confirm', () => {
+    expect(
+      assertGuideConfirmAction(
+        { status: 'pending_guide_confirmation', guide_id: 'guide-1' },
+        'guide-1',
+        'clarification',
+      ).ok,
+    ).toBe(true)
+    expect(
+      assertGuideConfirmAction({ status: 'approved', guide_id: 'guide-1' }, 'guide-1', 'clarification')
+        .ok,
+    ).toBe(false)
   })
 })
 

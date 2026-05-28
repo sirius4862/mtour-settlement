@@ -42,7 +42,7 @@ export const EXCEL_SECTIONS = {
   },
   summary: {
     rows: 'R77–R87',
-    hint: '엑셀 정산내역 매트릭스 — 수익(D)·지출(H/J/O)·정산(R) 최종 확인.',
+    hint: '엑셀 정산내역 매트릭스 — D79(투어피)는 기본정보 입력값 표시, 편집 없음.',
   },
   receipts: {
     rows: '—',

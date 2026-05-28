@@ -13,7 +13,16 @@ export default async function AdminPage() {
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const thisMonth = all.filter((s: { year_month: string }) => s.year_month === ym)
 
-  const stats = ['draft','submitted','approved','rejected','edit_requested','paid']
+  const stats = [
+    'draft',
+    'submitted',
+    'pending_guide_confirmation',
+    'clarification_requested',
+    'approved',
+    'rejected',
+    'edit_requested',
+    'paid',
+  ]
     .map(status => ({
       status: status as keyof typeof STATUS_META,
       count: thisMonth.filter((s: { status: string }) => s.status === status).length,
@@ -32,7 +41,7 @@ export default async function AdminPage() {
       </div>
 
       {/* 통계 카드 */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {stats.map(({ status, count }) => {
           const meta = STATUS_META[status]
           return (

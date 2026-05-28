@@ -238,4 +238,8 @@ export {
   canAdminRequestEdit,
   canAdminPaySettlement,
   assertAdminReviewAction,
+  assertAdminSaveSettlement,
+  canAdminSendForConfirmation,
+  assertGuideConfirmAction,
+  assertAdminSendForConfirmation,
 } from '@/lib/settlement/status-guards'

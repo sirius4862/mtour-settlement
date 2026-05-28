@@ -171,6 +171,8 @@ export interface SettlementCalcResult {
     company_gross_usd: AnnotatedNumber
     balance_usd: AnnotatedNumber
     guide_settlement_usd: AnnotatedNumber
+    /** max(R85, 0) — actual guide payout when R85 is negative. */
+    guide_payout_usd: AnnotatedNumber
     company_profit_usd: AnnotatedNumber
     company_grand_total_usd: AnnotatedNumber
   }

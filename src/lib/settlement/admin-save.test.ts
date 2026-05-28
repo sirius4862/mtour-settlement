@@ -45,6 +45,7 @@ function mockSubmittedSettlement(): SettlementFull {
     clarification_message: null,
     active_confirmation_id: null,
     guide_submit_snapshot_id: 'snap-guide',
+    calc_summary_json: null,
     created_at: '',
     updated_at: '',
     tour: {

@@ -34,6 +34,7 @@ export interface Branch {
 
 export interface Profile {
   id: string; email: string; full_name: string
+  korean_name: string | null; vietnamese_name: string | null
   role: UserRole; branch_id: string | null
   agency_name: string | null; phone: string | null
   is_active: boolean; created_at: string; updated_at: string
@@ -76,6 +77,7 @@ export interface Settlement {
   clarification_message: string | null
   active_confirmation_id: string | null
   guide_submit_snapshot_id: string | null
+  calc_summary_json: Record<string, unknown> | null
   created_at: string; updated_at: string
 }
 

@@ -89,7 +89,7 @@ export function filterGuideConfirmationChanges<T extends {
   return changes.filter((c) => !isGuideHiddenConfirmChange(c))
 }
 
-function calcSummaryFromResult(result: SettlementCalcResult): SnapshotCalcSummary {
+export function calcSummaryFromResult(result: SettlementCalcResult): SnapshotCalcSummary {
   return {
     company_deposit_usd: result.sections.cash.company_deposit_usd.value,
     guide_settlement_usd: result.summary.guide_settlement_usd.value,

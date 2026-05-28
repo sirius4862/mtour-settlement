@@ -27,14 +27,24 @@ import {
   diffSnapshotPayloads,
   filterGuideConfirmationChanges,
   parseSnapshotPayload,
-  type SnapshotPayload,
 } from '@/lib/settlement/snapshot'
+import type { SnapshotPayload } from '@/lib/settlement/snapshot'
 import {
   assertAdminReviewAction,
   assertAdminSaveSettlement,
   assertAdminSendForConfirmation,
   assertGuideConfirmAction,
 } from '@/lib/settlement/status-guards'
+import {
+  ADMIN_SETTLEMENT_PAGE_SIZE,
+  ADMIN_SETTLEMENT_SELECT,
+  ACTION_NEEDED_STATUSES,
+  escapeIlikePattern,
+  sortActionNeededSettlements,
+  type AdminSettlementListFilters,
+  type AdminSettlementListItem,
+  type AdminSettlementsPageResult,
+} from '@/lib/admin/settlement-list'
 
 // ── 인증 헬퍼 ─────────────────────────────────────────────────
 
@@ -106,6 +116,20 @@ function revalidateSettlementPaths(id: string) {
   revalidatePath(`/admin/settlements/${id}/edit`)
   revalidatePath('/admin')
   revalidatePath('/guide')
+}
+
+async function persistSettlementCalcSummary(
+  supabase: SupabaseClient,
+  settlementId: string,
+  full?: SettlementFull | null,
+): Promise<void> {
+  const settlement = full ?? (await getSettlementFull(settlementId))
+  if (!settlement) return
+  const summary = buildSnapshotPayload(settlement).calc_summary
+  await supabase
+    .from('settlements')
+    .update({ calc_summary_json: summary })
+    .eq('id', settlementId)
 }
 
 // ── 투어 조회 ──────────────────────────────────────────────────
@@ -185,23 +209,120 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
   } as SettlementFull
 }
 
-/** 관리자 전체 정산서 목록 */
-export async function getAdminSettlements(filters?: {
-  yearMonth?: string; status?: string
-}) {
+/** 관리자 정산서 목록 (페이지네이션 + 검색) */
+export async function getAdminSettlements(
+  filters?: AdminSettlementListFilters,
+): Promise<AdminSettlementsPageResult> {
   const supabase = await createClient()
+  const pageSize = filters?.pageSize ?? ADMIN_SETTLEMENT_PAGE_SIZE
+  const page = Math.max(1, filters?.page ?? 1)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
 
   let q = supabase
     .from('settlements')
-    .select('*, tour:tours(*), guide:profiles!guide_id(id,full_name,email)')
-    .order('created_at', { ascending: false })
-    .limit(200)
+    .select(ADMIN_SETTLEMENT_SELECT, { count: 'exact' })
+    .order('updated_at', { ascending: false })
 
   if (filters?.yearMonth) q = q.eq('year_month', filters.yearMonth)
-  if (filters?.status)    q = q.eq('status', filters.status)
+  if (filters?.status) q = q.eq('status', filters.status)
 
-  const { data } = await q
-  return data ?? []
+  const search = filters?.search?.trim()
+  if (search) {
+    const pattern = `%${escapeIlikePattern(search)}%`
+    const [toursRes, guidesRes] = await Promise.all([
+      supabase
+        .from('tours')
+        .select('id')
+        .or(`pattern.ilike.${pattern},tour_code.ilike.${pattern}`),
+      supabase
+        .from('profiles')
+        .select('id')
+        .or(
+          `full_name.ilike.${pattern},email.ilike.${pattern},korean_name.ilike.${pattern},vietnamese_name.ilike.${pattern}`,
+        ),
+    ])
+
+    const tourIds = (toursRes.data ?? []).map((t) => t.id as string)
+    const guideIds = (guidesRes.data ?? []).map((g) => g.id as string)
+    if (tourIds.length === 0 && guideIds.length === 0) {
+      return { items: [], total: 0, page, pageSize, totalPages: 0 }
+    }
+
+    const orParts: string[] = []
+    if (tourIds.length > 0) orParts.push(`tour_id.in.(${tourIds.join(',')})`)
+    if (guideIds.length > 0) orParts.push(`guide_id.in.(${guideIds.join(',')})`)
+    q = q.or(orParts.join(','))
+  }
+
+  const { data, count, error } = await q.range(from, to)
+  if (error) {
+    console.error('getAdminSettlements:', error.message)
+    return { items: [], total: 0, page, pageSize, totalPages: 0 }
+  }
+
+  const total = count ?? 0
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
+
+  return {
+    items: (data ?? []) as unknown as AdminSettlementListItem[],
+    total,
+    page,
+    pageSize,
+    totalPages,
+  }
+}
+
+/** 대시보드 처리 필요 큐 (우선순위 정렬) */
+export async function getAdminActionQueue(limit = 10): Promise<AdminSettlementListItem[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('settlements')
+    .select(ADMIN_SETTLEMENT_SELECT)
+    .in('status', [...ACTION_NEEDED_STATUSES])
+    .order('updated_at', { ascending: false })
+    .limit(Math.max(limit * 5, 50))
+
+  if (error) {
+    console.error('getAdminActionQueue:', error.message)
+    return []
+  }
+
+  return sortActionNeededSettlements((data ?? []) as unknown as AdminSettlementListItem[]).slice(0, limit)
+}
+
+/** 대시보드 월별 상태 집계 */
+export async function getAdminDashboardStats(
+  yearMonth: string,
+): Promise<{ status: SettlementStatus; count: number }[]> {
+  const supabase = await createClient()
+  const statuses: SettlementStatus[] = [
+    'draft',
+    'submitted',
+    'pending_guide_confirmation',
+    'clarification_requested',
+    'approved',
+    'rejected',
+    'edit_requested',
+    'paid',
+  ]
+
+  const { data, error } = await supabase
+    .from('settlements')
+    .select('status')
+    .eq('year_month', yearMonth)
+
+  if (error) {
+    console.error('getAdminDashboardStats:', error.message)
+    return statuses.map((status) => ({ status, count: 0 }))
+  }
+
+  const rows = data ?? []
+  return statuses.map((status) => ({
+    status,
+    count: rows.filter((r) => r.status === status).length,
+  }))
 }
 
 // ── 정산서 생성 / 임시저장 ─────────────────────────────────────
@@ -308,6 +429,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       active_confirmation_id: null,
       clarification_requested_at: null,
       clarification_message: null,
+      calc_summary_json: payload.calc_summary,
     })
     .eq('id', id)
     .eq('guide_id', profile.id)
@@ -401,6 +523,8 @@ export async function saveSettlementItems(
 
   const result = await persistSettlementLineItems(supabase, settlementId, payload)
   if (!result.ok) return result
+
+  await persistSettlementCalcSummary(supabase, settlementId)
 
   revalidatePath('/guide/settlements')
   revalidatePath(`/guide/settlements/${settlementId}`)
@@ -528,6 +652,8 @@ export async function saveAdminSettlementEdits(
 
   const itemsResult = await persistSettlementLineItems(supabase, payload.settlementId, sanitized)
   if (!itemsResult.ok) return { ok: false, error: itemsResult.error }
+
+  await persistSettlementCalcSummary(supabase, payload.settlementId)
 
   await insertAuditEvent(supabase, {
     settlementId: payload.settlementId,
@@ -759,6 +885,7 @@ export async function sendForConfirmation(
       admin_note: adminNote?.trim() || full.admin_note,
       reviewed_at: now,
       reviewed_by: profile.id,
+      calc_summary_json: afterPayload.calc_summary,
     })
     .eq('id', id)
     .eq('status', fromStatus)

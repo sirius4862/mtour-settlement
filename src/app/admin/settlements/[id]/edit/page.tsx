@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/auth/session'
 import { createClient } from '@/lib/supabase/server'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { SettlementForm } from '@/components/settlement/SettlementForm'
+import { formatGuideDisplayName } from '@/lib/guide/display-name'
 import { canAdminEditSettlement } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -24,7 +25,7 @@ export default async function AdminSettlementEditPage({
   const supabase = await createClient()
   const { data: guide } = await supabase
     .from('profiles')
-    .select('full_name')
+    .select('full_name, email, korean_name, vietnamese_name')
     .eq('id', full.guide_id)
     .maybeSingle()
 
@@ -39,7 +40,7 @@ export default async function AdminSettlementEditPage({
       </div>
       <SettlementForm
         tours={[full.tour]}
-        guideName={guide?.full_name ?? '가이드'}
+        guideName={formatGuideDisplayName(guide)}
         mode="edit"
         initialFull={full}
         adminEdit={{ backHref: `/admin/settlements/${id}` }}

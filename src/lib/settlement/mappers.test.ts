@@ -142,6 +142,7 @@ function mockSettlementFull(): SettlementFull {
     clarification_message: null,
     active_confirmation_id: null,
     guide_submit_snapshot_id: null,
+    calc_summary_json: null,
     created_at: '',
     updated_at: '',
     tour: {

@@ -1,7 +1,9 @@
-import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
 import { requireAdmin } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
+import { createClient } from '@/lib/supabase/server'
+import { formatGuideDisplayName } from '@/lib/guide/display-name'
 import { calcSettlement } from '@/lib/settlement/calc'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { STATUS_META, canAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation } from '@/types'
@@ -19,6 +21,13 @@ export default async function AdminSettlementDetailPage({
   await requireAdmin()
   const data = await getSettlementFull(id)
   if (!data) notFound()
+
+  const supabase = await createClient()
+  const { data: guideProfile } = await supabase
+    .from('profiles')
+    .select('id, full_name, email, korean_name, vietnamese_name')
+    .eq('id', data.guide_id)
+    .maybeSingle()
 
   const { tour, hotels, meals, entrances, others, shoppings, options } = data
   const s = data
@@ -63,7 +72,7 @@ export default async function AdminSettlementDetailPage({
         <div className="bg-white rounded-2xl p-4 border border-gray-100">
           <p className="text-xs font-semibold text-gray-500 mb-2">투어 정보</p>
           <div className="space-y-1 text-xs text-gray-600">
-            <p>가이드: <strong>{s.guide_id}</strong></p>
+            <p>가이드: <strong>{formatGuideDisplayName(guideProfile)}</strong></p>
             <p>{tour.agency_name}</p>
             <p>{tour.start_date} ~ {tour.end_date} ({tour.nights}박)</p>
             <p>{tour.pax_count}명 · 환율 {s.exchange_rate.toLocaleString()}동</p>

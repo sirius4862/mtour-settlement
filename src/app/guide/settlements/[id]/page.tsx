@@ -242,7 +242,7 @@ export default async function SettlementDetailPage({
       {editable && (
         <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-100 px-4 py-3 max-w-lg mx-auto">
           <div className="flex gap-2">
-            <Link href={`/guide/settlements/new?edit=${s.id}`}
+            <Link href={`/guide/settlements/${s.id}/edit`}
               className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 text-center hover:bg-gray-50">
               수정하기
             </Link>

@@ -1,9 +1,18 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { SettlementWithTour, SettlementFull, Tour } from '@/types'
+import {
+  buildEntranceDbRows,
+  buildHotelDbRows,
+  buildMealDbRows,
+  buildOptionDbRows,
+  buildOtherDbRows,
+  buildShoppingDbRows,
+  type SettlementDraftPayload,
+  type SettlementSyncPayload,
+} from '@/lib/settlement/mappers'
 
 // ── 인증 헬퍼 ─────────────────────────────────────────────────
 
@@ -189,7 +198,136 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
 
   revalidatePath('/guide/settlements')
   revalidatePath(`/guide/settlements/${id}`)
-  redirect('/guide/settlements')
+  return { ok: true }
+}
+
+// ── 라인 아이템 저장 ───────────────────────────────────────────
+
+async function assertEditableSettlement(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  settlementId: string,
+  guideId: string,
+) {
+  const { data } = await supabase
+    .from('settlements')
+    .select('id, status')
+    .eq('id', settlementId)
+    .eq('guide_id', guideId)
+    .in('status', ['draft', 'rejected', 'edit_requested'])
+    .maybeSingle()
+  return !!data
+}
+
+/** Replace all line items for a settlement (6 tables). */
+export async function saveSettlementItems(
+  settlementId: string,
+  payload: Pick<
+    SettlementDraftPayload,
+    'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options' | 'exchange_rate'
+  >,
+): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getProfile()
+  if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
+  if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
+
+  const supabase = await createClient()
+  const editable = await assertEditableSettlement(supabase, settlementId, profile.id)
+  if (!editable) return { ok: false, error: '수정할 수 없는 정산서입니다.' }
+
+  const rate = payload.exchange_rate
+
+  const itemTables: { table: string; rows: Record<string, unknown>[] }[] = [
+    { table: 'hotel_items', rows: buildHotelDbRows(payload.hotels, settlementId) },
+    { table: 'meal_items', rows: buildMealDbRows(payload.meals, settlementId) },
+    { table: 'entrance_items', rows: buildEntranceDbRows(payload.entrances, settlementId) },
+    { table: 'other_expense_items', rows: buildOtherDbRows(payload.others, settlementId) },
+    { table: 'shopping_items', rows: buildShoppingDbRows(payload.shoppings, settlementId) },
+    { table: 'option_items', rows: buildOptionDbRows(payload.options, settlementId, rate) },
+  ]
+
+  for (const { table, rows } of itemTables) {
+    const keepIds = rows.map((r) => r.id).filter(Boolean) as string[]
+
+    let deleteQuery = supabase.from(table).delete().eq('settlement_id', settlementId)
+    if (keepIds.length > 0) {
+      deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.map((id) => `"${id}"`).join(',')})`)
+    }
+    const { error: delErr } = await deleteQuery
+    if (delErr) return { ok: false, error: delErr.message }
+
+    if (rows.length > 0) {
+      const { error: upsertErr } = await supabase.from(table).upsert(rows, { onConflict: 'id' })
+      if (upsertErr) return { ok: false, error: upsertErr.message }
+    }
+  }
+
+  revalidatePath('/guide/settlements')
+  revalidatePath(`/guide/settlements/${settlementId}`)
+  revalidatePath(`/guide/settlements/${settlementId}/edit`)
+  return { ok: true }
+}
+
+/**
+ * DB write path:
+ * 1. settlements — upsert header (insert or update draft)
+ * 2. hotel_items … option_items — delete-all + insert active rows
+ */
+export async function saveSettlementDraft(
+  payload: SettlementDraftPayload,
+): Promise<{
+  ok: boolean
+  id?: string
+  sync?: SettlementSyncPayload
+  error?: string
+}> {
+  const headerResult = await upsertSettlement({
+    id: payload.settlementId ?? undefined,
+    tour_id: payload.tourId,
+    exchange_rate: payload.exchange_rate,
+    advance_vnd: payload.header.advance_vnd,
+    tour_fee_usd: payload.header.tour_fee_usd,
+    charming_other_usd: payload.header.charming_other_usd,
+    tip_received_usd: payload.header.tip_received_usd,
+    option_credit_usd: payload.header.option_credit_usd,
+    vehicle_fee_usd: payload.header.vehicle_fee_usd,
+    head_tax_usd: payload.header.head_tax_usd,
+    seoul_biz_fee_usd: payload.header.seoul_biz_fee_usd,
+    tc_guide_usd: payload.header.tc_guide_usd,
+    tc_company_usd: payload.header.tc_company_usd,
+    megugi_usd: payload.header.megugi_usd,
+    guide_daily_fee_usd: payload.header.guide_daily_fee_usd,
+    settlement_ratio: payload.header.settlement_ratio,
+    guide_note: payload.header.guide_note,
+  })
+
+  if (!headerResult.ok || !headerResult.id) {
+    return { ok: false, error: headerResult.error ?? '헤더 저장 실패' }
+  }
+
+  const itemsResult = await saveSettlementItems(headerResult.id, payload)
+  if (!itemsResult.ok) {
+    return { ok: false, id: headerResult.id, error: itemsResult.error }
+  }
+
+  const full = await getSettlementFull(headerResult.id)
+  if (!full) {
+    return { ok: true, id: headerResult.id }
+  }
+
+  return {
+    ok: true,
+    id: headerResult.id,
+    sync: {
+      status: full.status,
+      receipts: full.receipts,
+      hotels: full.hotels,
+      meals: full.meals,
+      entrances: full.entrances,
+      others: full.others,
+      shoppings: full.shoppings,
+      options: full.options,
+    },
+  }
 }
 
 // ── 관리자 액션 ───────────────────────────────────────────────

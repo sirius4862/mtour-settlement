@@ -80,7 +80,7 @@ WITH CHECK (
       SELECT 1 FROM public.settlements s
       WHERE s.id = storage.get_settlement_id_from_path(name)
         AND s.guide_id  = auth.uid()
-        AND s.status   IN ('draft', 'rejected')
+        AND s.status   IN ('draft', 'rejected', 'edit_requested')
     )
   )
 );
@@ -103,7 +103,7 @@ USING (
       SELECT 1 FROM public.settlements s
       WHERE s.id = storage.get_settlement_id_from_path(name)
         AND s.guide_id  = auth.uid()
-        AND s.status   IN ('draft', 'rejected')
+        AND s.status   IN ('draft', 'rejected', 'edit_requested')
     )
   )
 );
@@ -141,7 +141,7 @@ WITH CHECK (
     SELECT 1 FROM public.settlements s
     WHERE s.id = settlement_id
       AND s.guide_id = auth.uid()
-      AND s.status  IN ('draft', 'rejected')
+      AND s.status  IN ('draft', 'rejected', 'edit_requested')
   )
 );
 
@@ -155,7 +155,7 @@ USING (
     SELECT 1 FROM public.settlements s
     WHERE s.id = settlement_id
       AND s.guide_id = auth.uid()
-      AND s.status  IN ('draft', 'rejected')
+      AND s.status  IN ('draft', 'rejected', 'edit_requested')
   )
 );
 

@@ -3,6 +3,8 @@
 import { useSettlementFormStore } from '@/lib/stores/settlementFormStore'
 import { ManualField, SectionCard } from '@/components/ui/FormPrimitives'
 import { CalculatedField } from '../CalculatedField'
+import { SectionHint } from '../SectionHint'
+import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import { useSettlementFormCalc } from '@/hooks/useSettlementFormCalc'
 
 export function CashReconciliationSection() {
@@ -12,7 +14,7 @@ export function CashReconciliationSection() {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-gray-500">Excel R74–76 · 입력 3개 + 계산 3개</p>
+      <SectionHint excelRows={EXCEL_SECTIONS.cash.rows} hint={EXCEL_SECTIONS.cash.hint} />
       <SectionCard>
         <div className="grid gap-3">
           <ManualField

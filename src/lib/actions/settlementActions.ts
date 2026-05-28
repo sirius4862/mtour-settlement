@@ -154,10 +154,11 @@ export async function upsertSettlement(payload: {
     .from('tours').select('start_date').eq('id', payload.tour_id).single()
   if (!tour) return { ok: false, error: '투어를 찾을 수 없습니다.' }
 
+  const { id: _omitId, ...headerFields } = payload
   const base = {
-    ...payload,
-    guide_id:   profile.id,
-    branch_id:  profile.branch_id,
+    ...headerFields,
+    guide_id: profile.id,
+    branch_id: profile.branch_id,
     year_month: tour.start_date.slice(0, 7),
   }
 
@@ -198,6 +199,8 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
 
   revalidatePath('/guide/settlements')
   revalidatePath(`/guide/settlements/${id}`)
+  revalidatePath('/admin/settlements')
+  revalidatePath(`/admin/settlements/${id}`)
   return { ok: true }
 }
 

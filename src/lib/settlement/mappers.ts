@@ -59,7 +59,12 @@ export function stateFromSettlementFull(
     others: full.others.map((o) =>
       withClientId({
         ...o,
-        use_days_for_usd: o.days != null && o.days > 0 && o.unit_price_usd > 0,
+        description: o.description,
+        days: o.days,
+        pax: o.pax,
+        unit_price_usd: o.unit_price_usd,
+        unit_price_vnd: o.unit_price_vnd,
+        use_days_for_usd: o.is_tip,
       }),
     ),
     shoppings: full.shoppings.map(withClientId),

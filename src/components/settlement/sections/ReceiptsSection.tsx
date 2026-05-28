@@ -4,6 +4,8 @@ import { receiptTargetLabel } from '@/lib/receipt/targets'
 import type { ReceiptTarget } from '@/lib/receipt/types'
 import { isReceiptEditable, useSettlementFormStore } from '@/lib/stores/settlementFormStore'
 import { SectionCard } from '@/components/ui/FormPrimitives'
+import { SectionHint } from '../SectionHint'
+import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import { ReceiptUpload } from '@/components/receipt/ReceiptUpload'
 
 function rowTitle(label: string, index: number): string {
@@ -67,6 +69,7 @@ export function ReceiptsSection({ readOnly }: { readOnly?: boolean }) {
 
   return (
     <div className="space-y-4">
+      <SectionHint excelRows={EXCEL_SECTIONS.receipts.rows} hint={EXCEL_SECTIONS.receipts.hint} />
       <SectionCard>
         <h3 className="text-sm font-semibold text-gray-800 mb-1">정산서 전체</h3>
         <p className="text-xs text-gray-400 mb-3">

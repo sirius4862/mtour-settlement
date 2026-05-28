@@ -17,6 +17,7 @@ export default async function SettlementDetailPage({
   const session = await requireGuide()
   const data = await getSettlementFull(id)
   if (!data) notFound()
+  if (session.role === 'guide' && data.guide_id !== session.id) notFound()
 
   const { tour, hotels, meals, entrances, others, shoppings, options } = data
   const s = data

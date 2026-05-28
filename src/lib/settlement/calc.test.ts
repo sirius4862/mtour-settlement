@@ -15,6 +15,7 @@ import {
   vndToUsd,
 } from './calc'
 import type { SettlementCalcInput } from './types-calc'
+import { MOCK_SETTLEMENT_INPUT } from './mock-data'
 
 const RATE = 26000
 
@@ -253,6 +254,32 @@ describe('settlement matrix', () => {
       expect(field.excelRef).toMatch(/^[A-Z]+\d+$/)
       expect(field.formula).toBeTruthy()
     }
+  })
+})
+
+describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
+  it('matches Excel-derived section and matrix totals', () => {
+    const result = calcSettlement(MOCK_SETTLEMENT_INPUT)
+
+    expect(result.sections.hotels.company_total_usd.value).toBe(300)
+    expect(result.sections.hotels.guide_total_usd.value).toBe(23)
+    expect(result.sections.meals.total_vnd.value).toBe(4_830_000)
+    expect(result.sections.meals.total_usd.value).toBeCloseTo(185.769230769, 4)
+    expect(result.sections.entrances.total_usd.value).toBeCloseTo(159.230769230, 4)
+    expect(result.sections.shopping.com_usd.value).toBe(60)
+    expect(result.sections.shopping.kb_usd.value).toBe(16)
+    expect(result.sections.options.com_usd.value).toBe(240)
+    expect(result.sections.options.extra_vehicle_usd.value).toBe(65)
+
+    expect(result.summary.income_total_usd.value).toBe(695)
+    expect(result.summary.balance_usd.value).toBe(477)
+    expect(result.summary.guide_settlement_usd.value).toBe(258.5)
+    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-328.884615384, 4)
+
+    expect(result.matrix).toHaveLength(9)
+    expect(result.matrix.map((r) => r.key)).toEqual([
+      'r79', 'r80', 'r81', 'r82', 'r83', 'r84', 'r85', 'r86', 'r87',
+    ])
   })
 })
 

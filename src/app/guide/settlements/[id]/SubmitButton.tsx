@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { submitSettlement } from '@/lib/actions/settlementActions'
 
 export function SubmitButton({ settlementId }: { settlementId: string }) {
+  const router = useRouter()
   const [pending, start] = useTransition()
   const [error, setError] = useState('')
 
@@ -11,7 +13,11 @@ export function SubmitButton({ settlementId }: { settlementId: string }) {
     if (!confirm('정산서를 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.')) return
     start(async () => {
       const res = await submitSettlement(settlementId)
-      if (!res?.ok) setError(res?.error ?? '오류 발생')
+      if (res?.ok) {
+        router.refresh()
+      } else {
+        setError(res?.error ?? '오류 발생')
+      }
     })
   }
 

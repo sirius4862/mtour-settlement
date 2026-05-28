@@ -14,8 +14,22 @@ export interface AccordionSection {
   footer?: ReactNode
 }
 
-export function SettlementAccordion({ sections }: { sections: AccordionSection[] }) {
-  const [openId, setOpenId] = useState<string>(sections[0]?.id ?? '')
+export function SettlementAccordion({
+  sections,
+  openId: controlledOpenId,
+  onOpenIdChange,
+}: {
+  sections: AccordionSection[]
+  openId?: string
+  onOpenIdChange?: (id: string) => void
+}) {
+  const [internalOpenId, setInternalOpenId] = useState<string>(sections[0]?.id ?? '')
+  const openId = controlledOpenId ?? internalOpenId
+
+  const setOpenId = (id: string) => {
+    if (onOpenIdChange) onOpenIdChange(id)
+    else setInternalOpenId(id)
+  }
 
   return (
     <div className="space-y-2">

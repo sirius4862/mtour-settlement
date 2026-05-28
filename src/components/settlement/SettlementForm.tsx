@@ -5,9 +5,17 @@ import { useRouter } from 'next/navigation'
 import type { SettlementFull, Tour } from '@/types'
 import { saveSettlementDraft, submitSettlement } from '@/lib/actions/settlementActions'
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
+import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
+import {
+  firstErrorSection,
+  validateSettlementForm,
+  validationErrors,
+  type ValidationIssue,
+} from '@/lib/settlement/validation'
 import { activeRowCount, useSettlementFormStore } from '@/lib/stores/settlementFormStore'
 import { useSettlementFormCalc } from '@/hooks/useSettlementFormCalc'
 import { MockBadge } from '@/components/ui/FormPrimitives'
+import { ValidationBanner } from './SectionHint'
 import { SettlementAccordion, type AccordionSection } from './SettlementAccordion'
 import { SectionSubtotal } from './SectionSubtotal'
 import { SettlementFormFooter } from './SettlementFormFooter'
@@ -38,6 +46,8 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
   const router = useRouter()
   const hydrated = useRef(false)
   const [pending, setPending] = useState(false)
+  const [openSectionId, setOpenSectionId] = useState('basic')
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([])
 
   const hydrateFromFull = useSettlementFormStore((s) => s.hydrateFromFull)
   const resetNew = useSettlementFormStore((s) => s.resetNew)
@@ -65,33 +75,55 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
 
   useEffect(() => {
     if (hydrated.current) return
-    hydrated.current = true
 
-    if (mode === 'preview') {
-      useSettlementFormStore.setState(stateFromMock(guideName))
+    const bootstrap = () => {
+      hydrated.current = true
+
+      if (mode === 'preview') {
+        useSettlementFormStore.setState(stateFromMock(guideName))
+        return
+      }
+
+      if (mode === 'edit' && initialFull) {
+        // Server data must win over sessionStorage draft on edit reload
+        useSettlementFormStore.persist.clearStorage()
+        hydrateFromFull(initialFull, guideName)
+        return
+      }
+
+      const s = useSettlementFormStore.getState()
+      if (s.guideName !== guideName) {
+        resetNew(guideName)
+      }
+    }
+
+    if (useSettlementFormStore.persist.hasHydrated()) {
+      bootstrap()
       return
     }
 
-    if (mode === 'edit' && initialFull) {
-      hydrateFromFull(initialFull, guideName)
-      return
-    }
-
-    const s = useSettlementFormStore.getState()
-    if (s.guideName !== guideName) {
-      resetNew(guideName)
-    }
+    return useSettlementFormStore.persist.onFinishHydration(bootstrap)
   }, [mode, initialFull, guideName, hydrateFromFull, resetNew])
+
+  const runValidation = useCallback((intent: 'draft' | 'submit') => {
+    const issues = validateSettlementForm(useSettlementFormStore.getState(), intent)
+    setValidationIssues(issues)
+    const section = firstErrorSection(issues)
+    if (section) setOpenSectionId(section)
+    const errors = validationErrors(issues)
+    return { ok: errors.length === 0, errors }
+  }, [])
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     if (isPreview) return false
 
-    const state = useSettlementFormStore.getState()
-    if (!state.tourId) {
-      setSaveError('투어를 선택해주세요.')
+    const { ok, errors } = runValidation('draft')
+    if (!ok) {
+      setSaveError(errors[0]?.message ?? '입력 내용을 확인해주세요.')
       return false
     }
 
+    const state = useSettlementFormStore.getState()
     setPending(true)
     setSaving()
 
@@ -113,10 +145,20 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     } finally {
       setPending(false)
     }
-  }, [isPreview, setSaving, markSaved, mergeServerSync, setSaveError])
+  }, [isPreview, runValidation, setSaving, markSaved, mergeServerSync, setSaveError])
 
   const handleSubmit = useCallback(async () => {
     if (isPreview) return
+
+    const { ok, errors } = runValidation('submit')
+    if (!ok) {
+      setSaveError(errors[0]?.message ?? '제출 전 필수 항목을 확인해주세요.')
+      return
+    }
+
+    if (!window.confirm('정산서를 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.')) {
+      return
+    }
 
     const saved = await handleSave()
     if (!saved) return
@@ -146,7 +188,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'basic',
       title: '기본정보',
-      excelRows: 'R1–4, Q2, A76',
+      excelRows: EXCEL_SECTIONS.basic.rows,
       children: (
         <BasicInfoSection
           tours={tours}
@@ -158,7 +200,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'hotels',
       title: '호텔',
-      excelRows: 'R6–12',
+      excelRows: EXCEL_SECTIONS.hotels.rows,
       preview: sections.hotels.company_total_usd,
       badge: `${hotelRowCount}행`,
       children: <HotelsSection />,
@@ -172,7 +214,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'meals',
       title: '식사',
-      excelRows: 'R14–25',
+      excelRows: EXCEL_SECTIONS.meals.rows,
       preview: sections.meals.total_usd,
       badge: `${mealRowCount}행`,
       children: <MealsSection />,
@@ -183,7 +225,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'entrances',
       title: '입장료',
-      excelRows: 'R27–38',
+      excelRows: EXCEL_SECTIONS.entrances.rows,
       preview: sections.entrances.total_usd,
       badge: `${entranceRowCount}행`,
       children: <EntrancesSection />,
@@ -197,7 +239,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'others',
       title: '기타지출',
-      excelRows: 'R40–53',
+      excelRows: EXCEL_SECTIONS.others.rows,
       preview: sections.others.combined_usd,
       badge: `${otherRowCount}행`,
       children: <OthersSection />,
@@ -215,7 +257,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'shopping',
       title: '쇼핑',
-      excelRows: 'R55–72 (B–H)',
+      excelRows: EXCEL_SECTIONS.shopping.rows,
       preview: sections.shopping.com_usd,
       badge: `${shoppingRowCount}행`,
       children: <ShoppingSection />,
@@ -233,7 +275,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'options',
       title: '옵션',
-      excelRows: 'R55–73 (J–S)',
+      excelRows: EXCEL_SECTIONS.options.rows,
       preview: sections.options.com_usd,
       badge: `${optionRowCount}행`,
       children: <OptionsSection />,
@@ -247,7 +289,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'cash',
       title: '입금 정리',
-      excelRows: 'R74–76',
+      excelRows: EXCEL_SECTIONS.cash.rows,
       preview: sections.cash.company_deposit_usd,
       children: <CashReconciliationSection />,
       footer: (
@@ -264,24 +306,22 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
     {
       id: 'tc',
       title: 'T/C 정산',
-      excelRows: 'H83, J83',
+      excelRows: EXCEL_SECTIONS.tc.rows,
       children: <TCSettlementSection />,
     },
     {
       id: 'adjustments',
       title: '정산 조정',
-      excelRows: 'O79–81, R77, R80, R82',
+      excelRows: EXCEL_SECTIONS.adjustments.rows,
       preview: calc.summary.balance_usd,
       children: <FinalAdjustmentsSection />,
     },
     {
       id: 'summary',
       title: '정산내역 (최종)',
-      excelRows: 'R77–R87',
+      excelRows: EXCEL_SECTIONS.summary.rows,
       preview: calc.summary.guide_settlement_usd,
-      children: (
-        <FinalSummarySection calc={calc} settlementRatio={settlementRatio} />
-      ),
+      children: <FinalSummarySection calc={calc} settlementRatio={settlementRatio} />,
     },
     {
       id: 'receipts',
@@ -318,7 +358,17 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
       </div>
 
       <div className="flex-1 px-4 py-4">
-        <SettlementAccordion sections={accordionSections} />
+        {!isPreview && (
+          <ValidationBanner
+            issues={validationIssues}
+            onDismiss={() => setValidationIssues([])}
+          />
+        )}
+        <SettlementAccordion
+          sections={accordionSections}
+          openId={openSectionId}
+          onOpenIdChange={setOpenSectionId}
+        />
       </div>
 
       {isPreview ? (

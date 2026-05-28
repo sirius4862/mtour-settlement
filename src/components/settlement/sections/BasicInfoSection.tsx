@@ -5,6 +5,8 @@ import type { AnnotatedNumber } from '@/lib/settlement/types-calc'
 import { tourLabel } from '@/lib/settlement/mappers'
 import { ManualField, ReadOnlyField, SectionCard } from '@/components/ui/FormPrimitives'
 import { CalculatedField } from '../CalculatedField'
+import { SectionHint } from '../SectionHint'
+import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import { useSettlementFormStore } from '@/lib/stores/settlementFormStore'
 
 interface Props {
@@ -25,6 +27,7 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
 
   return (
     <div className="space-y-4">
+      <SectionHint excelRows={EXCEL_SECTIONS.basic.rows} hint={EXCEL_SECTIONS.basic.hint} />
       {!readOnlyTour && !tourId && (
         <SectionCard>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -66,6 +69,7 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
           label="환율 (VND/USD)"
           excelRef="Q2"
           suffix="₫/$"
+          required
           inputMode="decimal"
           value={exchange_rate || ''}
           onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
@@ -83,6 +87,7 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
           label="투어피 (USD)"
           excelRef="D79"
           suffix="$"
+          required
           inputMode="decimal"
           value={header.tour_fee_usd || ''}
           onChange={(e) => patchHeader({ tour_fee_usd: parseFloat(e.target.value) || 0 })}

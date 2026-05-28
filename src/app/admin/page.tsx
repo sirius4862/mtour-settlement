@@ -26,6 +26,9 @@ export default async function AdminPage() {
       <div>
         <h1 className="text-xl font-bold text-gray-900">관리자 대시보드</h1>
         <p className="text-sm text-gray-500 mt-0.5">{ym} 기준</p>
+        <Link href="/admin/tours/new" className="text-sm text-blue-600 mt-2 inline-block">
+          + 투어 등록 (가이드 정산 테스트용)
+        </Link>
       </div>
 
       {/* 통계 카드 */}

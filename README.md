@@ -186,10 +186,10 @@ vercel --prod
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-## 다음 개발 단계 (v2)
+## 로드맵
 
-- [ ] 관리자 정산서 목록 + 승인 페이지 (`/admin/settlements`)
-- [ ] 엑셀 다운로드 API Route (`/api/settlements/export`)
-- [ ] 이메일 알림 (Supabase Edge Function + Resend)
-- [ ] 관리자 가이드 계정 관리 (`/admin/guides`)
-- [ ] 통계 대시보드 차트
+**현재 우선순위:** Excel 정산 안정화 → 가이드/관리자 실전 테스트 → 저장/재로드 일관성
+
+향후 단계(투어 배정, 차량회사 워크플로)는 아키텍처만 승인된 상태이며 **아직 구현하지 않습니다.**
+
+→ [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`docs/PRODUCT_WORKFLOW.md`](docs/PRODUCT_WORKFLOW.md)

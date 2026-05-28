@@ -158,24 +158,40 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
         set((s) => ({ ...mergeServerSync(s, sync) })),
 
       addReceipt: (receipt) =>
-        set((s) => ({ receipts: [receipt, ...s.receipts] })),
+        set((s) => ({ receipts: [receipt, ...(s.receipts ?? [])] })),
 
       removeReceipt: (receiptId) =>
-        set((s) => ({ receipts: s.receipts.filter((r) => r.id !== receiptId) })),
+        set((s) => ({ receipts: (s.receipts ?? []).filter((r) => r.id !== receiptId) })),
 
-      setReceipts: (receipts) => set({ receipts }),
+      setReceipts: (receipts) => set({ receipts: receipts ?? [] }),
     }),
     {
       name: 'settlement-form-draft',
       storage: createJSONStorage(() => sessionStorage),
       partialize: persistable,
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as Partial<SettlementFormState>),
+        receipts: (persisted as Partial<SettlementFormState>)?.receipts ?? current.receipts ?? [],
+        settlementStatus:
+          (persisted as Partial<SettlementFormState>)?.settlementStatus ??
+          current.settlementStatus ??
+          null,
+        hotels: (persisted as Partial<SettlementFormState>)?.hotels ?? current.hotels ?? [],
+        meals: (persisted as Partial<SettlementFormState>)?.meals ?? current.meals ?? [],
+        entrances: (persisted as Partial<SettlementFormState>)?.entrances ?? current.entrances ?? [],
+        others: (persisted as Partial<SettlementFormState>)?.others ?? current.others ?? [],
+        shoppings: (persisted as Partial<SettlementFormState>)?.shoppings ?? current.shoppings ?? [],
+        options: (persisted as Partial<SettlementFormState>)?.options ?? current.options ?? [],
+      }),
     },
   ),
 )
 
 export function activeRowCount(section: LineSection, state: SettlementFormState): number {
   const key = ROW_KEYS[section]
-  return (state[key] as Array<{ deleted?: boolean }>).filter((r) => !r.deleted).length
+  const rows = (state[key] as Array<{ deleted?: boolean }> | undefined) ?? []
+  return rows.filter((r) => !r.deleted).length
 }
 
 export function isReceiptEditable(state: Pick<SettlementFormState, 'settlementStatus'>): boolean {

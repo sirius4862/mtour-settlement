@@ -24,7 +24,7 @@ export function ReceiptUpload({
   compact?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const receipts = useSettlementFormStore((s) => s.receipts)
+  const receipts = useSettlementFormStore((s) => s.receipts ?? [])
   const removeReceipt = useSettlementFormStore((s) => s.removeReceipt)
   const { upload, progress, state, error } = useReceiptUpload()
   const [preview, setPreview] = useState<Receipt | null>(null)

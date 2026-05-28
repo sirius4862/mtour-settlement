@@ -13,13 +13,13 @@ function rowTitle(label: string, index: number): string {
 export function ReceiptsSection({ readOnly }: { readOnly?: boolean }) {
   const settlementId = useSettlementFormStore((s) => s.settlementId)
   const settlementStatus = useSettlementFormStore((s) => s.settlementStatus)
-  const receipts = useSettlementFormStore((s) => s.receipts)
-  const hotels = useSettlementFormStore((s) => s.hotels)
-  const meals = useSettlementFormStore((s) => s.meals)
-  const entrances = useSettlementFormStore((s) => s.entrances)
-  const others = useSettlementFormStore((s) => s.others)
-  const shoppings = useSettlementFormStore((s) => s.shoppings)
-  const options = useSettlementFormStore((s) => s.options)
+  const receipts = useSettlementFormStore((s) => s.receipts ?? [])
+  const hotels = useSettlementFormStore((s) => s.hotels ?? [])
+  const meals = useSettlementFormStore((s) => s.meals ?? [])
+  const entrances = useSettlementFormStore((s) => s.entrances ?? [])
+  const others = useSettlementFormStore((s) => s.others ?? [])
+  const shoppings = useSettlementFormStore((s) => s.shoppings ?? [])
+  const options = useSettlementFormStore((s) => s.options ?? [])
 
   const editable = !readOnly && isReceiptEditable({ settlementStatus })
   const disabledReason = !editable

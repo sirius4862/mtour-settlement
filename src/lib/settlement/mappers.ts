@@ -101,7 +101,7 @@ export function toCalcInput(state: SettlementFormState): SettlementCalcInput {
   return {
     exchange_rate: state.exchange_rate,
     header: state.header,
-    hotels: state.hotels.map((h) => ({
+    hotels: (state.hotels ?? []).map((h) => ({
       sgl_count: h.sgl_count,
       twn_count: h.twn_count,
       trp_count: h.trp_count,
@@ -111,17 +111,17 @@ export function toCalcInput(state: SettlementFormState): SettlementCalcInput {
       guide_amount_usd: h.guide_amount_usd,
       deleted: h.deleted,
     })),
-    meals: state.meals.map((m) => ({
+    meals: (state.meals ?? []).map((m) => ({
       pax: m.pax,
       unit_price_vnd: m.unit_price_vnd,
       deleted: m.deleted,
     })),
-    entrances: state.entrances.map((e) => ({
+    entrances: (state.entrances ?? []).map((e) => ({
       pax: e.pax,
       unit_price_vnd: e.unit_price_vnd,
       deleted: e.deleted,
     })),
-    others: state.others.map((o) => ({
+    others: (state.others ?? []).map((o) => ({
       days: o.days,
       pax: o.pax,
       unit_price_usd: o.unit_price_usd,
@@ -129,13 +129,13 @@ export function toCalcInput(state: SettlementFormState): SettlementCalcInput {
       use_days_for_usd: o.use_days_for_usd,
       deleted: o.deleted,
     })),
-    shoppings: state.shoppings.map((s) => ({
+    shoppings: (state.shoppings ?? []).map((s) => ({
       sale_usd: s.sale_usd,
       com_usd: s.com_usd,
       kb_usd: s.kb_usd,
       deleted: s.deleted,
     })),
-    options: state.options.map((o) => ({
+    options: (state.options ?? []).map((o) => ({
       unit_price_usd: o.unit_price_usd,
       pax: o.pax,
       expense_usd: o.expense_usd,

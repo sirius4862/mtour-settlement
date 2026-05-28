@@ -45,7 +45,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull }: Props) {
   const markSaved = useSettlementFormStore((s) => s.markSaved)
   const mergeServerSync = useSettlementFormStore((s) => s.mergeServerSync)
   const setSaveError = useSettlementFormStore((s) => s.setSaveError)
-  const receiptCount = useSettlementFormStore((s) => s.receipts.length)
+  const receiptCount = useSettlementFormStore((s) => (s.receipts ?? []).length)
 
   const saveStatus = useSettlementFormStore((s) => s.saveStatus)
   const dirty = useSettlementFormStore((s) => s.dirty)

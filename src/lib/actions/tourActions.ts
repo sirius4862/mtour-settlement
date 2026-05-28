@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import type { Branch, Tour } from '@/types'
-import { calcTourNights } from '@/lib/tour/nights'
 
 export interface GuideOption {
   id: string
@@ -126,8 +125,6 @@ export async function createTour(
     return { ok: false, error: '가이드 지사와 선택한 지사가 일치하지 않습니다.' }
   }
 
-  const nights = calcTourNights(input.start_date, input.end_date)
-
   const { data, error } = await ctx.supabase
     .from('tours')
     .insert({
@@ -136,7 +133,6 @@ export async function createTour(
       pattern,
       start_date: input.start_date,
       end_date: input.end_date,
-      nights,
       pax_count: Math.round(input.pax_count),
       vehicle_type,
       guide_id: input.guide_id,

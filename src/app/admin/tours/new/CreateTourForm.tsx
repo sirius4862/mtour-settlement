@@ -6,6 +6,7 @@ import Link from 'next/link'
 import type { Branch } from '@/types'
 import type { GuideOption } from '@/lib/actions/tourActions'
 import { createTour } from '@/lib/actions/tourActions'
+import { calcTourNights } from '@/lib/tour/nights'
 import { FieldLabel, SectionCard } from '@/components/ui/FormPrimitives'
 
 interface Props {
@@ -33,6 +34,11 @@ export function CreateTourForm({ branches, guides }: Props) {
     () => guides.find((g) => g.id === guideId),
     [guides, guideId],
   )
+
+  const nightsPreview = useMemo(() => {
+    if (!startDate || !endDate || endDate < startDate) return null
+    return calcTourNights(startDate, endDate)
+  }, [startDate, endDate])
 
   const handleGuideChange = (id: string) => {
     setGuideId(id)
@@ -127,6 +133,12 @@ export function CreateTourForm({ branches, guides }: Props) {
               />
             </div>
           </div>
+          {nightsPreview !== null && (
+            <p className="text-xs text-gray-500">
+              예상 박수: <span className="font-medium text-gray-700">{nightsPreview}박</span>
+              <span className="text-gray-400 ml-1">(DB에서 자동 계산 · 저장 시 반영)</span>
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <FieldLabel required>인원</FieldLabel>

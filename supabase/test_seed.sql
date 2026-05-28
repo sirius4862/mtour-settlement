@@ -24,6 +24,8 @@ SELECT id AS branch_id, name, code FROM branches LIMIT 5;
 -- start_date 는 오늘 기준 90일 이내여야 앱 목록에 표시됩니다.
 -- 아래 guide_id, branch_id, created_by 를 STEP 1 결과로 교체하세요.
 
+-- nights 컬럼은 DB generated — INSERT 시 넣지 마세요.
+
 /*
 INSERT INTO tours (
   tour_code,
@@ -31,7 +33,6 @@ INSERT INTO tours (
   agency_name,
   start_date,
   end_date,
-  nights,
   pax_count,
   vehicle_type,
   guide_id,
@@ -44,7 +45,6 @@ INSERT INTO tours (
   'M투어 테스트',
   '2026-05-01',
   '2026-05-04',
-  3,
   18,
   '29인승',
   'GUIDE-UUID-HERE',

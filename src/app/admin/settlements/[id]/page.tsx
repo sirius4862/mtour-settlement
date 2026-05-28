@@ -114,7 +114,8 @@ export default async function AdminSettlementDetailPage({
         <div className="space-y-1.5 text-xs">
           {[
             ['투어피 (D79)', fmt2(m('r79')?.income?.value ?? 0)],
-            ['쇼핑수익 D72+SUM(F72) (D80)', fmt2(m('r80')?.income?.value ?? 0)],
+            ['쇼핑수익 COM (D80)', fmt2(m('r80')?.income?.value ?? 0)],
+            ['쇼핑 SALE 참고 (D72)', fmt2(sections.shopping.sale_usd.value)],
             ['옵션수익 S72 (D81)', fmt2(m('r81')?.income?.value ?? 0)],
             ['받은팁 (D82)', fmt2(m('r82')?.income?.value ?? 0)],
             ['추가수익 (D83)', fmt2(m('r83')?.income?.value ?? 0)],
@@ -128,12 +129,12 @@ export default async function AdminSettlementDetailPage({
             ['기타포함 SUM(O79:O83) (O84)', fmt2(m('r84')?.included?.value ?? 0)],
             ['─ 지출합계 H84+J84+M84+O84 (H85)', fmt2(summary.expense_total_usd.value), true],
             ['─ 수익−지출 (F86)', fmt2(summary.company_gross_usd.value), true],
-            ['정산풀 D80+D81 (R79)', fmt2(m('r79')?.settlement?.value ?? 0)],
+            ['정산풀 F72+D81 (R79)', fmt2(m('r79')?.settlement?.value ?? 0)],
             ['메꾸기 (R80)', `- ${fmt2(m('r80')?.settlement?.value ?? 0)}`],
             ['T/C정산공제 H83+J83 (R81)', `- ${fmt2(m('r81')?.settlement?.value ?? 0)}`],
             ['─ 차액밸런스 R79−R80−R81 (R84)', fmt2(summary.balance_usd.value), true],
             ['가이드일비 (R82)', fmt2(m('r82')?.settlement?.value ?? 0)],
-            [`─ 계산상 가이드정산 R84×${Math.round(s.settlement_ratio * 100)}%+R82 (R85)`, fmt2(guideSettlement), true, true],
+            ['─ 계산상 가이드정산 MAX((F72+D81−R80)×50%,0)+R82 (R85)', fmt2(guideSettlement), true, true],
             ...(payoutIsFloored
               ? [['─ 실제 지급액 MAX(R85,0) (P85)', fmt2(guidePayout), true] as const]
               : []),

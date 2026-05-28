@@ -13,9 +13,9 @@ import {
   calcOtherSubtotals,
   calcShoppingActualProfitUsd,
   calcShoppingSubtotals,
-  calcShoppingIncomeD80,
   computeSettlementMatrixValues,
   GUIDE_SETTLEMENT_FORMULA,
+  SETTLEMENT_SHOPPING_PROFIT_FORMULA,
 } from './calc'
 import type { SettlementCalcInput, SettlementCalcResult } from './types-calc'
 
@@ -73,7 +73,7 @@ export interface ExcelSettlementVerification {
 
 /** Excel cell formulas the engine must follow. */
 export const EXCEL_FORMULA_CONTRACT: Record<string, string> = {
-  D80: 'D72+SUM(F72)',
+  D80: SETTLEMENT_SHOPPING_PROFIT_FORMULA,
   R79: 'D80+D81',
   R84: 'R79−R80−R81',
   R85: GUIDE_SETTLEMENT_FORMULA,
@@ -195,7 +195,7 @@ export function verifyExcelFormulaFlow(
     violations.push({ step, excelRef, expected, actual })
   }
 
-  const expectedD80 = shopping.sale_usd.value + shopping.com_usd.value
+  const expectedD80 = shopping.com_usd.value
   const d80Row = result.matrix.find((r) => r.key === 'r80')?.income?.value
   if (d80Row != null && !nearlyEqual(d80Row, expectedD80)) {
     push('D80', 'D80', `${EXCEL_FORMULA_CONTRACT.D80} (= ${expectedD80})`, String(d80Row))
@@ -204,14 +204,13 @@ export function verifyExcelFormulaFlow(
     push('D80 reference', 'D80', String(expectedD80), String(reference.steps.d80_shopping_income_usd))
   }
 
-  const comOnlyPool = shopping.com_usd.value + options.com_usd.value
-  if (nearlyEqual(reference.steps.r79_settlement_pool_usd, comOnlyPool) &&
-      !nearlyEqual(shopping.sale_usd.value, 0)) {
+  const excelLegacyD80 = shopping.sale_usd.value + shopping.com_usd.value
+  if (d80Row != null && nearlyEqual(d80Row, excelLegacyD80) && !nearlyEqual(shopping.sale_usd.value, 0)) {
     push(
-      'R79',
-      'R79',
-      `${EXCEL_FORMULA_CONTRACT.R79} with D80=SALE+COM (= ${expectedD80 + options.com_usd.value})`,
-      `COM-only pool (= ${comOnlyPool})`,
+      'D80',
+      'D80',
+      `${EXCEL_FORMULA_CONTRACT.D80} (= ${expectedD80})`,
+      `SALE+COM legacy (= ${excelLegacyD80})`,
     )
   }
 

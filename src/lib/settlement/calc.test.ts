@@ -14,6 +14,7 @@ import {
   calcOtherAmountUsd,
   calcOtherAmountVnd,
   calcSettlement,
+  calcShoppingActualProfitUsd,
   calcShoppingIncomeD80,
   vndToUsd,
 } from './calc'
@@ -261,12 +262,11 @@ describe('settlement matrix', () => {
     // Option O72=50, P72=5, Q72=0 → S72=45
     expect(result.sections.options.com_usd.value).toBe(45)
 
-    // D84 = 100 + 70 + 45 + 5 + 10 = 230
-    expect(result.summary.income_total_usd.value).toBe(230)
+    // D84 = 100 + 20 + 45 + 5 + 10 = 180 (D80=COM only)
+    expect(result.summary.income_total_usd.value).toBe(180)
 
-    // R79 = 70+45 = 115, R84 = 115-2-12 = 101
-    // 가이드정산 = (F72 20 + option 45 - 2)*50%+15 = 46.5
-    expect(result.summary.balance_usd.value).toBe(101)
+    // R79 = 20+45 = 65, R84 = 65-2-12 = 51
+    expect(result.summary.balance_usd.value).toBe(51)
     expect(result.summary.guide_settlement_usd.value).toBe(46.5)
 
     // Matrix has Excel-like rows including R87
@@ -286,7 +286,7 @@ describe('settlement matrix', () => {
         shoppings: [{ sale_usd: -5, com_usd: 0, kb_usd: 0 }],
       }),
     )
-    expect(result.summary.income_total_usd.value).toBe(-15)
+    expect(result.summary.income_total_usd.value).toBe(-10)
   })
 
   it('every summary field includes label and formula', () => {
@@ -436,8 +436,17 @@ describe('guide settlement policy — calcSettlement integration', () => {
 
 describe('guide payout — production regression', () => {
   it('case 1: shopping COM 5500 + option 281.54 → ≈2890.77', () => {
-    const result = calcSettlement(screenLikeInput(9460, 5500, 281.54, 0, 0))
+    const result = calcSettlement(screenLikeInput(15500, 5500, 281.54, 0, 0))
+    expect(result.sections.shopping.sale_usd.value).toBe(15500)
+    expect(result.sections.shopping.com_usd.value).toBe(5500)
+    expect(result.matrix.find((r) => r.key === 'r80')?.income?.value).toBe(5500)
     expect(result.summary.guide_payout_usd.value).toBeCloseTo(2890.77, 2)
+  })
+
+  it('case 1b: large SALE must not inflate D80 or R79', () => {
+    const result = calcSettlement(screenLikeInput(15500, 5500, 281.54, 0, 0))
+    expect(result.matrix.find((r) => r.key === 'r80')?.income?.value).toBe(5500)
+    expect(result.matrix.find((r) => r.key === 'r79')?.settlement?.value).toBeCloseTo(5781.54, 2)
   })
 
   it('case 2: megugi 1000 reduces payout to 2390.77', () => {
@@ -459,8 +468,9 @@ describe('guide payout — production regression', () => {
 })
 
 describe('Excel matrix helpers', () => {
-  it('D80 = D72+SUM(F72) shopping income', () => {
+  it('D80 operational = COM only; legacy helper still sums SALE+COM', () => {
     expect(calcShoppingIncomeD80(200, 60)).toBe(260)
+    expect(calcShoppingActualProfitUsd(60)).toBe(60)
   })
 
   it('H85 = H84+J84+M84+O84 with operational M84=0', () => {
@@ -482,10 +492,10 @@ describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
     expect(result.sections.options.com_usd.value).toBe(240)
     expect(result.sections.options.extra_vehicle_usd.value).toBe(65)
 
-    expect(result.summary.income_total_usd.value).toBe(695)
-    expect(result.summary.balance_usd.value).toBe(477)
+    expect(result.summary.income_total_usd.value).toBe(495)
+    expect(result.summary.balance_usd.value).toBe(277)
     expect(result.summary.guide_settlement_usd.value).toBe(168.5)
-    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-238.884615384, 4)
+    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-438.884615384, 4)
 
     const excelCheck = verifySettlementAgainstExcel(result, MOCK_SETTLEMENT_INPUT)
     expect(excelCheck.acceptable).toBe(true)

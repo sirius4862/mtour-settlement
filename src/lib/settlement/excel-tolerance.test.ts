@@ -105,12 +105,12 @@ describe('verifySettlementAgainstExcel — MOCK golden', () => {
     const ref = computeExcelReferenceFinals(MOCK_SETTLEMENT_INPUT)
     expect(ref.guide_settlement_usd).toBe(168.5)
     expect(ref.company_deposit_usd).toBeCloseTo(79.615384615, 4)
-    expect(ref.company_grand_total_usd).toBeCloseTo(-238.884615384, 4)
+    expect(ref.company_grand_total_usd).toBeCloseTo(-438.884615384, 4)
   })
 })
 
 describe('verifySettlementAgainstExcel — formula direction guard', () => {
-  it('fails when R79 would use COM-only pool (wrong Excel direction)', () => {
+  it('fails when D80 reference uses SALE+COM legacy instead of COM-only', () => {
     const input = emptyInput({
       header: {
         ...emptyInput().header,
@@ -131,16 +131,15 @@ describe('verifySettlementAgainstExcel — formula direction guard', () => {
       ...reference,
       steps: {
         ...reference.steps,
-        d80_shopping_income_usd: 20,
-        r79_settlement_pool_usd: 20 + reference.steps.d81_option_com_usd,
-        r84_balance_usd: 20 + reference.steps.d81_option_com_usd,
+        d80_shopping_income_usd: 120,
+        r79_settlement_pool_usd: 120 + reference.steps.d81_option_com_usd,
+        r84_balance_usd: 120 + reference.steps.d81_option_com_usd,
       },
-      guide_settlement_usd: (20 + reference.steps.d81_option_com_usd) * 0.5,
     }
 
     const flow = verifyExcelFormulaFlow(result, input, wrongReference)
     expect(flow.ok).toBe(false)
-    expect(flow.violations.some((v) => v.step === 'R79')).toBe(true)
+    expect(flow.violations.some((v) => v.step.includes('D80'))).toBe(true)
   })
 
   it('does not accept > 1 USD final gap as passing', () => {

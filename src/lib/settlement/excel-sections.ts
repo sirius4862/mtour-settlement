@@ -22,7 +22,7 @@ export const EXCEL_SECTIONS = {
   },
   shopping: {
     rows: 'R55–72 (B–H)',
-    hint: '쇼핑 SALE(D), COM(F), KB(H). D80 = D72+SUM(F72) (Excel E72+SUM(F72) when E72 absent).',
+    hint: '쇼핑 SALE(D)는 참고, 정산수익 D80은 COM(F)만 반영. KB(H)는 회사수익(R87)에 가산.',
   },
   options: {
     rows: 'R55–73 (J–S)',

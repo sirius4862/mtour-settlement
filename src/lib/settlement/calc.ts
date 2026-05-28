@@ -193,8 +193,7 @@ export function calcOptionSubtotals(options: OptionCalcRow[], exchangeRate: numb
 }
 
 /**
- * Excel D80 = E72+SUM(F72). Row 72 has no E72 cell; operational equivalent is D72+SUM(F72).
- * D72 = SUM(D57:E71), F72 = SUM(F57:G71).
+ * Excel legacy: D72+SUM(F72) — reference only; not used for settlement profit (see calcShoppingActualProfitUsd).
  */
 export function calcShoppingIncomeD80(d72SaleUsd: number, f72ComUsd: number): number {
   return d72SaleUsd + f72ComUsd
@@ -258,6 +257,9 @@ export const GUIDE_PROFIT_SHARE_RATIO = 0.5
 
 export const GUIDE_SETTLEMENT_FORMULA = 'MAX((F72+D81−R80)×50%,0)+R82'
 
+/** Operational settlement D80 — shopping COM (F72) only; SALE (D72) excluded from profit pool. */
+export const SETTLEMENT_SHOPPING_PROFIT_FORMULA = 'SUM(F72)'
+
 /** Shopping profit for guide settlement — COM (F72) only, not D80 (SALE+COM). */
 export function calcShoppingActualProfitUsd(comUsd: number): number {
   return comUsd
@@ -297,7 +299,7 @@ export function computeSettlementMatrixValues(
   const h = header
   const d72 = sections.shopping.sale_usd.value
   const f72 = sections.shopping.com_usd.value
-  const d80 = calcShoppingIncomeD80(d72, f72)
+  const d80 = calcShoppingActualProfitUsd(f72)
   const d79 = h.tour_fee_usd
   const d81 = sections.options.com_usd.value
   const d82 = h.tip_received_usd
@@ -496,8 +498,8 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     },
     {
       key: 'r80',
-      incomeLabel: '쇼핑수익',
-      income: annotate(d80, '쇼핑수익', 'D80', 'D72+SUM(F72)'),
+      incomeLabel: '쇼핑수익(COM)',
+      income: annotate(d80, '쇼핑수익(COM)', 'D80', SETTLEMENT_SHOPPING_PROFIT_FORMULA),
       expenseLabel: '식사비',
       guideExpense: annotate(h80, '식사비', 'H80', 'J25'),
       settlementLabel: '메꾸기',

@@ -3,6 +3,7 @@ import {
   activeRows,
   calcEntranceAmountVnd,
   calcExtraVehicleUsd,
+  calcExpenseTotalH85,
   calcHotelCompanyUsd,
   calcHotelRow,
   calcMealAmountVnd,
@@ -12,10 +13,12 @@ import {
   calcOtherAmountUsd,
   calcOtherAmountVnd,
   calcSettlement,
+  calcShoppingIncomeD80,
   vndToUsd,
 } from './calc'
 import type { SettlementCalcInput } from './types-calc'
 import { MOCK_SETTLEMENT_INPUT } from './mock-data'
+import { verifySettlementAgainstExcel } from './excel-tolerance'
 
 const RATE = 26000
 
@@ -297,6 +300,16 @@ describe('settlement matrix', () => {
   })
 })
 
+describe('Excel matrix helpers', () => {
+  it('D80 = D72+SUM(F72) shopping income', () => {
+    expect(calcShoppingIncomeD80(200, 60)).toBe(260)
+  })
+
+  it('H85 = H84+J84+M84+O84 with operational M84=0', () => {
+    expect(calcExpenseTotalH85(400, 308, 38)).toBe(746)
+  })
+})
+
 describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
   it('matches Excel-derived section and matrix totals', () => {
     const result = calcSettlement(MOCK_SETTLEMENT_INPUT)
@@ -315,6 +328,10 @@ describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
     expect(result.summary.balance_usd.value).toBe(477)
     expect(result.summary.guide_settlement_usd.value).toBe(258.5)
     expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-328.884615384, 4)
+
+    const excelCheck = verifySettlementAgainstExcel(result, MOCK_SETTLEMENT_INPUT)
+    expect(excelCheck.acceptable).toBe(true)
+    expect(excelCheck.finals.every((f) => f.withinTolerance)).toBe(true)
 
     expect(result.matrix).toHaveLength(9)
     expect(result.matrix.map((r) => r.key)).toEqual([

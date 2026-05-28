@@ -192,6 +192,152 @@ export function calcOptionSubtotals(options: OptionCalcRow[], exchangeRate: numb
   }
 }
 
+/**
+ * Excel D80 = E72+SUM(F72). Row 72 has no E72 cell; operational equivalent is D72+SUM(F72).
+ * D72 = SUM(D57:E71), F72 = SUM(F57:G71).
+ */
+export function calcShoppingIncomeD80(d72SaleUsd: number, f72ComUsd: number): number {
+  return d72SaleUsd + f72ComUsd
+}
+
+/**
+ * Excel O84/M84 = SUM(O79:O83) — vehicle, head tax, seoul biz fee.
+ */
+export function calcIncludedSubtotalO84(
+  vehicleFeeUsd: number,
+  headTaxUsd: number,
+  seoulBizFeeUsd: number,
+): number {
+  return vehicleFeeUsd + headTaxUsd + seoulBizFeeUsd
+}
+
+/**
+ * Excel H85 = H84+J84+M84+O84.
+ * M84 uses the same SUM(O79:O83) as O84; in the operational sheet M84 is blank, so O84 is counted once.
+ */
+export function calcExpenseTotalH85(h84: number, j84: number, o84: number): number {
+  const m84 = 0
+  return h84 + j84 + m84 + o84
+}
+
+export interface SettlementMatrixValues {
+  d79: number
+  d80: number
+  d81: number
+  d82: number
+  d83: number
+  d84: number
+  h79: number
+  h80: number
+  h81: number
+  h82: number
+  h83: number
+  h84: number
+  j79: number
+  j83: number
+  j84: number
+  o79: number
+  o80: number
+  o81: number
+  o84: number
+  m84: number
+  h85: number
+  r79: number
+  r80: number
+  r81: number
+  r84: number
+  r85: number
+  guidePayout: number
+  f86: number
+  r86: number
+  r87: number
+}
+
+/** Excel R79–R87 matrix — shared by calcSettlement and verification. */
+export function computeSettlementMatrixValues(
+  header: SettlementCalcInput['header'],
+  sections: {
+    hotels: ReturnType<typeof calcHotelSubtotals>
+    meals: ReturnType<typeof calcMealSubtotals>
+    entrances: ReturnType<typeof calcEntranceSubtotals>
+    others: ReturnType<typeof calcOtherSubtotals>
+    shopping: ReturnType<typeof calcShoppingSubtotals>
+    options: ReturnType<typeof calcOptionSubtotals>
+  },
+): SettlementMatrixValues {
+  const h = header
+  const d72 = sections.shopping.sale_usd.value
+  const f72 = sections.shopping.com_usd.value
+  const d80 = calcShoppingIncomeD80(d72, f72)
+  const d79 = h.tour_fee_usd
+  const d81 = sections.options.com_usd.value
+  const d82 = h.tip_received_usd
+  const d83 = h.charming_other_usd
+  const d84 = d79 + d80 + d81 + d82 + d83
+
+  const h79 = sections.hotels.guide_total_usd.value
+  const h80 = sections.meals.total_usd.value
+  const h81 = sections.entrances.total_usd.value
+  const h82 = sections.others.combined_usd.value
+  const h83 = h.tc_guide_usd
+  const h84 = h79 + h80 + h81 + h82 + h83
+
+  const j79 = sections.hotels.company_total_usd.value
+  const j83 = h.tc_company_usd
+  const j84 = j79 + j83
+
+  const o79 = h.vehicle_fee_usd
+  const o80 = h.head_tax_usd
+  const o81 = h.seoul_biz_fee_usd
+  const o84 = calcIncludedSubtotalO84(o79, o80, o81)
+  const m84 = 0
+  const h85 = calcExpenseTotalH85(h84, j84, o84)
+
+  const r79 = d80 + d81
+  const r80 = h.megugi_usd
+  const r81 = h83 + j83
+  const r84 = r79 - r80 - r81
+  const r85 = r84 * h.settlement_ratio + h.guide_daily_fee_usd
+  const guidePayout = Math.max(r85, 0)
+
+  const f86 = d84 - h85
+  const r86 = f86 - r85
+  const r87 = r86 + sections.shopping.kb_usd.value + sections.options.extra_vehicle_usd.value
+
+  return {
+    d79,
+    d80,
+    d81,
+    d82,
+    d83,
+    d84,
+    h79,
+    h80,
+    h81,
+    h82,
+    h83,
+    h84,
+    j79,
+    j83,
+    j84,
+    o79,
+    o80,
+    o81,
+    o84,
+    m84,
+    h85,
+    r79,
+    r80,
+    r81,
+    r84,
+    r85,
+    guidePayout,
+    f86,
+    r86,
+    r87,
+  }
+}
+
 export function calcCashSubtotals(
   input: SettlementCalcInput,
   hotelGuide: AnnotatedNumber,
@@ -262,43 +408,45 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     options.extra_vehicle_usd,
   )
 
-  // D80 = E72+SUM(F72) → D72+F72 in template
-  const shoppingIncome = shopping.sale_usd.value + shopping.com_usd.value
-  const d79 = h.tour_fee_usd
-  const d80 = shoppingIncome
-  const d81 = options.com_usd.value
-  const d82 = h.tip_received_usd
-  const d83 = h.charming_other_usd
-  const d84 = d79 + d80 + d81 + d82 + d83
-
-  const h79 = hotels.guide_total_usd.value
-  const h80 = meals.total_usd.value
-  const h81 = entrances.total_usd.value
-  const h82 = others.combined_usd.value
-  const h83 = h.tc_guide_usd
-  const h84 = h79 + h80 + h81 + h82 + h83
-
-  const j79 = hotels.company_total_usd.value
-  const j83 = h.tc_company_usd
-  const j84 = j79 + j83
-
-  const o79 = h.vehicle_fee_usd
-  const o80 = h.head_tax_usd
-  const o81 = h.seoul_biz_fee_usd
-  const o84 = o79 + o80 + o81
-
-  const h85 = h84 + j84 + o84 // M84 absent in template → 0
-
-  const r79 = d80 + d81
-  const r80 = h.megugi_usd
-  const r81 = h83 + j83
-  const r84 = r79 - r80 - r81
-  const r85 = r84 * h.settlement_ratio + h.guide_daily_fee_usd
-  const guidePayout = Math.max(r85, 0)
-
-  const f86 = d84 - h85
-  const r86 = f86 - r85
-  const r87 = r86 + shopping.kb_usd.value + options.extra_vehicle_usd.value
+  const m = computeSettlementMatrixValues(h, {
+    hotels,
+    meals,
+    entrances,
+    others,
+    shopping,
+    options,
+  })
+  const {
+    d79,
+    d80,
+    d81,
+    d82,
+    d83,
+    d84,
+    h79,
+    h80,
+    h81,
+    h82,
+    h83,
+    h84,
+    j79,
+    j83,
+    j84,
+    o79,
+    o80,
+    o81,
+    o84,
+    h85,
+    r79,
+    r80,
+    r81,
+    r84,
+    r85,
+    guidePayout,
+    f86,
+    r86,
+    r87,
+  } = m
 
   const matrix: SettlementMatrixRow[] = [
     {
@@ -316,7 +464,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     {
       key: 'r80',
       incomeLabel: '쇼핑수익',
-      income: annotate(d80, '쇼핑수익', 'D80', 'D72+F72'),
+      income: annotate(d80, '쇼핑수익', 'D80', 'D72+SUM(F72)'),
       expenseLabel: '식사비',
       guideExpense: annotate(h80, '식사비', 'H80', 'J25'),
       settlementLabel: '메꾸기',
@@ -367,7 +515,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     {
       key: 'r85',
       expenseLabel: '지출 총액',
-      guideExpense: annotate(h85, '지출 총액', 'H85', 'H84+J84+O84'),
+      guideExpense: annotate(h85, '지출 총액', 'H85', 'H84+J84+M84+O84'),
       settlementLabel: '가이드정산',
       settlement: annotate(
         r85,
@@ -400,7 +548,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     matrix,
     summary: {
       income_total_usd: annotate(d84, '수익 총액', 'D84', 'SUM(D79:D83)'),
-      expense_total_usd: annotate(h85, '지출 총액', 'H85', 'H84+J84+O84'),
+      expense_total_usd: annotate(h85, '지출 총액', 'H85', 'H84+J84+M84+O84'),
       company_gross_usd: annotate(f86, '회사총수익', 'F86', 'D84−H85'),
       balance_usd: annotate(r84, '차액(밸런스)', 'R84', 'R79−R80−R81'),
       guide_settlement_usd: annotate(r85, '가이드정산', 'R85', 'R84×R77+R82'),

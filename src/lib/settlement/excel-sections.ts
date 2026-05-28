@@ -22,7 +22,7 @@ export const EXCEL_SECTIONS = {
   },
   shopping: {
     rows: 'R55–72 (B–H)',
-    hint: '쇼핑 SALE(D), COM(F), KB(H). D80 = D72 + F72.',
+    hint: '쇼핑 SALE(D), COM(F), KB(H). D80 = D72+SUM(F72) (Excel E72+SUM(F72) when E72 absent).',
   },
   options: {
     rows: 'R55–73 (J–S)',

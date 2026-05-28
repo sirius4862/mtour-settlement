@@ -16,51 +16,22 @@ export default async function AdminSettlementDetailPage({
   params,
 }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await requireAdmin()
+  await requireAdmin()
   const data = await getSettlementFull(id)
   if (!data) notFound()
 
   const { tour, hotels, meals, entrances, others, shoppings, options } = data
   const s = data
   const meta = STATUS_META[s.status]
-  const rate = s.exchange_rate
-
-  // 엑셀 계산식 그대로
-  const hotelCompany = hotels.reduce((a, h) => a + h.company_amount_usd, 0)
-  const hotelGuide   = hotels.reduce((a, h) => a + h.guide_amount_usd, 0)
-  const mealUsd      = meals.reduce((a, m) => a + m.amount_vnd, 0) / rate
-  const entrUsd      = entrances.reduce((a, e) => a + e.amount_vnd, 0) / rate
-  const otherUsd     = others.reduce((a, o) => a + o.amount_usd + o.amount_vnd / rate, 0)
-  const shopSale     = shoppings.reduce((a, sh) => a + sh.sale_usd, 0)
-  const shopCom      = shoppings.reduce((a, sh) => a + sh.com_usd, 0)
-  const shopKb       = shoppings.reduce((a, sh) => a + sh.kb_usd, 0)
-  const optCom       = options.filter(o => !o.is_extra_vehicle).reduce((a, o) => a + o.com_usd, 0)
-  const extraVehicle = options.filter(o => o.is_extra_vehicle)
-    .reduce((a, o) => a + o.expense_usd + o.expense_vnd / rate, 0)
-
-  // 엑셀 R79-R84 수익 계산
-  const income = s.tour_fee_usd + shopSale + shopCom + optCom + s.tip_received_usd + s.charming_other_usd
-  // 엑셀 H79-H84 가이드지출
-  const guideExp = hotelGuide + mealUsd + entrUsd + otherUsd + s.tc_guide_usd
-  // 엑셀 J79-J84 회사지출
-  const compExp = hotelCompany + s.tc_company_usd
-  // 엑셀 M79-M84 기타포함
-  const otherIncl = s.vehicle_fee_usd + s.head_tax_usd + s.seoul_biz_fee_usd
-  // 엑셀 H85 지출합계
-  const totalExp = guideExp + compExp + otherIncl
-  // 엑셀 F86 회사총수익
-  const compRevenue = income - totalExp
-  // 엑셀 R84 차액
-  const balance = (shopCom + optCom) - s.megugi_usd - (s.tc_guide_usd + s.tc_company_usd)
-  // 엑셀 R85 가이드정산
-  const guideFinal = balance * s.settlement_ratio + s.guide_daily_fee_usd
-  // 엑셀 R87 최종회사총수익 (admin summary uses calc.summary.company_grand_total_usd)
-  const compFinal = compRevenue - guideFinal
 
   const calc = calcSettlement(toCalcInput(stateFromSettlementFull(data, '')))
-  const guideSettlement = calc.summary.guide_settlement_usd.value
-  const guidePayout = calc.summary.guide_payout_usd.value
-  const companyProfit = calc.summary.company_grand_total_usd.value
+  const { sections, summary, matrix } = calc
+  const m = (key: string) => matrix.find((r) => r.key === key)
+
+  const companyDeposit = sections.cash.company_deposit_usd.value
+  const guideSettlement = summary.guide_settlement_usd.value
+  const guidePayout = summary.guide_payout_usd.value
+  const companyProfit = summary.company_grand_total_usd.value
   const payoutIsFloored = guideSettlement < 0
 
   const canSendForConfirmation = canAdminSendForConfirmation(s.status)
@@ -95,14 +66,21 @@ export default async function AdminSettlementDetailPage({
             <p>가이드: <strong>{s.guide_id}</strong></p>
             <p>{tour.agency_name}</p>
             <p>{tour.start_date} ~ {tour.end_date} ({tour.nights}박)</p>
-            <p>{tour.pax_count}명 · 환율 {rate.toLocaleString()}동</p>
+            <p>{tour.pax_count}명 · 환율 {s.exchange_rate.toLocaleString()}동</p>
           </div>
         </div>
         <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
           <p className="text-xs font-semibold text-amber-700 mb-2">정산 결과</p>
           <div className="space-y-1 text-xs">
-            <p className="text-gray-600">수익: <span className="font-mono">{fmt2(income)}</span></p>
-            <p className="text-gray-600">지출: <span className="font-mono">{fmt2(totalExp)}</span></p>
+            <p className="text-gray-600">
+              회사입금 (Q75): <span className="font-mono">{fmt2(companyDeposit)}</span>
+            </p>
+            <p className="text-gray-600">
+              수익 (D84): <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
+            </p>
+            <p className="text-gray-600">
+              지출 (H85): <span className="font-mono">{fmt2(summary.expense_total_usd.value)}</span>
+            </p>
             <p className={`font-semibold ${payoutIsFloored ? 'text-red-700' : 'text-amber-700'}`}>
               계산상 가이드정산 (R85): <span className="font-mono">{fmt2(guideSettlement)}</span>
             </p>
@@ -115,48 +93,46 @@ export default async function AdminSettlementDetailPage({
               </p>
             )}
             <p className="text-emerald-700 font-semibold">
-              회사수익: <span className="font-mono">{fmt2(companyProfit)}</span>
-            </p>
-            <p className="text-gray-500 text-[10px] pt-1">
-              R86 중간값: <span className="font-mono">{fmt2(compFinal)}</span>
+              회사수익 (R87): <span className="font-mono">{fmt2(companyProfit)}</span>
             </p>
           </div>
         </div>
       </div>
 
-      {/* 상세 계산표 */}
+      {/* 상세 계산표 — calcSettlement 단일 소스 */}
       <div className="bg-white rounded-2xl p-4 border border-gray-100">
         <p className="text-xs font-semibold text-gray-500 mb-3">상세 계산 (엑셀 R77-R87)</p>
         <div className="space-y-1.5 text-xs">
           {[
-            ['투어피 (D79)', fmt2(s.tour_fee_usd)],
-            ['쇼핑수익 SALE+COM (D80)', fmt2(shopSale + shopCom)],
-            ['옵션수익 COM (D81)', fmt2(optCom)],
-            ['받은팁 (D82)', fmt2(s.tip_received_usd)],
-            ['추가수익 (D83)', fmt2(s.charming_other_usd)],
-            ['─ 수익합계 (D84)', fmt2(income), true],
-            ['호텔 가이드 (H79)', fmt2(hotelGuide)],
-            ['식사비 환산 (H80)', fmt2(mealUsd)],
-            ['입장료 환산 (H81)', fmt2(entrUsd)],
-            ['기타지출 (H82)', fmt2(otherUsd)],
-            ['T/C 가이드 (H83)', fmt2(s.tc_guide_usd)],
-            ['T/C 회사 (J83)', fmt2(s.tc_company_usd)],
-            ['차량비+인두세+서울 (기타포함)', fmt2(otherIncl)],
-            ['─ 지출합계 (H85)', fmt2(totalExp), true],
-            ['─ 수익−지출 (F86)', fmt2(compRevenue), true],
-            ['쇼핑COM+옵션COM (R79)', fmt2(shopCom + optCom)],
-            ['메꾸기 (R80)', `- ${fmt2(s.megugi_usd)}`],
-            ['T/C정산공제 (R81)', `- ${fmt2(s.tc_guide_usd + s.tc_company_usd)}`],
-            ['─ 차액밸런스 (R84)', fmt2(balance), true],
-            ['가이드일비 (R82)', fmt2(s.guide_daily_fee_usd)],
-            [`─ 계산상 가이드정산 × ${Math.round(s.settlement_ratio*100)}% (R85)`, fmt2(guideSettlement), true, true],
+            ['투어피 (D79)', fmt2(m('r79')?.income?.value ?? 0)],
+            ['쇼핑수익 D72+SUM(F72) (D80)', fmt2(m('r80')?.income?.value ?? 0)],
+            ['옵션수익 S72 (D81)', fmt2(m('r81')?.income?.value ?? 0)],
+            ['받은팁 (D82)', fmt2(m('r82')?.income?.value ?? 0)],
+            ['추가수익 (D83)', fmt2(m('r83')?.income?.value ?? 0)],
+            ['─ 수익합계 (D84)', fmt2(summary.income_total_usd.value), true],
+            ['호텔 가이드 (H79)', fmt2(m('r79')?.guideExpense?.value ?? 0)],
+            ['식사비 환산 (H80)', fmt2(m('r80')?.guideExpense?.value ?? 0)],
+            ['입장료 환산 (H81)', fmt2(m('r81')?.guideExpense?.value ?? 0)],
+            ['기타지출 (H82)', fmt2(m('r82')?.guideExpense?.value ?? 0)],
+            ['T/C 가이드 (H83)', fmt2(m('r83')?.guideExpense?.value ?? 0)],
+            ['T/C 회사 (J83)', fmt2(m('r83')?.companyExpense?.value ?? 0)],
+            ['기타포함 SUM(O79:O83) (O84)', fmt2(m('r84')?.included?.value ?? 0)],
+            ['─ 지출합계 H84+J84+M84+O84 (H85)', fmt2(summary.expense_total_usd.value), true],
+            ['─ 수익−지출 (F86)', fmt2(summary.company_gross_usd.value), true],
+            ['정산풀 D80+D81 (R79)', fmt2(m('r79')?.settlement?.value ?? 0)],
+            ['메꾸기 (R80)', `- ${fmt2(m('r80')?.settlement?.value ?? 0)}`],
+            ['T/C정산공제 H83+J83 (R81)', `- ${fmt2(m('r81')?.settlement?.value ?? 0)}`],
+            ['─ 차액밸런스 R79−R80−R81 (R84)', fmt2(summary.balance_usd.value), true],
+            ['가이드일비 (R82)', fmt2(m('r82')?.settlement?.value ?? 0)],
+            [`─ 계산상 가이드정산 R84×${Math.round(s.settlement_ratio * 100)}%+R82 (R85)`, fmt2(guideSettlement), true, true],
             ...(payoutIsFloored
-              ? [['─ 실제 지급액 (P85)', fmt2(guidePayout), true] as const]
+              ? [['─ 실제 지급액 MAX(R85,0) (P85)', fmt2(guidePayout), true] as const]
               : []),
-            ['─ R86 중간값', fmt2(compFinal), true],
-            ['KB합계 (H72)', fmt2(shopKb)],
-            ['추가차량비 (S75)', fmt2(extraVehicle)],
-            ['─ 회사수익', fmt2(companyProfit), true],
+            ['─ R86 중간값', fmt2(summary.company_profit_usd.value), true],
+            ['KB합계 (H72)', fmt2(sections.shopping.kb_usd.value)],
+            ['추가차량비 (S75)', fmt2(sections.options.extra_vehicle_usd.value)],
+            ['─ 회사수익 R86+H72+S75 (R87)', fmt2(companyProfit), true],
+            ['회사입금 J75−N75−P75 (Q75)', fmt2(companyDeposit)],
           ].map(([l, v, bold, accent]) => (
             <div key={l as string} className={`flex justify-between py-1 ${bold ? 'border-t border-gray-100 mt-1 pt-1.5' : ''}`}>
               <span className={`${accent ? 'text-amber-700 font-semibold' : bold ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>

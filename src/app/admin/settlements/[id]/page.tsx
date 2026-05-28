@@ -85,7 +85,7 @@ export default async function AdminSettlementDetailPage({
               회사입금 (Q75): <span className="font-mono">{fmt2(companyDeposit)}</span>
             </p>
             <p className="text-gray-600">
-              수익 (D84): <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
+              수익풀 (D84): <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
             </p>
             <p className="text-gray-600">
               지출 (H85): <span className="font-mono">{fmt2(summary.expense_total_usd.value)}</span>
@@ -113,13 +113,13 @@ export default async function AdminSettlementDetailPage({
         <p className="text-xs font-semibold text-gray-500 mb-3">상세 계산 (엑셀 R77-R87)</p>
         <div className="space-y-1.5 text-xs">
           {[
-            ['투어피 (D79)', fmt2(m('r79')?.income?.value ?? 0)],
+            ['투어피 참고 (D79)', fmt2(m('r79')?.income?.value ?? 0)],
             ['쇼핑수익 COM (D80)', fmt2(m('r80')?.income?.value ?? 0)],
             ['쇼핑 SALE 참고 (D72)', fmt2(sections.shopping.sale_usd.value)],
-            ['옵션수익 S72 (D81)', fmt2(m('r81')?.income?.value ?? 0)],
-            ['받은팁 (D82)', fmt2(m('r82')?.income?.value ?? 0)],
-            ['추가수익 (D83)', fmt2(m('r83')?.income?.value ?? 0)],
-            ['─ 수익합계 (D84)', fmt2(summary.income_total_usd.value), true],
+            ['옵션수익 COM (D81)', fmt2(m('r81')?.income?.value ?? 0)],
+            ['받은팁 참고 (D82)', fmt2(m('r82')?.income?.value ?? 0)],
+            ['추가수익 참고 (D83)', fmt2(m('r83')?.income?.value ?? 0)],
+            ['─ 정산 수익합계 D80+D81 (D84)', fmt2(summary.income_total_usd.value), true],
             ['호텔 가이드 (H79)', fmt2(m('r79')?.guideExpense?.value ?? 0)],
             ['식사비 환산 (H80)', fmt2(m('r80')?.guideExpense?.value ?? 0)],
             ['입장료 환산 (H81)', fmt2(m('r81')?.guideExpense?.value ?? 0)],
@@ -129,7 +129,7 @@ export default async function AdminSettlementDetailPage({
             ['기타포함 SUM(O79:O83) (O84)', fmt2(m('r84')?.included?.value ?? 0)],
             ['─ 지출합계 H84+J84+M84+O84 (H85)', fmt2(summary.expense_total_usd.value), true],
             ['─ 수익−지출 (F86)', fmt2(summary.company_gross_usd.value), true],
-            ['정산풀 F72+D81 (R79)', fmt2(m('r79')?.settlement?.value ?? 0)],
+            ['정산 수익풀 D80+D81 (R79)', fmt2(m('r79')?.settlement?.value ?? 0)],
             ['메꾸기 (R80)', `- ${fmt2(m('r80')?.settlement?.value ?? 0)}`],
             ['T/C정산공제 H83+J83 (R81)', `- ${fmt2(m('r81')?.settlement?.value ?? 0)}`],
             ['─ 차액밸런스 R79−R80−R81 (R84)', fmt2(summary.balance_usd.value), true],

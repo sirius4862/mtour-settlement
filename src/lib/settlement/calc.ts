@@ -260,6 +260,9 @@ export const GUIDE_SETTLEMENT_FORMULA = 'MAX((F72+D81−R80)×50%,0)+R82'
 /** Operational settlement D80 — shopping COM (F72) only; SALE (D72) excluded from profit pool. */
 export const SETTLEMENT_SHOPPING_PROFIT_FORMULA = 'SUM(F72)'
 
+/** Operational D84 / R79 — shopping COM + option COM only (excludes tour fee, tips, SALE). */
+export const SETTLEMENT_PROFIT_INCOME_FORMULA = 'D80+D81'
+
 /** Shopping profit for guide settlement — COM (F72) only, not D80 (SALE+COM). */
 export function calcShoppingActualProfitUsd(comUsd: number): number {
   return comUsd
@@ -304,7 +307,8 @@ export function computeSettlementMatrixValues(
   const d81 = sections.options.com_usd.value
   const d82 = h.tip_received_usd
   const d83 = h.charming_other_usd
-  const d84 = d79 + d80 + d81 + d82 + d83
+  /** Settlement profit income — COM + option COM; excludes D79/D82/D83 and shopping SALE. */
+  const d84 = d80 + d81
 
   const h79 = sections.hotels.guide_total_usd.value
   const h80 = sections.meals.total_usd.value
@@ -494,7 +498,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
       includedLabel: '차량비',
       included: annotate(o79, '차량비', 'O79', '수동 입력'),
       settlementLabel: '쇼핑COM+옵션COM',
-      settlement: annotate(r79, '쇼핑COM+옵션COM', 'R79', 'D80+D81'),
+      settlement: annotate(r79, '정산 수익풀', 'R79', SETTLEMENT_PROFIT_INCOME_FORMULA),
     },
     {
       key: 'r80',
@@ -538,7 +542,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     {
       key: 'r84',
       incomeLabel: '합계',
-      income: annotate(d84, '수익 총액', 'D84', 'SUM(D79:D83)'),
+      income: annotate(d84, '정산 수익합계', 'D84', SETTLEMENT_PROFIT_INCOME_FORMULA),
       expenseLabel: '합계',
       guideExpense: annotate(h84, '가이드지출 합', 'H84', 'SUM(H79:I83)'),
       companyExpense: annotate(j84, '회사지출 합', 'J84', 'SUM(J79:L83)'),
@@ -577,7 +581,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     sections: { hotels, meals, entrances, others, shopping, options, cash },
     matrix,
     summary: {
-      income_total_usd: annotate(d84, '수익 총액', 'D84', 'SUM(D79:D83)'),
+      income_total_usd: annotate(d84, '정산 수익합계', 'D84', SETTLEMENT_PROFIT_INCOME_FORMULA),
       expense_total_usd: annotate(h85, '지출 총액', 'H85', 'H84+J84+M84+O84'),
       company_gross_usd: annotate(f86, '회사총수익', 'F86', 'D84−H85'),
       balance_usd: annotate(r84, '차액(밸런스)', 'R84', 'R79−R80−R81'),

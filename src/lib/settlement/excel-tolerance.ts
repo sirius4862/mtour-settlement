@@ -15,6 +15,7 @@ import {
   calcShoppingSubtotals,
   computeSettlementMatrixValues,
   GUIDE_SETTLEMENT_FORMULA,
+  SETTLEMENT_PROFIT_INCOME_FORMULA,
   SETTLEMENT_SHOPPING_PROFIT_FORMULA,
 } from './calc'
 import type { SettlementCalcInput, SettlementCalcResult } from './types-calc'
@@ -74,7 +75,8 @@ export interface ExcelSettlementVerification {
 /** Excel cell formulas the engine must follow. */
 export const EXCEL_FORMULA_CONTRACT: Record<string, string> = {
   D80: SETTLEMENT_SHOPPING_PROFIT_FORMULA,
-  R79: 'D80+D81',
+  D84: SETTLEMENT_PROFIT_INCOME_FORMULA,
+  R79: SETTLEMENT_PROFIT_INCOME_FORMULA,
   R84: 'R79−R80−R81',
   R85: GUIDE_SETTLEMENT_FORMULA,
   Q75: 'J75−N75−P75',
@@ -220,6 +222,16 @@ export function verifyExcelFormulaFlow(
     push('R79', 'R79', `${EXCEL_FORMULA_CONTRACT.R79} (= ${expectedR79})`, String(r79Row))
   }
 
+  const expectedD84 = expectedR79
+  if (!nearlyEqual(result.summary.income_total_usd.value, expectedD84)) {
+    push(
+      'D84',
+      'D84',
+      `${EXCEL_FORMULA_CONTRACT.D84} (= ${expectedD84})`,
+      String(result.summary.income_total_usd.value),
+    )
+  }
+
   const expectedR84 =
     expectedR79 - h.megugi_usd - (h.tc_guide_usd + h.tc_company_usd)
   if (!nearlyEqual(result.summary.balance_usd.value, expectedR84)) {
@@ -251,9 +263,10 @@ export function verifyExcelFormulaFlow(
     ['R85', result.summary.guide_settlement_usd.formula, EXCEL_FORMULA_CONTRACT.R85],
     ['R87', result.summary.company_grand_total_usd.formula, EXCEL_FORMULA_CONTRACT.R87],
     ['H85', result.summary.expense_total_usd.formula, EXCEL_FORMULA_CONTRACT.H85],
-    ['R79', result.matrix.find((r) => r.key === 'r79')?.settlement?.formula, 'D80+D81'],
+    ['R79', result.matrix.find((r) => r.key === 'r79')?.settlement?.formula, EXCEL_FORMULA_CONTRACT.R79],
     ['R84', result.summary.balance_usd.formula, EXCEL_FORMULA_CONTRACT.R84],
     ['D80', result.matrix.find((r) => r.key === 'r80')?.income?.formula, EXCEL_FORMULA_CONTRACT.D80],
+    ['D84', result.summary.income_total_usd.formula, EXCEL_FORMULA_CONTRACT.D84],
   ]
   for (const [excelRef, actual, expected] of formulaChecks) {
     if (actual != null && actual !== expected) {

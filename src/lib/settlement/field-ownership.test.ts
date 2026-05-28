@@ -13,7 +13,7 @@ describe('canEditHeaderField', () => {
     for (const key of ADMIN_STRICT_HEADER_KEYS) {
       expect(canEditHeaderField('guide', key)).toBe(false)
     }
-    expect(canEditHeaderField('guide', 'tour_fee_usd')).toBe(true)
+    expect(canEditHeaderField('guide', 'tour_fee_usd')).toBe(false)
   })
 
   it('allows guide to edit company review fields', () => {
@@ -49,6 +49,7 @@ describe('mergeGuideHeaderForSave', () => {
         guide_note: null,
       },
       pickAdminHeaderFields({
+        tour_fee_usd: 75,
         vehicle_fee_usd: 25,
         head_tax_usd: 8,
         seoul_biz_fee_usd: 5,
@@ -59,7 +60,7 @@ describe('mergeGuideHeaderForSave', () => {
       }),
     )
     expect(merged.vehicle_fee_usd).toBe(25)
-    expect(merged.tour_fee_usd).toBe(120)
+    expect(merged.tour_fee_usd).toBe(75)
     expect(merged.settlement_ratio).toBe(0.5)
     expect(merged.megugi_usd).toBe(12)
     expect(merged.guide_daily_fee_usd).toBe(18)
@@ -67,7 +68,7 @@ describe('mergeGuideHeaderForSave', () => {
 })
 
 describe('mergeAdminHeaderForSave', () => {
-  it('applies admin fields while preserving guide tour_fee', () => {
+  it('applies admin fields including tour_fee from incoming', () => {
     const merged = mergeAdminHeaderForSave(
       {
         advance_vnd: 1,
@@ -102,7 +103,7 @@ describe('mergeAdminHeaderForSave', () => {
         guide_note: 'note',
       },
     )
-    expect(merged.tour_fee_usd).toBe(500)
+    expect(merged.tour_fee_usd).toBe(999)
     expect(merged.megugi_usd).toBe(12)
     expect(merged.settlement_ratio).toBe(0.6)
   })

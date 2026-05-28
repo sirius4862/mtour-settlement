@@ -52,14 +52,6 @@ export function validateSettlementForm(
   const meals = activeRows(state.meals)
 
   if (intent === 'submit' && actor === 'guide') {
-    if (state.header.tour_fee_usd <= 0) {
-      issues.push({
-        sectionId: 'basic',
-        message: '투어피(D79)를 입력해주세요.',
-        severity: 'error',
-      })
-    }
-
     if (!hasGuideOwnedLineItemData(state)) {
       issues.push({
         sectionId: 'hotels',
@@ -70,7 +62,7 @@ export function validateSettlementForm(
 
     issues.push({
       sectionId: 'adjustments',
-      message: '지상비(O79–O81)와 정산비율(R77)은 제출 후 관리자가 입력합니다.',
+      message: '투어피(D79), 지상비(O79–O81), 정산비율(R77)은 제출 후 관리자가 입력합니다.',
       severity: 'warning',
     })
   }

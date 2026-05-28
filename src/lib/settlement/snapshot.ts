@@ -43,7 +43,7 @@ const HEADER_LABELS: Record<string, { label: string; excelRef: string; owner: Se
   megugi_usd: { label: '메꾸기', excelRef: 'R80', owner: 'guide' },
   guide_daily_fee_usd: { label: '가이드 일비', excelRef: 'R82', owner: 'guide' },
   settlement_ratio: { label: '정산비율', excelRef: 'R77', owner: 'admin' },
-  tour_fee_usd: { label: '투어피', excelRef: 'D79', owner: 'guide' },
+  tour_fee_usd: { label: '투어피', excelRef: 'D79', owner: 'admin' },
   advance_vnd: { label: '전도금', excelRef: 'A76', owner: 'guide' },
   tc_guide_usd: { label: 'T/C 가이드분', excelRef: 'H83', owner: 'guide' },
 }

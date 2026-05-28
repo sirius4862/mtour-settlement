@@ -126,7 +126,7 @@ describe('sanitizeAdminDraftPayload', () => {
 
     const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
 
-    expect(sanitized.header.tour_fee_usd).toBe(500)
+    expect(sanitized.header.tour_fee_usd).toBe(999)
     expect(sanitized.header.megugi_usd).toBe(99)
     expect(sanitized.header.guide_daily_fee_usd).toBe(88)
     expect(sanitized.hotels[0].guide_amount_usd).toBe(80)
@@ -139,21 +139,23 @@ describe('sanitizeAdminDraftPayload', () => {
     const before = buildSnapshotPayload(existing)
 
     const state = stateFromSettlementFull(existing, 'Guide')
+    state.header.tour_fee_usd = 600
     state.header.megugi_usd = 20
     state.header.guide_daily_fee_usd = 25
     const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
 
     const afterFull = {
       ...existing,
+      tour_fee_usd: sanitized.header.tour_fee_usd,
       megugi_usd: sanitized.header.megugi_usd,
       guide_daily_fee_usd: sanitized.header.guide_daily_fee_usd,
     }
     const after = buildSnapshotPayload(afterFull)
 
     const changes = diffSnapshotPayloads(before, after)
+    expect(changes.some((c) => c.field_path === 'header.tour_fee_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.megugi_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.guide_daily_fee_usd')).toBe(true)
-    expect(changes.some((c) => c.field_path === 'header.tour_fee_usd')).toBe(false)
   })
 
   it('diff includes strict admin and company review fields after admin save', () => {
@@ -161,6 +163,7 @@ describe('sanitizeAdminDraftPayload', () => {
     const before = buildSnapshotPayload(existing)
 
     const state = stateFromSettlementFull(existing, 'Guide')
+    state.header.tour_fee_usd = 650
     state.header.vehicle_fee_usd = 50
     state.header.megugi_usd = 20
     state.header.guide_daily_fee_usd = 25
@@ -168,6 +171,7 @@ describe('sanitizeAdminDraftPayload', () => {
 
     const afterFull: SettlementFull = {
       ...existing,
+      tour_fee_usd: sanitized.header.tour_fee_usd,
       vehicle_fee_usd: sanitized.header.vehicle_fee_usd,
       head_tax_usd: sanitized.header.head_tax_usd,
       seoul_biz_fee_usd: sanitized.header.seoul_biz_fee_usd,
@@ -178,9 +182,9 @@ describe('sanitizeAdminDraftPayload', () => {
     }
     const changes = diffSnapshotPayloads(before, buildSnapshotPayload(afterFull))
 
+    expect(changes.some((c) => c.field_path === 'header.tour_fee_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.megugi_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.guide_daily_fee_usd')).toBe(true)
-    expect(changes.some((c) => c.field_path === 'header.tour_fee_usd')).toBe(false)
   })
 })

@@ -87,16 +87,20 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
           onChange={(e) => patchHeader({ advance_vnd: parseFloat(e.target.value) || 0 })}
         />
         <CalculatedField field={advanceUsd} />
-        <ManualField
-          label="투어피 (USD)"
-          excelRef="D79"
-          suffix="$"
-          required
-          inputMode="decimal"
-          value={header.tour_fee_usd || ''}
-          disabled={role === 'admin'}
-          onChange={(e) => patchHeader({ tour_fee_usd: parseFloat(e.target.value) || 0 })}
-        />
+        {role === 'admin' ? (
+          <ManualField
+            label="투어피 (USD)"
+            excelRef="D79"
+            suffix="$"
+            inputMode="decimal"
+            value={header.tour_fee_usd || ''}
+            onChange={(e) => patchHeader({ tour_fee_usd: parseFloat(e.target.value) || 0 })}
+          />
+        ) : (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            투어피(D79)는 제출 후 관리자가 입력합니다.
+          </p>
+        )}
         <ManualField
           label="가이드 메모"
           value={header.guide_note ?? ''}

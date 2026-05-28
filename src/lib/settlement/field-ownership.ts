@@ -15,6 +15,7 @@ export type SettlementFormRole = 'guide' | 'admin' | 'readOnly'
  * Guides must not edit; preserved from DB on guide save.
  */
 export const ADMIN_STRICT_HEADER_KEYS = [
+  'tour_fee_usd',
   'vehicle_fee_usd',
   'head_tax_usd',
   'seoul_biz_fee_usd',
@@ -148,8 +149,9 @@ export function mergeGuideHeaderForSave(
 
 export function pickAdminHeaderFields(
   row: Partial<SettlementHeaderCalc>,
-): Pick<SettlementHeaderCalc, AdminOwnedHeaderKey> {
+): Pick<SettlementHeaderCalc, AdminOwnedHeaderKey> & { tour_fee_usd: number } {
   return {
+    tour_fee_usd: row.tour_fee_usd ?? 0,
     vehicle_fee_usd: row.vehicle_fee_usd ?? 0,
     head_tax_usd: row.head_tax_usd ?? 0,
     seoul_biz_fee_usd: row.seoul_biz_fee_usd ?? 0,
@@ -202,7 +204,9 @@ export function mergeGuideOptionRowsForSave(
 }
 
 /** Header fields included in confirm-workflow diff (admin post-submit edits). */
-export const CONFIRM_DIFF_HEADER_KEYS = ADMIN_OWNED_HEADER_KEYS
+export const CONFIRM_DIFF_HEADER_KEYS = [
+  ...ADMIN_OWNED_HEADER_KEYS,
+] as const satisfies readonly (keyof SettlementHeaderCalc)[]
 
 export const COMPANY_REVIEW_FIELD_HINT = '회사 확인 대상'
 export const ADMIN_GUIDE_INPUT_HINT = '가이드 입력값 · 회사 확인 필요'

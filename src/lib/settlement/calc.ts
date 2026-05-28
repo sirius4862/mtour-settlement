@@ -256,7 +256,12 @@ export interface SettlementMatrixValues {
 /** Fixed guide profit share — operational policy (not Excel R77 slider). */
 export const GUIDE_PROFIT_SHARE_RATIO = 0.5
 
-export const GUIDE_SETTLEMENT_FORMULA = 'MAX((D80+D81−R80)×50%,0)+R82'
+export const GUIDE_SETTLEMENT_FORMULA = 'MAX((F72+D81−R80)×50%,0)+R82'
+
+/** Shopping profit for guide settlement — COM (F72) only, not D80 (SALE+COM). */
+export function calcShoppingActualProfitUsd(comUsd: number): number {
+  return comUsd
+}
 
 export function calcGuideSettlementFromProfitPool(
   shoppingActualProfitUsd: number,
@@ -322,7 +327,7 @@ export function computeSettlementMatrixValues(
   const r81 = h83 + j83
   const r84 = r79 - r80 - r81
   const { guideSettlement: r85, guidePayout } = calcGuideSettlementFromProfitPool(
-    d80,
+    calcShoppingActualProfitUsd(f72),
     d81,
     r80,
     h.guide_daily_fee_usd,

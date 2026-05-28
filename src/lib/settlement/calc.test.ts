@@ -51,7 +51,7 @@ function emptyInput(overrides: Partial<SettlementCalcInput> = {}): SettlementCal
   }
 }
 
-/** Build minimal input where D80=shoppingProfit and D81=optionProfit (sale+com, option COM). */
+/** Build minimal input where F72=shoppingProfit (COM) and D81=optionProfit. */
 function policyTestInput(
   shoppingProfit: number,
   optionProfit: number,
@@ -64,8 +64,27 @@ function policyTestInput(
       megugi_usd: megugi,
       guide_daily_fee_usd: dailyFee,
     },
-    shoppings: [{ sale_usd: shoppingProfit, com_usd: 0, kb_usd: 0 }],
+    shoppings: [{ sale_usd: 0, com_usd: shoppingProfit, kb_usd: 0 }],
     options: [{ unit_price_usd: optionProfit, pax: 1, expense_usd: 0, expense_vnd: 0 }],
+  })
+}
+
+/** Screen-like input: large SALE + COM commission (F72 drives guide payout). */
+function screenLikeInput(
+  saleUsd: number,
+  comUsd: number,
+  optionComUsd: number,
+  megugi: number,
+  dailyFee: number,
+): SettlementCalcInput {
+  return emptyInput({
+    header: {
+      ...emptyInput().header,
+      megugi_usd: megugi,
+      guide_daily_fee_usd: dailyFee,
+    },
+    shoppings: [{ sale_usd: saleUsd, com_usd: comUsd, kb_usd: 0 }],
+    options: [{ unit_price_usd: optionComUsd, pax: 1, expense_usd: 0, expense_vnd: 0 }],
   })
 }
 
@@ -246,9 +265,9 @@ describe('settlement matrix', () => {
     expect(result.summary.income_total_usd.value).toBe(230)
 
     // R79 = 70+45 = 115, R84 = 115-2-12 = 101
-    // 가이드정산 = (70+45-2)*50%+15 = 71.5
+    // 가이드정산 = (F72 20 + option 45 - 2)*50%+15 = 46.5
     expect(result.summary.balance_usd.value).toBe(101)
-    expect(result.summary.guide_settlement_usd.value).toBe(71.5)
+    expect(result.summary.guide_settlement_usd.value).toBe(46.5)
 
     // Matrix has Excel-like rows including R87
     expect(result.matrix.some((r) => r.key === 'r84' && r.isSubtotal)).toBe(true)
@@ -325,12 +344,12 @@ describe('settlement matrix', () => {
 })
 
 describe('calcGuideSettlementFromProfitPool', () => {
-  it('deducts megugi from shopping+option profit then applies 50% share and daily fee', () => {
-    const result = calcGuideSettlementFromProfitPool(70, 45, 2, 15)
-    expect(result.actualProfitPool).toBe(113)
-    expect(result.guideProfitShare).toBe(56.5)
-    expect(result.guideSettlement).toBe(71.5)
-    expect(result.guidePayout).toBe(71.5)
+  it('deducts megugi from shopping COM + option COM then applies 50% share and daily fee', () => {
+    const result = calcGuideSettlementFromProfitPool(20, 45, 2, 15)
+    expect(result.actualProfitPool).toBe(63)
+    expect(result.guideProfitShare).toBe(31.5)
+    expect(result.guideSettlement).toBe(46.5)
+    expect(result.guidePayout).toBe(46.5)
   })
 
   it('floors guide profit share at zero when megugi exceeds profit pool', () => {
@@ -396,7 +415,7 @@ describe('guide settlement policy — calcSettlement integration', () => {
     expect(result.matrix.find((r) => r.key === 'r85')?.settlement?.value).toBe(250)
   })
 
-  it('deducts megugi from D80+D81 before profit share', () => {
+  it('deducts megugi from F72+D81 before profit share', () => {
     const withoutMegugi = calcGuideSettlementFromProfitPool(300, 200, 0, 50)
     const withMegugi = calcGuideSettlementFromProfitPool(300, 200, 100, 50)
 
@@ -412,6 +431,30 @@ describe('guide settlement policy — calcSettlement integration', () => {
       lowMegugi.sections.cash.company_deposit_usd.value,
     )
     expect(highMegugi.sections.cash.company_deposit_usd.formula).toBe('J75−N75−P75')
+  })
+})
+
+describe('guide payout — production regression', () => {
+  it('case 1: shopping COM 5500 + option 281.54 → ≈2890.77', () => {
+    const result = calcSettlement(screenLikeInput(9460, 5500, 281.54, 0, 0))
+    expect(result.summary.guide_payout_usd.value).toBeCloseTo(2890.77, 2)
+  })
+
+  it('case 2: megugi 1000 reduces payout to 2390.77', () => {
+    const result = calcSettlement(screenLikeInput(9460, 5500, 281.54, 1000, 0))
+    expect(result.summary.guide_payout_usd.value).toBeCloseTo(2390.77, 2)
+  })
+
+  it('case 3: negative pool floors share; daily fee still paid', () => {
+    const result = calcSettlement(screenLikeInput(0, 100, 0, 300, 50))
+    expect(result.summary.guide_payout_usd.value).toBe(50)
+  })
+
+  it('does not double-count shopping SALE in guide payout (D80 vs F72)', () => {
+    const withSale = calcSettlement(screenLikeInput(9460, 5500, 281.54, 0, 0))
+    const comOnly = calcSettlement(screenLikeInput(0, 5500, 281.54, 0, 0))
+    expect(withSale.summary.guide_payout_usd.value).toBe(comOnly.summary.guide_payout_usd.value)
+    expect(withSale.summary.guide_payout_usd.value).not.toBeCloseTo(7620.77, 0)
   })
 })
 
@@ -441,8 +484,8 @@ describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
 
     expect(result.summary.income_total_usd.value).toBe(695)
     expect(result.summary.balance_usd.value).toBe(477)
-    expect(result.summary.guide_settlement_usd.value).toBe(268.5)
-    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-338.884615384, 4)
+    expect(result.summary.guide_settlement_usd.value).toBe(168.5)
+    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-238.884615384, 4)
 
     const excelCheck = verifySettlementAgainstExcel(result, MOCK_SETTLEMENT_INPUT)
     expect(excelCheck.acceptable).toBe(true)

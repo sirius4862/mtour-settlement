@@ -11,6 +11,7 @@ import {
   calcMealSubtotals,
   calcOptionSubtotals,
   calcOtherSubtotals,
+  calcShoppingActualProfitUsd,
   calcShoppingSubtotals,
   calcShoppingIncomeD80,
   computeSettlementMatrixValues,
@@ -117,12 +118,8 @@ export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelRe
     options,
   })
 
-  const d80 = calcShoppingIncomeD80(
-    shopping.sale_usd.value,
-    shopping.com_usd.value,
-  )
   const guideSettlement = calcGuideSettlementFromProfitPool(
-    d80,
+    calcShoppingActualProfitUsd(shopping.com_usd.value),
     options.com_usd.value,
     input.header.megugi_usd,
     input.header.guide_daily_fee_usd,
@@ -236,7 +233,7 @@ export function verifyExcelFormulaFlow(
   }
 
   const expectedR85 = calcGuideSettlementFromProfitPool(
-    expectedD80,
+    calcShoppingActualProfitUsd(shopping.com_usd.value),
     options.com_usd.value,
     h.megugi_usd,
     h.guide_daily_fee_usd,

@@ -28,7 +28,7 @@ export function SettlementFormFooter({
   hideSubmit = false,
   showSendForConfirmation = false,
   saveLabel = '임시저장',
-  sendForConfirmationLabel = '가이드 확인 요청',
+  sendForConfirmationLabel = '가이드 검토 요청',
 }: {
   calc: SettlementCalcResult
   companyDeposit: AnnotatedNumber

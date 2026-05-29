@@ -208,7 +208,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
         router.push(adminEdit.backHref)
         return
       }
-      setSaveError(result.error ?? '가이드 확인 요청 실패')
+      setSaveError(result.error ?? '가이드 검토 요청 실패')
     } catch {
       setSaveError('네트워크 오류가 발생했습니다.')
     } finally {
@@ -403,7 +403,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       ? ([
           {
             id: 'adjustments',
-            title: '정산 조정',
+            title: '회사 입력 항목',
             excelRows: EXCEL_SECTIONS.adjustments.rows,
             preview: calc.summary.balance_usd,
             children: <FinalAdjustmentsSection />,
@@ -496,7 +496,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
           hideSubmit={isAdminReview}
           showSendForConfirmation={canSendForConfirmation}
           saveLabel="임시저장"
-          sendForConfirmationLabel="가이드 확인 요청"
+          sendForConfirmationLabel="가이드 검토 요청"
         />
       )}
     </div>

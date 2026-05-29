@@ -87,7 +87,7 @@ export function ReviewPanel({
         {canSendForConfirmation && !showReject && (
           <button onClick={handleSendForConfirmation} disabled={pending}
             className="flex-1 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-40">
-            {pending ? '처리 중…' : '가이드 확인 요청'}
+            {pending ? '처리 중…' : '가이드 검토 요청'}
           </button>
         )}
 

@@ -5,6 +5,10 @@ import {
   displayFieldLabel,
   GUIDE_FOOTER_LABELS,
   GUIDE_PAYOUT_FLOOR_WARNING,
+  Q75_NEGATIVE_WARNING,
+  R87_EXCLUDES_D79_NOTE,
+  R77_REFERENCE_ONLY_NOTE,
+  companyDepositIsNegative,
   guideSettlementIsNegative,
   shouldShowGuideSummaryMatrix,
   shouldShowMatrixRow,
@@ -17,7 +21,7 @@ import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 
 const COL_HEADERS = [
-  { key: 'd', label: '수익', ref: 'D', sub: 'D79·쇼핑·팁 등 (표시)' },
+  { key: 'd', label: '수익·선지급', ref: 'D', sub: 'COM·팁(수익) · D79=Q75차감' },
   { key: 'h', label: '가이드지출', ref: 'H', sub: 'Hotel, meals, TC…' },
   { key: 'j', label: '회사지출', ref: 'J', sub: 'Company hotel, TC…' },
   { key: 'o', label: '기타포함', ref: 'O', sub: 'Vehicle, taxes…' },
@@ -48,7 +52,7 @@ function MatrixCell({
         <div className="flex items-center gap-1 flex-wrap">
           <span className="text-[9px] font-mono text-blue-600/80">{field.excelRef}</span>
           {isBasicInfoMirror && (
-            <span className="text-[8px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">기본정보</span>
+            <span className="text-[8px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">회사 선지급 · Q75 차감</span>
           )}
         </div>
       )}
@@ -136,10 +140,11 @@ export function FinalSummarySection({
   settlementRatio: number
   audience?: SummaryAudience
 }) {
-  const { matrix, summary } = calc
+  const { matrix, summary, sections } = calc
   const showMatrix = shouldShowGuideSummaryMatrix(audience)
   const visibleMatrix = matrix.filter((row) => shouldShowMatrixRow(row.key, audience))
   const payoutIsFloored = guideSettlementIsNegative(summary.guide_settlement_usd.value)
+  const q75IsNegative = companyDepositIsNegative(sections.cash.company_deposit_usd.value)
   const guideDisplayField =
     audience === 'admin' ? summary.guide_settlement_usd : summary.guide_payout_usd
 
@@ -155,6 +160,12 @@ export function FinalSummarySection({
     <div className="space-y-4">
       <SectionHint excelRows={EXCEL_SECTIONS.summary.rows} hint={EXCEL_SECTIONS.summary.hint} />
 
+      {q75IsNegative && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+          {Q75_NEGATIVE_WARNING}
+        </p>
+      )}
+
       <div className={`grid gap-2 ${audience === 'guide' ? 'grid-cols-1' : 'grid-cols-2'}`}>
         <CalculatedField field={summary.income_total_usd} compact />
         {audience === 'admin' && (
@@ -169,10 +180,11 @@ export function FinalSummarySection({
               <p className="text-xs font-semibold text-gray-700">정산내역 매트릭스</p>
               <p className="text-[10px] text-gray-400">엑셀 R79–R87 · 5열 구조 (D / H / J / O / R)</p>
             </div>
-            <div className="text-[10px] font-mono px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200">
-              R77 정산비율 = {Math.round(settlementRatio * 100)}%
+            <div className="text-[10px] font-mono px-2.5 py-1.5 rounded-lg bg-slate-50 text-slate-600 border border-slate-200">
+              R77 = {Math.round(settlementRatio * 100)}% · 참고 전용
             </div>
           </div>
+          <p className="text-[10px] text-gray-400 px-1">{R77_REFERENCE_ONLY_NOTE}</p>
 
           <div className="space-y-2 md:hidden">
             {visibleMatrix.map((row) => (
@@ -246,6 +258,11 @@ export function FinalSummarySection({
               />
             ))}
           </div>
+        )}
+        {audience === 'admin' && shouldShowSummaryField(summary.company_grand_total_usd, audience) && (
+          <p className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+            {R87_EXCLUDES_D79_NOTE}
+          </p>
         )}
       </div>
     </div>

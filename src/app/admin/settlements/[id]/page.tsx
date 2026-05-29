@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Q75_NEGATIVE_WARNING, R87_EXCLUDES_D79_NOTE } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { createClient } from '@/lib/supabase/server'
@@ -38,6 +39,7 @@ export default async function AdminSettlementDetailPage({
   const m = (key: string) => matrix.find((r) => r.key === key)
 
   const companyDeposit = sections.cash.company_deposit_usd.value
+  const q75IsNegative = companyDeposit < 0
   const guideSettlement = summary.guide_settlement_usd.value
   const guidePayout = summary.guide_payout_usd.value
   const companyProfit = summary.company_grand_total_usd.value
@@ -81,9 +83,12 @@ export default async function AdminSettlementDetailPage({
         <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
           <p className="text-xs font-semibold text-amber-700 mb-2">정산 결과</p>
           <div className="space-y-1 text-xs">
-            <p className="text-gray-600">
+            <p className={`${q75IsNegative ? 'text-red-700 font-semibold' : 'text-gray-600'}`}>
               회사입금 (Q75): <span className="font-mono">{fmt2(companyDeposit)}</span>
             </p>
+            {q75IsNegative && (
+              <p className="text-red-700 text-[10px]">{Q75_NEGATIVE_WARNING}</p>
+            )}
             <p className="text-gray-600">
               가이드 수익풀 (D84): <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
             </p>
@@ -107,6 +112,7 @@ export default async function AdminSettlementDetailPage({
             <p className="text-emerald-700 font-semibold">
               회사수익 (R87): <span className="font-mono">{fmt2(companyProfit)}</span>
             </p>
+            <p className="text-emerald-700 text-[10px]">{R87_EXCLUDES_D79_NOTE}</p>
           </div>
         </div>
       </div>
@@ -116,7 +122,7 @@ export default async function AdminSettlementDetailPage({
         <p className="text-xs font-semibold text-gray-500 mb-3">상세 계산 (엑셀 R77-R87)</p>
         <div className="space-y-1.5 text-xs">
           {[
-            ['투어피 — 회사 선지급 / 가이드 입력 (D79)', fmt2(m('r79')?.income?.value ?? 0)],
+            ['투어피 — 회사 선지급 / Q75 차감 (D79, R87 미포함)', fmt2(m('r79')?.income?.value ?? 0)],
             ['쇼핑수익 COM (D80)', fmt2(m('r80')?.income?.value ?? 0)],
             ['쇼핑 SALE 참고 (D72)', fmt2(sections.shopping.sale_usd.value)],
             ['옵션수익 COM (D81)', fmt2(m('r81')?.income?.value ?? 0)],
@@ -170,7 +176,7 @@ export default async function AdminSettlementDetailPage({
 
       {shoppings.length > 0 && <ItemTable title="쇼핑 수익" rows={shoppings.map(sh => [
         sh.shop_name, sh.visit_date ?? '', fmt2(sh.sale_usd), fmt2(sh.com_usd), fmt2(sh.kb_usd)
-      ])} headers={['샵명', '날짜', 'SALE', 'COM', 'KB']} />}
+      ])} headers={['샵명', '날짜', 'SALE (참고)', 'COM (수익)', 'KB']} />}
 
       {options.length > 0 && <ItemTable title="옵션 수익" rows={options.map(op => [
         op.is_extra_vehicle ? '🚌 추가차량비' : op.option_name,

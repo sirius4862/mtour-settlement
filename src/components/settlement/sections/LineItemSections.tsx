@@ -298,9 +298,9 @@ export function ShoppingSection() {
           <ManualField label="샵명" value={row.shop_name} disabled={adminReview}
             onChange={(e) => updateRow('shoppings', row.clientId, { shop_name: e.target.value })} />
           <div className={`grid gap-2 ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'}`}>
-            <ManualField label="SALE" excelRef="D57" suffix="$" inputMode="decimal" value={row.sale_usd || ''} disabled={adminReview}
+            <ManualField label="SALE (참고)" excelRef="D57" suffix="$" inputMode="decimal" value={row.sale_usd || ''} disabled={adminReview}
               onChange={(e) => updateRow('shoppings', row.clientId, { sale_usd: parseNum(e.target.value) })} />
-            <ManualField label="COM" excelRef="F57" suffix="$" inputMode="decimal" value={row.com_usd || ''} disabled={adminReview}
+            <ManualField label="COM (수익)" excelRef="F57" suffix="$" inputMode="decimal" value={row.com_usd || ''} disabled={adminReview}
               onChange={(e) => updateRow('shoppings', row.clientId, { com_usd: parseNum(e.target.value) })} />
             {isAdmin && (
               <ManualField label="KB" excelRef="H57" suffix="$" inputMode="decimal" value={row.kb_usd || ''}

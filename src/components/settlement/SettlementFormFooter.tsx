@@ -5,7 +5,9 @@ import type { AnnotatedNumber, SettlementCalcResult } from '@/lib/settlement/typ
 import {
   GUIDE_FOOTER_LABELS,
   GUIDE_PAYOUT_FLOOR_WARNING,
+  Q75_NEGATIVE_WARNING,
   displayFieldLabel,
+  companyDepositIsNegative,
   guideSettlementIsNegative,
   type SummaryAudience,
 } from '@/lib/settlement/display-labels'
@@ -48,6 +50,7 @@ export function SettlementFormFooter({
   const guidePayout = calc.summary.guide_payout_usd
   const companyProfit = calc.summary.company_grand_total_usd
   const payoutIsFloored = guideSettlementIsNegative(guideSettlement.value)
+  const q75IsNegative = companyDepositIsNegative(companyDeposit.value)
 
   return (
     <div className="fixed bottom-16 left-0 right-0 z-30 bg-white border-t border-gray-200 shadow-lg">
@@ -109,6 +112,12 @@ export function SettlementFormFooter({
             </>
           )}
         </div>
+
+        {q75IsNegative && (
+          <p className="text-center text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5">
+            {Q75_NEGATIVE_WARNING}
+          </p>
+        )}
 
         {payoutIsFloored && audience === 'guide' && (
           <p className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">

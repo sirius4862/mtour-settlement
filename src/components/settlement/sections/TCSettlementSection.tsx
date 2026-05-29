@@ -189,25 +189,17 @@ export function FinalAdjustmentsSection() {
           }
         />
         <CompanyReviewFields adminView />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <p className="text-xs text-gray-600">
             정산비율{' '}
-            <span className="font-mono text-blue-600 ml-1">
+            <span className="font-mono text-blue-600">
               {Math.round(header.settlement_ratio * 100)}% (R77)
             </span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="5"
-            value={Math.round(header.settlement_ratio * 100)}
-            onChange={(e) =>
-              patchHeader({ settlement_ratio: parseInt(e.target.value, 10) / 100 })
-            }
-            className="w-full min-h-12 accent-blue-600"
-          />
-          <p className="text-[10px] font-mono text-gray-400 mt-1">R77 · 슬라이더</p>
+            <span className="text-gray-400"> · 참고 전용</span>
+          </p>
+          <p className="text-[10px] text-gray-400 mt-1">
+            P85 계산에 반영되지 않습니다. 슬라이더는 비활성화되어 있습니다.
+          </p>
         </div>
       </SectionCard>
     </div>

@@ -1,6 +1,11 @@
 /**
- * Excel final-value verification — max 1 USD tolerance on Q75 / R85 / R87 only.
- * Formula flow must match Excel; numeric closeness alone is not sufficient.
+ * Operational settlement policy contract verification (not literal Excel workbook parity).
+ *
+ * Recomputes Q75 / R85 / R87 from the same policy formulas as calc.ts and checks:
+ * - formula metadata matches the operational contract
+ * - final totals stay within EXCEL_FINAL_TOLERANCE_USD (legacy name; max 1 USD)
+ *
+ * Legacy export names (ExcelReference*, EXCEL_FORMULA_CONTRACT) are kept for callers.
  */
 
 import {
@@ -23,7 +28,7 @@ import {
 } from './calc'
 import type { SettlementCalcInput, SettlementCalcResult } from './types-calc'
 
-/** Max allowed |code − excelReference| for final settlement totals (USD). */
+/** Max allowed |calc.ts − policy reference| for Q75 / R85 / R87 finals (USD). */
 export const EXCEL_FINAL_TOLERANCE_USD = 1
 
 export type SettlementFinalExcelRef = 'Q75' | 'R85' | 'R87'
@@ -75,7 +80,7 @@ export interface ExcelSettlementVerification {
   acceptable: boolean
 }
 
-/** Excel cell formulas the engine must follow. */
+/** Operational policy formulas calc.ts must follow (legacy export name). */
 export const EXCEL_FORMULA_CONTRACT: Record<string, string> = {
   D80: SETTLEMENT_SHOPPING_PROFIT_FORMULA,
   D84: SETTLEMENT_PROFIT_INCOME_FORMULA,
@@ -95,7 +100,7 @@ function nearlyEqual(a: number, b: number, epsilon = STEP_EPSILON_USD): boolean 
   return Math.abs(a - b) <= epsilon
 }
 
-/** Independent Excel reference path for the three final totals. */
+/** Independent policy-contract reference path for Q75 / R85 / R87 finals. */
 export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelReferenceFinals {
   const rate = input.exchange_rate
 
@@ -187,7 +192,7 @@ export function compareFinalToExcel(
   }
 }
 
-/** Ensures calc.ts follows Excel formula direction — not just close finals. */
+/** Ensures calc.ts follows the operational policy contract — not just close finals. */
 export function verifyExcelFormulaFlow(
   result: SettlementCalcResult,
   input: SettlementCalcInput,

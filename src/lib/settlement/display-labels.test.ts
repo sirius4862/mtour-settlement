@@ -4,6 +4,9 @@ import {
   displayFieldLabel,
   GUIDE_FOOTER_LABELS,
   GUIDE_PAYOUT_FLOOR_WARNING,
+  Q75_NEGATIVE_WARNING,
+  R87_EXCLUDES_D79_NOTE,
+  companyDepositIsNegative,
   guideDisplaySettlementUsd,
   guideSettlementIsNegative,
   shouldShowGuideSummaryMatrix,
@@ -55,6 +58,17 @@ describe('guide payout floor', () => {
 
   it('includes floor warning message', () => {
     expect(GUIDE_PAYOUT_FLOOR_WARNING).toContain('$0')
+  })
+
+  it('includes Q75 negative warning', () => {
+    expect(Q75_NEGATIVE_WARNING).toContain('Q75')
+    expect(companyDepositIsNegative(-1)).toBe(true)
+    expect(companyDepositIsNegative(0)).toBe(false)
+  })
+
+  it('notes R87 excludes D79', () => {
+    expect(R87_EXCLUDES_D79_NOTE).toContain('D79')
+    expect(R87_EXCLUDES_D79_NOTE).toContain('R87')
   })
 })
 

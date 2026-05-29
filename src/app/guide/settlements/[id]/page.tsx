@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { requireGuide } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { calcSettlement } from '@/lib/settlement/calc'
-import { GUIDE_FOOTER_LABELS, GUIDE_PAYOUT_FLOOR_WARNING } from '@/lib/settlement/display-labels'
+import { GUIDE_FOOTER_LABELS, GUIDE_PAYOUT_FLOOR_WARNING, Q75_NEGATIVE_WARNING, R87_EXCLUDES_D79_NOTE } from '@/lib/settlement/display-labels'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { STATUS_META, canGuideEdit, canGuideConfirm } from '@/types'
 import { SubmitButton } from './SubmitButton'
@@ -92,6 +92,9 @@ export default async function SettlementDetailPage({
       <Card title="정산 요약" accent>
         <div className="space-y-1.5 text-sm">
           <Row label={GUIDE_FOOTER_LABELS.companyDeposit} value={fmt2(companyDeposit)} />
+          {companyDeposit < 0 && (
+            <p className="text-xs text-red-700 pt-1">{Q75_NEGATIVE_WARNING}</p>
+          )}
           <Row label={GUIDE_FOOTER_LABELS.guideSettlement} value={fmt2(guidePayout)} bold accent />
           {payoutIsFloored && (
             <p className="text-xs text-amber-700 pt-1">
@@ -106,7 +109,7 @@ export default async function SettlementDetailPage({
         <div className="space-y-1">
           {[
             ['전도금', fmtV(s.advance_vnd), `≈ ${fmt2(s.advance_vnd / rate)}`],
-            ['투어피', fmt2(s.tour_fee_usd), ''],
+            ['투어피 (회사 선지급 · Q75 차감)', fmt2(s.tour_fee_usd), ''],
             ['차밍쇼/기타', fmt2(s.charming_other_usd), ''],
             ['받은팁', fmt2(s.tip_received_usd), ''],
             ['옵션외상/팁송금', fmt2(s.option_credit_usd), ''],

@@ -12,7 +12,7 @@ import {
   guideSettlementIsNegative,
   type SummaryAudience,
 } from '@/lib/settlement/display-labels'
-import { formatUsd } from '../CalculatedField'
+import { formatUsd } from '@/lib/settlement/format-currency'
 
 function formatLineAmount(amount: number, variant: SummaryLineVariant): string {
   if (variant === 'deduct' && amount > 0) {

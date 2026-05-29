@@ -186,35 +186,55 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
 export async function getSettlementFull(id: string): Promise<SettlementFull | null> {
   const supabase = await createClient()
 
-  const { data: s } = await supabase
+  const { data: s, error: settlementError } = await supabase
     .from('settlements').select('*, tour:tours(*)').eq('id', id).single()
-  if (!s) return null
+  if (settlementError || !s) {
+    if (settlementError) {
+      console.error('[getSettlementFull] settlements:', settlementError.message)
+    }
+    return null
+  }
+
+  const fetchRows = async (
+    table: string,
+    orderColumn: string,
+    ascending = true,
+  ) => {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .eq('settlement_id', id)
+      .order(orderColumn, { ascending })
+    if (error) {
+      console.error(`[getSettlementFull] ${table}:`, error.message)
+      return []
+    }
+    return data ?? []
+  }
 
   const [
-    { data: hotels }, { data: meals }, { data: entrances },
-    { data: others }, { data: shoppings }, { data: options },
-    { data: companyExpenses }, { data: receipts },
+    hotels, meals, entrances, others, shoppings, options, companyExpenses, receipts,
   ] = await Promise.all([
-    supabase.from('hotel_items').select('*').eq('settlement_id', id).order('sort_order'),
-    supabase.from('meal_items').select('*').eq('settlement_id', id).order('sort_order'),
-    supabase.from('entrance_items').select('*').eq('settlement_id', id).order('sort_order'),
-    supabase.from('other_expense_items').select('*').eq('settlement_id', id).order('sort_order'),
-    supabase.from('shopping_items').select('*').eq('settlement_id', id).order('sort_order'),
-    supabase.from('option_items').select('*').eq('settlement_id', id).order('sort_order'),
-    supabase.from('company_expense_items').select('*').eq('settlement_id', id).order('sort_order'),
-    supabase.from('receipts').select('*').eq('settlement_id', id).order('created_at'),
+    fetchRows('hotel_items', 'sort_order'),
+    fetchRows('meal_items', 'sort_order'),
+    fetchRows('entrance_items', 'sort_order'),
+    fetchRows('other_expense_items', 'sort_order'),
+    fetchRows('shopping_items', 'sort_order'),
+    fetchRows('option_items', 'sort_order'),
+    fetchRows('company_expense_items', 'sort_order'),
+    fetchRows('receipts', 'created_at'),
   ])
 
   return {
     ...s,
-    hotels:    hotels    ?? [],
-    meals:     meals     ?? [],
-    entrances: entrances ?? [],
-    others:    others    ?? [],
-    shoppings: shoppings ?? [],
-    options:   options   ?? [],
-    company_expenses: companyExpenses ?? [],
-    receipts:  receipts  ?? [],
+    hotels,
+    meals,
+    entrances,
+    others,
+    shoppings,
+    options,
+    company_expenses: companyExpenses,
+    receipts,
   } as SettlementFull
 }
 

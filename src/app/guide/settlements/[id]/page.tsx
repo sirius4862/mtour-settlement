@@ -4,6 +4,8 @@ import { requireGuide } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { calcSettlement } from '@/lib/settlement/calc'
 import { GUIDE_FOOTER_LABELS, GUIDE_PAYOUT_FLOOR_WARNING, Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
+import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
+import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migrate'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { normalizeExternalReceivableForForm } from '@/lib/settlement/external-receivable'
 import { STATUS_META, canGuideEdit, canGuideConfirm } from '@/types'
@@ -11,8 +13,8 @@ import { SubmitButton } from './SubmitButton'
 
 export const dynamic = 'force-dynamic'
 
-const fmt2 = (v: number) => v === 0 ? '—' : `$${v.toFixed(2)}`
-const fmtV = (v: number) => v === 0 ? '—' : `₫${Math.round(v).toLocaleString('ko-KR')}`
+const fmt2 = formatUsd
+const fmtV = formatVnd
 
 export default async function SettlementDetailPage({
   params,
@@ -20,7 +22,7 @@ export default async function SettlementDetailPage({
   const { id } = await params
   const session = await requireGuide()
   const data = await getSettlementFull(id)
-  if (!data) notFound()
+  if (!data || !data.tour) notFound()
   if (session.role === 'guide' && data.guide_id !== session.id) notFound()
 
   const { tour, hotels, meals, entrances, others, shoppings, options } = data
@@ -208,20 +210,23 @@ export default async function SettlementDetailPage({
       {/* 기타지출 */}
       {others.length > 0 && (
         <Card title={`기타지출 (${others.length}건)`}>
-          {others.map(o => (
+          {others.map(o => {
+            const amounts = normalizeOtherAmountsFromDb(o)
+            return (
             <div key={o.id} className="py-2 border-b border-gray-50 last:border-0 space-y-0.5">
               <div className="flex justify-between gap-3">
                 <span className="text-sm text-gray-800">{o.description || '기타'}</span>
                 <div className="text-right text-xs font-mono text-gray-700 shrink-0">
-                  {o.amount_usd > 0 && <p>{fmt2(o.amount_usd)}</p>}
-                  {o.amount_vnd > 0 && <p>{fmtV(o.amount_vnd)}</p>}
+                  {amounts.amount_usd > 0 && <p>{fmt2(amounts.amount_usd)}</p>}
+                  {amounts.amount_vnd > 0 && <p>{fmtV(amounts.amount_vnd)}</p>}
                 </div>
               </div>
               {o.note?.trim() && (
                 <p className="text-xs text-gray-500">{o.note}</p>
               )}
             </div>
-          ))}
+            )
+          })}
         </Card>
       )}
 

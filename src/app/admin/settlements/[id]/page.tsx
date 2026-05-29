@@ -8,14 +8,16 @@ import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { createClient } from '@/lib/supabase/server'
 import { formatGuideDisplayName } from '@/lib/guide/display-name'
 import { calcSettlement } from '@/lib/settlement/calc'
+import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
+import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migrate'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { STATUS_META, canAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
 export const dynamic = 'force-dynamic'
 
-const fmt2 = (v: number) => v === 0 ? '—' : `$${v.toFixed(2)}`
-const fmtV = (v: number) => v === 0 ? '—' : `₫${Math.round(v).toLocaleString('ko-KR')}`
+const fmt2 = formatUsd
+const fmtV = formatVnd
 
 export default async function AdminSettlementDetailPage({
   params,
@@ -23,7 +25,7 @@ export default async function AdminSettlementDetailPage({
   const { id } = await params
   await requireAdmin()
   const data = await getSettlementFull(id)
-  if (!data) notFound()
+  if (!data || !data.tour) notFound()
 
   const supabase = await createClient()
   const { data: guideProfile } = await supabase
@@ -143,12 +145,15 @@ export default async function AdminSettlementDetailPage({
         m.restaurant_name, m.meal_date ?? '', `${m.pax}명`, fmtV(m.amount_vnd)
       ])} headers={['식당명', '날짜', '인원', '금액(VND)']} />}
 
-      {others.length > 0 && <ItemTable title="기타지출" rows={others.map(o => [
-        o.description || '—',
-        fmt2(o.amount_usd),
-        fmtV(o.amount_vnd),
-        o.note?.trim() || '—',
-      ])} headers={['지출 항목', 'USD', 'VND', '메모']} />}
+      {others.length > 0 && <ItemTable title="기타지출" rows={others.map(o => {
+        const amounts = normalizeOtherAmountsFromDb(o)
+        return [
+          o.description || '—',
+          fmt2(amounts.amount_usd),
+          fmtV(amounts.amount_vnd),
+          o.note?.trim() || '—',
+        ]
+      })} headers={['지출 항목', 'USD', 'VND', '메모']} />}
 
       {/* 메모 */}
       {s.guide_note && (

@@ -1,18 +1,10 @@
 'use client'
 
 import type { AnnotatedNumber } from '@/lib/settlement/types-calc'
+import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 import { FormulaHint } from './FormulaHint'
 
-export function formatUsd(value: number): string {
-  if (value === 0) return '—'
-  const sign = value < 0 ? '-' : ''
-  return `${sign}$${Math.abs(value).toFixed(2)}`
-}
-
-export function formatVnd(value: number): string {
-  if (value === 0) return '—'
-  return `₫${Math.round(value).toLocaleString('ko-KR')}`
-}
+export { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 
 export function CalculatedField({
   field,

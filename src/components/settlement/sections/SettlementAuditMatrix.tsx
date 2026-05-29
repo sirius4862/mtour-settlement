@@ -1,6 +1,6 @@
 import type { AnnotatedNumber, SettlementCalcResult, SettlementMatrixRow } from '@/lib/settlement/types-calc'
 import { R77_REFERENCE_ONLY_NOTE, shouldShowMatrixRow } from '@/lib/settlement/display-labels'
-import { formatUsd } from '../CalculatedField'
+import { formatUsd } from '@/lib/settlement/format-currency'
 
 const COL_HEADERS = [
   { key: 'd', label: '수익', ref: 'D' },

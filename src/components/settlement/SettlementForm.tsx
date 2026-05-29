@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SettlementFull, Tour } from '@/types'
-import { saveSettlementDraft, saveAdminSettlementEdits, submitSettlement } from '@/lib/actions/settlementActions'
+import { saveSettlementDraft, saveAdminSettlementEdits, sendForConfirmation, submitSettlement } from '@/lib/actions/settlementActions'
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
+import { canAdminSendForConfirmation } from '@/lib/settlement/status-guards'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
   shouldShowAdminSettlementSections,
@@ -72,6 +73,8 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
   const dirty = useSettlementFormStore((s) => s.dirty)
   const lastSavedAt = useSettlementFormStore((s) => s.lastSavedAt)
   const saveError = useSettlementFormStore((s) => s.saveError)
+  const settlementStatus = useSettlementFormStore((s) => s.settlementStatus)
+  const guideSubmitSnapshotId = useSettlementFormStore((s) => s.guideSubmitSnapshotId)
   const settlementRatio = useSettlementFormStore((s) => s.header.settlement_ratio)
   const hotelRowCount = useSettlementFormStore((s) => activeRowCount('hotels', s))
   const mealRowCount = useSettlementFormStore((s) => activeRowCount('meals', s))
@@ -88,6 +91,10 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
   const audience = summaryAudienceFromRole(role)
   const isAdmin = role === 'admin'
   const showAdminSections = shouldShowAdminSettlementSections(isAdmin, isAdminReview)
+  const canSendForConfirmation = isAdminReview
+    && !!settlementStatus
+    && canAdminSendForConfirmation(settlementStatus)
+    && !!guideSubmitSnapshotId
 
   useEffect(() => {
     if (hydrated.current) return
@@ -175,6 +182,39 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       setPending(false)
     }
   }, [isPreview, isAdminReview, runValidation, setSaving, markSaved, mergeServerSync, setSaveError])
+
+  const handleSendForConfirmation = useCallback(async () => {
+    if (isPreview || !isAdminReview || !adminEdit) return
+
+    if (!canSendForConfirmation) {
+      setSaveError('가이드 제출 스냅샷이 없어 확인 요청을 보낼 수 없습니다.')
+      return
+    }
+
+    if (!window.confirm('변경사항을 저장한 뒤 가이드에게 확인을 요청하시겠습니까?')) {
+      return
+    }
+
+    const saved = await handleSave()
+    if (!saved) return
+
+    const id = useSettlementFormStore.getState().settlementId
+    if (!id) return
+
+    setPending(true)
+    try {
+      const result = await sendForConfirmation(id)
+      if (result.ok) {
+        router.push(adminEdit.backHref)
+        return
+      }
+      setSaveError(result.error ?? '가이드 확인 요청 실패')
+    } catch {
+      setSaveError('네트워크 오류가 발생했습니다.')
+    } finally {
+      setPending(false)
+    }
+  }, [isPreview, isAdminReview, adminEdit, canSendForConfirmation, handleSave, router, setSaveError])
 
   const handleSubmit = useCallback(async () => {
     if (isPreview) return
@@ -451,9 +491,12 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
           saveError={saveError}
           onSave={handleSave}
           onSubmit={handleSubmit}
+          onSendForConfirmation={isAdminReview ? handleSendForConfirmation : undefined}
           pending={pending}
           hideSubmit={isAdminReview}
-          saveLabel={isAdminReview ? '저장' : '임시저장'}
+          showSendForConfirmation={canSendForConfirmation}
+          saveLabel="임시저장"
+          sendForConfirmationLabel="가이드 확인 요청"
         />
       )}
     </div>

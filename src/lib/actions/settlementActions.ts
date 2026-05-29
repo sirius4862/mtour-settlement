@@ -21,6 +21,9 @@ import {
   type SettlementSyncPayload,
   sanitizeGuideDraftPayload,
   sanitizeAdminDraftPayload,
+  splitDbRowsForPersist,
+  isMissingDbColumnError,
+  buildAdminSettlementHeaderPatch,
 } from '@/lib/settlement/mappers'
 import {
   buildSnapshotPayload,
@@ -530,7 +533,7 @@ async function persistSettlementLineItems(
   ]
 
   for (const { table, rows } of itemTables) {
-    const keepIds = rows.map((r) => r.id).filter(Boolean) as string[]
+    const { keepIds, toInsert, toUpdate } = splitDbRowsForPersist(rows)
 
     let deleteQuery = supabase.from(table).delete().eq('settlement_id', settlementId)
     if (keepIds.length > 0) {
@@ -539,8 +542,13 @@ async function persistSettlementLineItems(
     const { error: delErr } = await deleteQuery
     if (delErr) return { ok: false, error: delErr.message }
 
-    if (rows.length > 0) {
-      const { error: upsertErr } = await supabase.from(table).upsert(rows, { onConflict: 'id' })
+    if (toInsert.length > 0) {
+      const { error: insErr } = await supabase.from(table).insert(toInsert)
+      if (insErr) return { ok: false, error: insErr.message }
+    }
+
+    if (toUpdate.length > 0) {
+      const { error: upsertErr } = await supabase.from(table).upsert(toUpdate, { onConflict: 'id' })
       if (upsertErr) return { ok: false, error: upsertErr.message }
     }
   }
@@ -678,22 +686,30 @@ export async function saveAdminSettlementEdits(
   const supabase = await createClient()
   const currentStatus = existing.status
 
-  const { error: headerErr } = await supabase
+  const headerPatch = buildAdminSettlementHeaderPatch(
+    existing,
+    sanitized.header,
+    profile.id,
+  )
+  let { error: headerErr } = await supabase
     .from('settlements')
-    .update({
-      tour_fee_usd: existing.tour_fee_usd ?? 0,
-      ground_fee_usd: sanitized.header.ground_fee_usd ?? 0,
-      vehicle_fee_usd: sanitized.header.vehicle_fee_usd,
-      head_tax_usd: sanitized.header.head_tax_usd,
-      seoul_biz_fee_usd: sanitized.header.seoul_biz_fee_usd,
-      tc_company_usd: sanitized.header.tc_company_usd,
-      megugi_usd: sanitized.header.megugi_usd,
-      guide_daily_fee_usd: sanitized.header.guide_daily_fee_usd,
-      settlement_ratio: sanitized.header.settlement_ratio,
-      reviewed_by: profile.id,
-    })
+    .update(headerPatch)
     .eq('id', payload.settlementId)
     .eq('status', currentStatus)
+
+  if (headerErr && isMissingDbColumnError(headerErr.message, 'ground_fee_usd')) {
+    const legacyPatch = buildAdminSettlementHeaderPatch(
+      existing,
+      sanitized.header,
+      profile.id,
+      { legacyGroundFeeInTourFee: true },
+    )
+    ;({ error: headerErr } = await supabase
+      .from('settlements')
+      .update(legacyPatch)
+      .eq('id', payload.settlementId)
+      .eq('status', currentStatus))
+  }
 
   if (headerErr) return { ok: false, error: headerErr.message }
 

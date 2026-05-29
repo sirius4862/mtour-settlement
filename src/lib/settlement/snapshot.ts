@@ -66,6 +66,7 @@ const CONFIRM_DIFF_CALC_KEYS: (keyof SnapshotCalcSummary)[] = [
 /** Never shown on guide confirm UI or in guide-facing change lists. */
 export const GUIDE_HIDDEN_CONFIRM_FIELD_PATHS = [
   'calc_summary.company_grand_total_usd',
+  'header.ground_fee_usd',
 ] as const
 
 export const SHOPPING_KB_LABEL = 'KB (회사 전용 수익)'

@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { calcSettlement } from './calc'
 import { MOCK_SETTLEMENT_INPUT } from './mock-data'
 import {
+  buildAdminSettlementHeaderPatch,
   buildEntranceDbRows,
   buildHotelDbRows,
   buildMealDbRows,
   buildOptionDbRows,
   buildOtherDbRows,
   buildShoppingDbRows,
+  isMissingDbColumnError,
   mergeServerSync,
   resolveGroundFeeUsd,
+  splitDbRowsForPersist,
   stateFromSettlementFull,
   toCalcInput,
   toDraftPayload,
@@ -183,6 +186,51 @@ describe('resolveGroundFeeUsd', () => {
 
   it('falls back to legacy tour_fee_usd when ground is zero', () => {
     expect(resolveGroundFeeUsd({ ground_fee_usd: 0, tour_fee_usd: 120 })).toBe(120)
+  })
+})
+
+describe('splitDbRowsForPersist', () => {
+  it('routes id-less rows to insert and id rows to upsert', () => {
+    const rows = [
+      { id: 'hotel-1', settlement_id: SETTLEMENT_ID, hotel_name: 'A' },
+      { settlement_id: SETTLEMENT_ID, hotel_name: '', unit_price_sgl_usd: 50 },
+    ]
+    const split = splitDbRowsForPersist(rows)
+    expect(split.keepIds).toEqual(['hotel-1'])
+    expect(split.toUpdate).toHaveLength(1)
+    expect(split.toInsert).toHaveLength(1)
+    expect(split.toInsert[0]).not.toHaveProperty('id')
+  })
+})
+
+describe('buildAdminSettlementHeaderPatch', () => {
+  it('writes ground_fee_usd on modern schema', () => {
+    const patch = buildAdminSettlementHeaderPatch(
+      { tour_fee_usd: 10 },
+      { ground_fee_usd: 500, vehicle_fee_usd: 1, head_tax_usd: 2, seoul_biz_fee_usd: 3, tc_company_usd: 4, megugi_usd: 5, guide_daily_fee_usd: 6, settlement_ratio: 0.5 } as never,
+      'admin-1',
+    )
+    expect(patch.ground_fee_usd).toBe(500)
+    expect(patch.tour_fee_usd).toBe(10)
+  })
+
+  it('maps ground fee to tour_fee_usd when legacyGroundFeeInTourFee is set', () => {
+    const patch = buildAdminSettlementHeaderPatch(
+      { tour_fee_usd: 10 },
+      { ground_fee_usd: 500, vehicle_fee_usd: 0, head_tax_usd: 0, seoul_biz_fee_usd: 0, tc_company_usd: 0, megugi_usd: 0, guide_daily_fee_usd: 0, settlement_ratio: 0.5 } as never,
+      'admin-1',
+      { legacyGroundFeeInTourFee: true },
+    )
+    expect(patch.tour_fee_usd).toBe(500)
+    expect(patch).not.toHaveProperty('ground_fee_usd')
+  })
+})
+
+describe('isMissingDbColumnError', () => {
+  it('detects Supabase missing-column errors', () => {
+    const msg = "Could not find the 'ground_fee_usd' column of 'settlements' in the schema cache"
+    expect(isMissingDbColumnError(msg, 'ground_fee_usd')).toBe(true)
+    expect(isMissingDbColumnError(msg, 'option_receivable_usd')).toBe(false)
   })
 })
 

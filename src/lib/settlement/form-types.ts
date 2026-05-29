@@ -86,6 +86,8 @@ export interface SettlementFormState {
   options: DraftOptionRow[]
   receipts: Receipt[]
   settlementStatus: SettlementStatus | null
+  /** Required for admin 「가이드 확인 요청」 after guide submit. */
+  guideSubmitSnapshotId: string | null
   dirty: boolean
   saveStatus: SaveStatus
   lastSavedAt: string | null

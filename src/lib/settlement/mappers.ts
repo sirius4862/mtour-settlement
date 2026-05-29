@@ -92,6 +92,7 @@ export function stateFromSettlementFull(
     options: full.options.map(withClientId),
     receipts: full.receipts,
     settlementStatus: full.status,
+    guideSubmitSnapshotId: full.guide_submit_snapshot_id,
     dirty: false,
     saveStatus: 'idle',
     lastSavedAt: null,
@@ -115,6 +116,7 @@ export function emptyFormState(guideName: string, exchangeRate = 26000): Settlem
     options: [],
     receipts: [],
     settlementStatus: null,
+    guideSubmitSnapshotId: null,
     dirty: false,
     saveStatus: 'idle',
     lastSavedAt: null,
@@ -281,6 +283,49 @@ export function mergeServerSync(
     others: mergeRowIds(state.others, sync.others),
     shoppings: mergeRowIds(state.shoppings, sync.shoppings),
     options: mergeRowIds(state.options, sync.options),
+  }
+}
+
+/** Split DB rows for delete/insert/upsert — new rows omit id and must use insert, not upsert. */
+export function splitDbRowsForPersist(rows: Record<string, unknown>[]) {
+  const keepIds = rows.map((r) => r.id).filter(Boolean) as string[]
+  const toInsert = rows.filter((r) => !r.id)
+  const toUpdate = rows.filter((r) => r.id)
+  return { keepIds, toInsert, toUpdate }
+}
+
+export function isMissingDbColumnError(message: string, column: string): boolean {
+  return message.includes(`'${column}'`) || message.includes(column)
+}
+
+/** settlements row patch for admin review save (admin-owned header fields only). */
+export function buildAdminSettlementHeaderPatch(
+  existing: Pick<SettlementFull, 'tour_fee_usd'>,
+  header: SettlementDraftPayload['header'],
+  reviewedBy: string,
+  options?: { legacyGroundFeeInTourFee?: boolean },
+): Record<string, unknown> {
+  const groundFee = header.ground_fee_usd ?? 0
+  const base = {
+    vehicle_fee_usd: header.vehicle_fee_usd,
+    head_tax_usd: header.head_tax_usd,
+    seoul_biz_fee_usd: header.seoul_biz_fee_usd,
+    tc_company_usd: header.tc_company_usd,
+    megugi_usd: header.megugi_usd,
+    guide_daily_fee_usd: header.guide_daily_fee_usd,
+    settlement_ratio: header.settlement_ratio,
+    reviewed_by: reviewedBy,
+  }
+  if (options?.legacyGroundFeeInTourFee) {
+    return {
+      ...base,
+      tour_fee_usd: groundFee || (existing.tour_fee_usd ?? 0),
+    }
+  }
+  return {
+    ...base,
+    tour_fee_usd: existing.tour_fee_usd ?? 0,
+    ground_fee_usd: groundFee,
   }
 }
 
@@ -464,6 +509,7 @@ export function stateFromMock(guideName = '데모'): SettlementFormState {
     })),
     receipts: [],
     settlementStatus: 'draft',
+    guideSubmitSnapshotId: null,
     dirty: false,
     saveStatus: 'idle',
     lastSavedAt: null,

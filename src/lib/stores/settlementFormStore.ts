@@ -177,6 +177,10 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
           (persisted as Partial<SettlementFormState>)?.settlementStatus ??
           current.settlementStatus ??
           null,
+        guideSubmitSnapshotId:
+          (persisted as Partial<SettlementFormState>)?.guideSubmitSnapshotId ??
+          current.guideSubmitSnapshotId ??
+          null,
         hotels: (persisted as Partial<SettlementFormState>)?.hotels ?? current.hotels ?? [],
         meals: (persisted as Partial<SettlementFormState>)?.meals ?? current.meals ?? [],
         entrances: (persisted as Partial<SettlementFormState>)?.entrances ?? current.entrances ?? [],

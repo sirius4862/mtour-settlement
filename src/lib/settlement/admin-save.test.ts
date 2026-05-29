@@ -163,6 +163,44 @@ describe('sanitizeAdminDraftPayload', () => {
     expect(dbRows[0].company_amount_usd).toBe(0)
   })
 
+  it('supports admin save scenarios: header only, hotel prices, kb, ground fee', () => {
+    const existing = mockSubmittedSettlement()
+    const baseState = stateFromSettlementFull(existing, 'Guide')
+
+    const headerOnly = sanitizeAdminDraftPayload(
+      toDraftPayload({ ...baseState, header: { ...baseState.header, megugi_usd: 12 } }),
+      existing,
+    )
+    expect(headerOnly.header.megugi_usd).toBe(12)
+    expect(headerOnly.hotels[0].guide_amount_usd).toBe(80)
+
+    const withHotelPrice = sanitizeAdminDraftPayload(
+      toDraftPayload({
+        ...baseState,
+        hotels: [{ ...baseState.hotels[0], unit_price_sgl_usd: 88, unit_price_trp_usd: 77 }],
+      }),
+      existing,
+    )
+    expect(withHotelPrice.hotels[0].unit_price_sgl_usd).toBe(88)
+    expect(withHotelPrice.hotels[0].hotel_name).toBe('Hotel A')
+
+    const withKb = sanitizeAdminDraftPayload(
+      toDraftPayload({
+        ...baseState,
+        shoppings: [{ ...baseState.shoppings[0], kb_usd: 9 }],
+      }),
+      existing,
+    )
+    expect(withKb.shoppings[0].kb_usd).toBe(9)
+    expect(withKb.shoppings[0].sale_usd).toBe(100)
+
+    const withGround = sanitizeAdminDraftPayload(
+      toDraftPayload({ ...baseState, header: { ...baseState.header, ground_fee_usd: 650 } }),
+      existing,
+    )
+    expect(withGround.header.ground_fee_usd).toBe(650)
+  })
+
   it('keeps submitted status context via unchanged guide fields for diff baseline', () => {
     const existing = mockSubmittedSettlement()
     const before = buildSnapshotPayload(existing)

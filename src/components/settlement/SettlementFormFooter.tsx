@@ -23,9 +23,12 @@ export function SettlementFormFooter({
   saveError,
   onSave,
   onSubmit,
+  onSendForConfirmation,
   pending,
   hideSubmit = false,
+  showSendForConfirmation = false,
   saveLabel = '임시저장',
+  sendForConfirmationLabel = '가이드 확인 요청',
 }: {
   calc: SettlementCalcResult
   companyDeposit: AnnotatedNumber
@@ -36,9 +39,12 @@ export function SettlementFormFooter({
   saveError: string | null
   onSave: () => void
   onSubmit: () => void
+  onSendForConfirmation?: () => void
   pending: boolean
   hideSubmit?: boolean
+  showSendForConfirmation?: boolean
   saveLabel?: string
+  sendForConfirmationLabel?: string
 }) {
   const statusLabel =
     saveStatus === 'saving' ? '저장 중…'
@@ -132,15 +138,25 @@ export function SettlementFormFooter({
         }`}>
           {statusLabel}
         </p>
-        <div className={`flex gap-2 ${hideSubmit ? '' : ''}`}>
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={onSave}
             disabled={pending}
-            className={`min-h-12 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 ${hideSubmit ? 'flex-1' : 'flex-1'}`}
+            className="flex-1 min-h-12 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             {pending ? '저장 중…' : saveLabel}
           </button>
+          {hideSubmit && showSendForConfirmation && onSendForConfirmation && (
+            <button
+              type="button"
+              onClick={onSendForConfirmation}
+              disabled={pending}
+              className="flex-1 min-h-12 py-3 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-50"
+            >
+              {pending ? '처리 중…' : sendForConfirmationLabel}
+            </button>
+          )}
           {!hideSubmit && (
           <button
             type="button"

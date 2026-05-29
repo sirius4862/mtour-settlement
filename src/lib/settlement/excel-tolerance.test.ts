@@ -104,9 +104,9 @@ describe('verifySettlementAgainstExcel — MOCK golden', () => {
 
   it('reference finals match known Excel expectations for mock', () => {
     const ref = computeExcelReferenceFinals(MOCK_SETTLEMENT_INPUT)
-    expect(ref.guide_settlement_usd).toBe(168.5)
+    expect(ref.guide_settlement_usd).toBe(158.5)
     expect(ref.company_deposit_usd).toBeCloseTo(79.615384615, 4)
-    expect(ref.company_grand_total_usd).toBeCloseTo(-438.884615384, 4)
+    expect(ref.company_grand_total_usd).toBeCloseTo(-428.884615384, 4)
   })
 })
 

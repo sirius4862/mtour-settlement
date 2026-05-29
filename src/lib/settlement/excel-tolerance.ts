@@ -134,6 +134,7 @@ export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelRe
     calcShoppingActualProfitUsd(shopping.com_usd.value),
     options.com_usd.value,
     input.header.megugi_usd,
+    input.header.tc_guide_usd + input.header.tc_company_usd,
     input.header.guide_daily_fee_usd,
   ).guideSettlement
 
@@ -272,6 +273,7 @@ export function verifyExcelFormulaFlow(
     calcShoppingActualProfitUsd(shopping.com_usd.value),
     options.com_usd.value,
     h.megugi_usd,
+    h.tc_guide_usd + h.tc_company_usd,
     h.guide_daily_fee_usd,
   ).guideSettlement
   if (!nearlyEqual(result.summary.guide_settlement_usd.value, expectedR85)) {

@@ -269,7 +269,7 @@ describe('settlement matrix', () => {
 
     // R79 = 20+45 = 65, R84 = 65-2-12 = 51
     expect(result.summary.balance_usd.value).toBe(51)
-    expect(result.summary.guide_settlement_usd.value).toBe(46.5)
+    expect(result.summary.guide_settlement_usd.value).toBe(40.5)
 
     // Matrix has Excel-like rows including R87
     expect(result.matrix.some((r) => r.key === 'r84' && r.isSubtotal)).toBe(true)
@@ -347,7 +347,7 @@ describe('settlement matrix', () => {
 
 describe('calcGuideSettlementFromProfitPool', () => {
   it('deducts megugi from shopping COM + option COM then applies 50% share and daily fee', () => {
-    const result = calcGuideSettlementFromProfitPool(20, 45, 2, 15)
+    const result = calcGuideSettlementFromProfitPool(20, 45, 2, 0, 15)
     expect(result.actualProfitPool).toBe(63)
     expect(result.guideProfitShare).toBe(31.5)
     expect(result.guideSettlement).toBe(46.5)
@@ -355,7 +355,7 @@ describe('calcGuideSettlementFromProfitPool', () => {
   })
 
   it('floors guide profit share at zero when megugi exceeds profit pool', () => {
-    const result = calcGuideSettlementFromProfitPool(30, 45, 200, 5)
+    const result = calcGuideSettlementFromProfitPool(30, 45, 200, 0, 5)
     expect(result.actualProfitPool).toBe(-125)
     expect(result.guideProfitShare).toBe(0)
     expect(result.guideSettlement).toBe(5)
@@ -363,7 +363,7 @@ describe('calcGuideSettlementFromProfitPool', () => {
   })
 
   it('case A — pool negative: share=0, daily fee paid', () => {
-    const result = calcGuideSettlementFromProfitPool(60, 40, 300, 50)
+    const result = calcGuideSettlementFromProfitPool(60, 40, 300, 0, 50)
     expect(result.actualProfitPool).toBe(-200)
     expect(result.guideProfitShare).toBe(0)
     expect(result.guideSettlement).toBe(50)
@@ -371,7 +371,7 @@ describe('calcGuideSettlementFromProfitPool', () => {
   })
 
   it('case B — pool positive: 50% share plus daily fee', () => {
-    const result = calcGuideSettlementFromProfitPool(300, 200, 100, 50)
+    const result = calcGuideSettlementFromProfitPool(300, 200, 100, 0, 50)
     expect(result.actualProfitPool).toBe(400)
     expect(result.guideProfitShare).toBe(200)
     expect(result.guideSettlement).toBe(250)
@@ -379,7 +379,7 @@ describe('calcGuideSettlementFromProfitPool', () => {
   })
 
   it('floors final payout at zero when settlement is negative', () => {
-    const result = calcGuideSettlementFromProfitPool(10, 10, 300, -5)
+    const result = calcGuideSettlementFromProfitPool(10, 10, 300, 0, -5)
     expect(result.guideProfitShare).toBe(0)
     expect(result.guideSettlement).toBe(-5)
     expect(result.guidePayout).toBe(0)
@@ -389,7 +389,7 @@ describe('calcGuideSettlementFromProfitPool', () => {
 describe('guide settlement policy — calcSettlement integration', () => {
   it('case A: R85/P85 match policy when megugi exceeds profit', () => {
     const result = calcSettlement(policyTestInput(60, 40, 300, 50))
-    const policy = calcGuideSettlementFromProfitPool(60, 40, 300, 50)
+    const policy = calcGuideSettlementFromProfitPool(60, 40, 300, 0, 50)
 
     expect(policy.actualProfitPool).toBe(-200)
     expect(policy.guideProfitShare).toBe(0)
@@ -405,7 +405,7 @@ describe('guide settlement policy — calcSettlement integration', () => {
 
   it('case B: R85/P85 match policy when profit remains after megugi', () => {
     const result = calcSettlement(policyTestInput(300, 200, 100, 50))
-    const policy = calcGuideSettlementFromProfitPool(300, 200, 100, 50)
+    const policy = calcGuideSettlementFromProfitPool(300, 200, 100, 0, 50)
 
     expect(policy.actualProfitPool).toBe(400)
     expect(policy.guideProfitShare).toBe(200)
@@ -418,8 +418,8 @@ describe('guide settlement policy — calcSettlement integration', () => {
   })
 
   it('deducts megugi from F72+D81 before profit share', () => {
-    const withoutMegugi = calcGuideSettlementFromProfitPool(300, 200, 0, 50)
-    const withMegugi = calcGuideSettlementFromProfitPool(300, 200, 100, 50)
+    const withoutMegugi = calcGuideSettlementFromProfitPool(300, 200, 0, 0, 50)
+    const withMegugi = calcGuideSettlementFromProfitPool(300, 200, 100, 0, 50)
 
     expect(withoutMegugi.actualProfitPool - withMegugi.actualProfitPool).toBe(100)
     expect(withoutMegugi.guideProfitShare - withMegugi.guideProfitShare).toBe(50)
@@ -561,6 +561,107 @@ describe('Excel matrix helpers', () => {
   })
 })
 
+describe('TC settlement policy', () => {
+  function tcPolicyInput(tcGuide: number, tcCompany: number): SettlementCalcInput {
+    return emptyInput({
+      header: {
+        ...emptyInput().header,
+        megugi_usd: 0,
+        guide_daily_fee_usd: 0,
+        tc_guide_usd: tcGuide,
+        tc_company_usd: tcCompany,
+      },
+      shoppings: [{ sale_usd: 0, com_usd: 400, kb_usd: 0 }],
+    })
+  }
+
+  it('1: +$100 TC settlement reduces guide settlement by $50', () => {
+    const base = calcSettlement(tcPolicyInput(0, 0))
+    const withTc = calcSettlement(tcPolicyInput(50, 50))
+    expect(
+      base.summary.guide_settlement_usd.value - withTc.summary.guide_settlement_usd.value,
+    ).toBeCloseTo(50, 2)
+  })
+
+  it('2: +$100 TC settlement reduces company profit share by $50', () => {
+    const base = calcSettlement(tcPolicyInput(0, 0))
+    const withTc = calcSettlement(tcPolicyInput(60, 40))
+    expect(
+      base.summary.company_profit_usd.value - withTc.summary.company_profit_usd.value,
+    ).toBeCloseTo(50, 2)
+  })
+
+  it('3: tc_company does not change Q75; tc_guide reduces Q75 via N75', () => {
+    const base = calcSettlement(
+      emptyInput({
+        header: {
+          ...emptyInput().header,
+          advance_vnd: 260_000,
+          tc_guide_usd: 0,
+          tc_company_usd: 0,
+        },
+      }),
+    )
+    const tcCompanyOnly = calcSettlement(
+      emptyInput({
+        header: {
+          ...emptyInput().header,
+          advance_vnd: 260_000,
+          tc_guide_usd: 0,
+          tc_company_usd: 100,
+        },
+      }),
+    )
+    const tcGuideOnly = calcSettlement(
+      emptyInput({
+        header: {
+          ...emptyInput().header,
+          advance_vnd: 260_000,
+          tc_guide_usd: 100,
+          tc_company_usd: 0,
+        },
+      }),
+    )
+    expect(tcCompanyOnly.sections.cash.company_deposit_usd.value).toBe(
+      base.sections.cash.company_deposit_usd.value,
+    )
+    expect(
+      base.sections.cash.company_deposit_usd.value -
+        tcGuideOnly.sections.cash.company_deposit_usd.value,
+    ).toBeCloseTo(100, 2)
+  })
+
+  it('4: megugi behavior unchanged when TC is zero', () => {
+    const withoutMegugi = calcGuideSettlementFromProfitPool(300, 200, 0, 0, 50)
+    const withMegugi = calcGuideSettlementFromProfitPool(300, 200, 100, 0, 50)
+    expect(withoutMegugi.guideSettlement - withMegugi.guideSettlement).toBe(50)
+  })
+
+  it('5: guide payout floor at 0 still works with TC deduction', () => {
+    const result = calcSettlement(
+      emptyInput({
+        header: {
+          ...emptyInput().header,
+          megugi_usd: 0,
+          guide_daily_fee_usd: -10,
+          tc_guide_usd: 500,
+          tc_company_usd: 500,
+        },
+        shoppings: [{ sale_usd: 0, com_usd: 100, kb_usd: 0 }],
+      }),
+    )
+    expect(result.summary.guide_settlement_usd.value).toBeLessThan(0)
+    expect(result.summary.guide_payout_usd.value).toBe(0)
+  })
+
+  it('deducts TC from profit pool before 50/50 split like megugi', () => {
+    const result = calcGuideSettlementFromProfitPool(20, 45, 2, 12, 15)
+    expect(result.actualProfitPool).toBe(51)
+    expect(result.guideProfitShare).toBe(25.5)
+    expect(result.guideSettlement).toBe(40.5)
+  })
+})
+
 describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
   it('matches Excel-derived section and matrix totals', () => {
     const result = calcSettlement(MOCK_SETTLEMENT_INPUT)
@@ -577,8 +678,8 @@ describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
 
     expect(result.summary.income_total_usd.value).toBe(300)
     expect(result.summary.balance_usd.value).toBe(277)
-    expect(result.summary.guide_settlement_usd.value).toBe(168.5)
-    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-438.884615384, 4)
+    expect(result.summary.guide_settlement_usd.value).toBe(158.5)
+    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-428.884615384, 4)
 
     const excelCheck = verifySettlementAgainstExcel(result, MOCK_SETTLEMENT_INPUT)
     expect(excelCheck.acceptable).toBe(true)

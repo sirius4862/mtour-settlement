@@ -3,6 +3,7 @@ import { MOCK_SETTLEMENT_INPUT, MOCK_TOUR_INFO } from './mock-data'
 import type { SettlementCalcInput } from './types-calc'
 import type {
   DraftEntranceRow,
+  DraftCompanyExpenseRow,
   DraftHotelRow,
   DraftMealRow,
   DraftOptionRow,
@@ -23,14 +24,13 @@ import {
   pickAdminHeaderFields,
 } from './field-ownership'
 import { normalizeExternalReceivableForForm } from './external-receivable'
+import { normalizeOtherAmountsFromDb } from './other-expense-migrate'
 import {
   calcEntranceAmountVnd,
   calcHotelCompanyUsd,
   calcMealAmountVnd,
   calcOptionRowComUsd,
   calcOptionTotalSaleUsd,
-  calcOtherAmountUsd,
-  calcOtherAmountVnd,
 } from './calc'
 
 /** SSOT for tour/ground fee until tour_fee_usd column is dropped. */
@@ -77,19 +77,27 @@ export function stateFromSettlementFull(
     hotels: full.hotels.map(withClientId),
     meals: full.meals.map(withClientId),
     entrances: full.entrances.map(withClientId),
-    others: full.others.map((o) =>
-      withClientId({
-        ...o,
+    others: full.others.map((o) => {
+      const amounts = normalizeOtherAmountsFromDb(o)
+      return withClientId({
+        id: o.id,
         description: o.description,
-        days: o.days,
-        pax: o.pax,
-        unit_price_usd: o.unit_price_usd,
-        unit_price_vnd: o.unit_price_vnd,
-        use_days_for_usd: o.is_tip,
-      }),
-    ),
+        amount_usd: amounts.amount_usd,
+        amount_vnd: amounts.amount_vnd,
+        note: o.note ?? null,
+      })
+    }),
     shoppings: full.shoppings.map(withClientId),
     options: full.options.map(withClientId),
+    companyExpenses: (full.company_expenses ?? []).map((row) =>
+      withClientId({
+        id: row.id,
+        description: row.description,
+        amount_usd: row.amount_usd,
+        amount_vnd: row.amount_vnd,
+        note: row.note ?? null,
+      }),
+    ),
     receipts: full.receipts,
     settlementStatus: full.status,
     guideSubmitSnapshotId: full.guide_submit_snapshot_id,
@@ -112,6 +120,7 @@ export function emptyFormState(guideName: string, exchangeRate = 26000): Settlem
     meals: [],
     entrances: [],
     others: [],
+    companyExpenses: [],
     shoppings: [],
     options: [],
     receipts: [],
@@ -150,12 +159,14 @@ export function toCalcInput(state: SettlementFormState): SettlementCalcInput {
       deleted: e.deleted,
     })),
     others: (state.others ?? []).map((o) => ({
-      days: o.days,
-      pax: o.pax,
-      unit_price_usd: o.unit_price_usd,
-      unit_price_vnd: o.unit_price_vnd,
-      use_days_for_usd: o.use_days_for_usd,
+      amount_usd: o.amount_usd,
+      amount_vnd: o.amount_vnd,
       deleted: o.deleted,
+    })),
+    company_expenses: (state.companyExpenses ?? []).map((row) => ({
+      amount_usd: row.amount_usd,
+      amount_vnd: row.amount_vnd,
+      deleted: row.deleted,
     })),
     shoppings: (state.shoppings ?? []).map((s) => ({
       sale_usd: s.sale_usd,
@@ -183,6 +194,7 @@ export type SettlementDraftPayload = {
   meals: DraftMealRow[]
   entrances: DraftEntranceRow[]
   others: DraftOtherRow[]
+  companyExpenses: DraftCompanyExpenseRow[]
   shoppings: DraftShoppingRow[]
   options: DraftOptionRow[]
 }
@@ -198,6 +210,7 @@ export function toDraftPayload(state: SettlementFormState): SettlementDraftPaylo
     meals: state.meals,
     entrances: state.entrances,
     others: state.others,
+    companyExpenses: state.companyExpenses ?? [],
     shoppings: state.shoppings,
     options: state.options,
   }
@@ -242,6 +255,7 @@ export function sanitizeAdminDraftPayload(
     others: existingState.others,
     shoppings: mergeAdminShoppingRowsForSave(payload.shoppings, existingState.shoppings),
     options: mergeAdminOptionRowsForSave(payload.options, existingState.options),
+    companyExpenses: payload.companyExpenses ?? [],
   }
 }
 
@@ -266,6 +280,7 @@ export type SettlementSyncPayload = {
   meals: SettlementFull['meals']
   entrances: SettlementFull['entrances']
   others: SettlementFull['others']
+  company_expenses: SettlementFull['company_expenses']
   shoppings: SettlementFull['shoppings']
   options: SettlementFull['options']
 }
@@ -281,6 +296,7 @@ export function mergeServerSync(
     meals: mergeRowIds(state.meals, sync.meals),
     entrances: mergeRowIds(state.entrances, sync.entrances),
     others: mergeRowIds(state.others, sync.others),
+    companyExpenses: mergeRowIds(state.companyExpenses ?? [], sync.company_expenses ?? []),
     shoppings: mergeRowIds(state.shoppings, sync.shoppings),
     options: mergeRowIds(state.options, sync.options),
   }
@@ -381,13 +397,30 @@ export function buildOtherDbRows(rows: DraftOtherRow[], settlementId: string) {
     ...(r.id ? { id: r.id } : {}),
     settlement_id: settlementId,
     description: r.description,
-    days: r.days,
-    pax: r.pax,
-    unit_price_usd: r.unit_price_usd,
-    unit_price_vnd: r.unit_price_vnd,
-    amount_usd: calcOtherAmountUsd(r),
-    amount_vnd: calcOtherAmountVnd(r),
-    is_tip: !!r.use_days_for_usd,
+    days: 0,
+    pax: 0,
+    unit_price_usd: 0,
+    unit_price_vnd: 0,
+    amount_usd: r.amount_usd,
+    amount_vnd: r.amount_vnd,
+    is_tip: false,
+    note: r.note,
+    entry_mode: 'flat' as const,
+    sort_order: i,
+  }))
+}
+
+export function buildCompanyExpenseDbRows(
+  rows: DraftCompanyExpenseRow[],
+  settlementId: string,
+) {
+  return rows.filter((r) => !r.deleted).map((r, i) => ({
+    ...(r.id ? { id: r.id } : {}),
+    settlement_id: settlementId,
+    description: r.description,
+    amount_usd: r.amount_usd,
+    amount_vnd: r.amount_vnd,
+    note: r.note,
     sort_order: i,
   }))
 }
@@ -483,12 +516,11 @@ export function stateFromMock(guideName = '데모'): SettlementFormState {
     others: mock.others.map((o) => ({
       clientId: newClientId(),
       description: '',
-      days: o.days,
-      pax: o.pax,
-      unit_price_usd: o.unit_price_usd,
-      unit_price_vnd: o.unit_price_vnd,
-      use_days_for_usd: o.use_days_for_usd ?? false,
+      amount_usd: o.amount_usd,
+      amount_vnd: o.amount_vnd,
+      note: null,
     })),
+    companyExpenses: [],
     shoppings: mock.shoppings.map((s) => ({
       clientId: newClientId(),
       visit_date: null,

@@ -72,11 +72,9 @@ function mockSettlementFull(): SettlementFull {
     input.others.map((o, i) => ({
       clientId: `o-${i}`,
       description: `Other ${i + 1}`,
-      days: o.days,
-      pax: o.pax,
-      unit_price_usd: o.unit_price_usd,
-      unit_price_vnd: o.unit_price_vnd,
-      use_days_for_usd: o.use_days_for_usd ?? false,
+      amount_usd: o.amount_usd,
+      amount_vnd: o.amount_vnd,
+      note: null,
     })),
     SETTLEMENT_ID,
   ).map((row, i) => ({ ...row, id: `other-${i}`, created_at: '', updated_at: '' }))
@@ -175,6 +173,7 @@ function mockSettlementFull(): SettlementFull {
     others,
     shoppings,
     options,
+    company_expenses: [],
     receipts: [],
   }
 }
@@ -235,14 +234,23 @@ describe('isMissingDbColumnError', () => {
 })
 
 describe('DB round-trip mappers', () => {
-  it('stateFromSettlementFull preserves is_tip as use_days_for_usd', () => {
+  it('stateFromSettlementFull normalizes legacy DB rows to flat amounts', () => {
     const full = mockSettlementFull()
-    full.others[0].is_tip = true
-    full.others[1].is_tip = false
+    full.others[0] = {
+      ...full.others[0],
+      entry_mode: 'legacy',
+      days: 4,
+      pax: 1,
+      unit_price_usd: 10,
+      unit_price_vnd: 0,
+      is_tip: true,
+      amount_usd: 999,
+      amount_vnd: 0,
+    }
 
     const state = stateFromSettlementFull(full, 'Guide')
-    expect(state.others[0].use_days_for_usd).toBe(true)
-    expect(state.others[1].use_days_for_usd).toBe(false)
+    expect(state.others[0].amount_usd).toBe(40)
+    expect(state.others[0].amount_vnd).toBe(0)
   })
 
   it('reload via stateFromSettlementFull yields same calcSettlement totals as source input', () => {
@@ -297,6 +305,7 @@ describe('DB round-trip mappers', () => {
       meals: state.meals,
       entrances: state.entrances,
       others: state.others,
+      company_expenses: [],
       shoppings: state.shoppings,
       options: state.options,
     }

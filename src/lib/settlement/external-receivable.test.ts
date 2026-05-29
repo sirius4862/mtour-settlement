@@ -36,6 +36,7 @@ function cashInput(
     meals: [],
     entrances: [],
     others: [],
+    company_expenses: [],
     shoppings: [],
     options: [],
     ...extra,

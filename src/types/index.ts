@@ -112,7 +112,21 @@ export interface OtherExpenseItem {
   description: string; days: number | null; pax: number
   unit_price_usd: number; amount_usd: number
   unit_price_vnd: number; amount_vnd: number
-  is_tip: boolean; sort_order: number
+  is_tip: boolean
+  note: string | null
+  entry_mode?: 'flat' | 'legacy'
+  sort_order: number
+  created_at: string; updated_at: string
+}
+
+/** Admin-only 회사 비용 line items — not visible to guides. */
+export interface CompanyExpenseItem {
+  id: string; settlement_id: string
+  description: string
+  amount_usd: number
+  amount_vnd: number
+  note: string | null
+  sort_order: number
   created_at: string; updated_at: string
 }
 
@@ -212,7 +226,8 @@ export interface SettlementFull extends Settlement {
   tour: Tour
   hotels: HotelItem[]; meals: MealItem[]; entrances: EntranceItem[]
   others: OtherExpenseItem[]; shoppings: ShoppingItem[]
-  options: OptionItem[]; receipts: Receipt[]
+  options: OptionItem[]; company_expenses: CompanyExpenseItem[]
+  receipts: Receipt[]
 }
 
 // ── 상태 메타 ─────────────────────────────────────────────────

@@ -11,7 +11,7 @@ const mockSections = [
   { id: 'cash', title: '입금 정리' },
   { id: 'guide-adjustments', title: '메꾸기·가이드 일비' },
   { id: 'adjustments', title: '회사 입력 항목' },
-  { id: 'summary', title: '정산내역 (최종)' },
+  { id: 'summary', title: '정산 요약' },
   { id: 'receipts', title: '영수증' },
 ]
 

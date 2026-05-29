@@ -13,6 +13,7 @@ export interface SnapshotPayload {
   meals: Array<Record<string, unknown>>
   entrances: Array<Record<string, unknown>>
   others: Array<Record<string, unknown>>
+  company_expenses: Array<Record<string, unknown>>
   shoppings: Array<Record<string, unknown>>
   options: Array<Record<string, unknown>>
   calc_summary: SnapshotCalcSummary
@@ -83,6 +84,7 @@ export function isGuideHiddenConfirmChange(change: {
   if ((GUIDE_HIDDEN_CONFIRM_FIELD_PATHS as readonly string[]).includes(change.field_path)) {
     return true
   }
+  if (change.field_path.startsWith('company_expenses.')) return true
   if (isShoppingKbFieldPath(change.field_path)) return true
   if (change.excel_ref === 'H57' || change.excel_ref === 'H72') return true
   if (change.label === SHOPPING_KB_LABEL || change.label === '쇼핑 KB') return true
@@ -111,11 +113,22 @@ export function stripKbFromGuideSnapshotPayload(payload: SnapshotPayload): Snaps
   }
 }
 
+/** Remove admin-only 회사 비용 rows from guide-facing snapshot payloads. */
+export function stripCompanyExpensesFromGuideSnapshotPayload(
+  payload: SnapshotPayload,
+): SnapshotPayload {
+  return {
+    ...payload,
+    company_expenses: [],
+  }
+}
+
 /** Strip KB from settlement rows in guide-facing API responses. */
 export function sanitizeSettlementFullForGuide(full: SettlementFull): SettlementFull {
   return {
     ...full,
     shoppings: full.shoppings.map((s) => ({ ...s, kb_usd: 0 })),
+    company_expenses: [],
   }
 }
 
@@ -159,7 +172,20 @@ export function buildSnapshotPayload(full: SettlementFull): SnapshotPayload {
     })),
     meals: full.meals.map((m) => ({ id: m.id, restaurant_name: m.restaurant_name, pax: m.pax, unit_price_vnd: m.unit_price_vnd })),
     entrances: full.entrances.map((e) => ({ id: e.id, attraction_name: e.attraction_name, pax: e.pax, unit_price_vnd: e.unit_price_vnd })),
-    others: full.others.map((o) => ({ id: o.id, description: o.description, pax: o.pax, unit_price_usd: o.unit_price_usd, unit_price_vnd: o.unit_price_vnd })),
+    others: full.others.map((o) => ({
+      id: o.id,
+      description: o.description,
+      amount_usd: o.amount_usd,
+      amount_vnd: o.amount_vnd,
+      note: o.note ?? null,
+    })),
+    company_expenses: (full.company_expenses ?? []).map((row) => ({
+      id: row.id,
+      description: row.description,
+      amount_usd: row.amount_usd,
+      amount_vnd: row.amount_vnd,
+      note: row.note ?? null,
+    })),
     shoppings: full.shoppings.map((s) => ({ id: s.id, shop_name: s.shop_name, sale_usd: s.sale_usd, com_usd: s.com_usd, kb_usd: s.kb_usd })),
     options: full.options.map((o) => ({
       id: o.id,

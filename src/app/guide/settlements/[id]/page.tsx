@@ -209,12 +209,17 @@ export default async function SettlementDetailPage({
       {others.length > 0 && (
         <Card title={`기타지출 (${others.length}건)`}>
           {others.map(o => (
-            <div key={o.id} className="flex justify-between py-1.5 border-b border-gray-50 last:border-0">
-              <span className="text-sm text-gray-700">{o.description || '기타'}</span>
-              <div className="text-right text-xs font-mono text-gray-700">
-                {o.amount_usd > 0 && <p>{fmt2(o.amount_usd)}</p>}
-                {o.amount_vnd > 0 && <p>{fmtV(o.amount_vnd)}</p>}
+            <div key={o.id} className="py-2 border-b border-gray-50 last:border-0 space-y-0.5">
+              <div className="flex justify-between gap-3">
+                <span className="text-sm text-gray-800">{o.description || '기타'}</span>
+                <div className="text-right text-xs font-mono text-gray-700 shrink-0">
+                  {o.amount_usd > 0 && <p>{fmt2(o.amount_usd)}</p>}
+                  {o.amount_vnd > 0 && <p>{fmtV(o.amount_vnd)}</p>}
+                </div>
               </div>
+              {o.note?.trim() && (
+                <p className="text-xs text-gray-500">{o.note}</p>
+              )}
             </div>
           ))}
         </Card>

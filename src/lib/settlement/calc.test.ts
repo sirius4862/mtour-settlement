@@ -47,6 +47,7 @@ function emptyInput(overrides: Partial<SettlementCalcInput> = {}): SettlementCal
     meals: [],
     entrances: [],
     others: [],
+    company_expenses: [],
     shoppings: [],
     options: [],
     ...overrides,

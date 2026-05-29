@@ -7,8 +7,7 @@ import {
   calcMealAmountVnd,
   calcOptionRowComUsd,
   calcOptionTotalSaleUsd,
-  calcOtherAmountUsd,
-  calcOtherAmountVnd,
+  calcOtherRowCombinedUsd,
   vndToUsd,
 } from '@/lib/settlement/calc'
 import { emptyOptionRow } from '@/lib/settlement/defaults'
@@ -211,6 +210,7 @@ export function EntrancesSection() {
 export function OthersSection() {
   const adminReview = useAdminReviewEdit()
   const others = useSettlementFormStore((s) => s.others)
+  const rate = useSettlementFormStore((s) => s.exchange_rate)
   const updateRow = useSettlementFormStore((s) => s.updateRow)
   const addRow = useSettlementFormStore((s) => s.addRow)
   const duplicateRow = useSettlementFormStore((s) => s.duplicateRow)
@@ -223,52 +223,47 @@ export function OthersSection() {
       rows={others}
       onAdd={() => addRow('others')}
       hideAdd={adminReview}
-      addLabel="+ 기타지출 추가"
-      renderRow={(row) => (
-        <>
-          <ManualField label="내역" value={row.description} disabled={adminReview}
-            onChange={(e) => updateRow('others', row.clientId, { description: e.target.value })} />
-          <div className="grid grid-cols-3 gap-2">
-            <ManualField label="일수" excelRef="D41" inputMode="decimal" value={row.days ?? ''} disabled={adminReview}
-              onChange={(e) => updateRow('others', row.clientId, {
-                days: e.target.value === '' ? null : parseNum(e.target.value),
-              })} />
-            <ManualField label="인원" excelRef="E41" inputMode="decimal" value={row.pax || ''} disabled={adminReview}
-              onChange={(e) => updateRow('others', row.clientId, { pax: parseNum(e.target.value) })} />
-            <label className="flex items-end gap-2 pb-3 text-xs">
-              <input type="checkbox" checked={!!row.use_days_for_usd} disabled={adminReview}
-                onChange={(e) => updateRow('others', row.clientId, { use_days_for_usd: e.target.checked })}
-                className="w-4 h-4" />
-              D×E×F
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <ManualField label="단가($)" excelRef="F41" suffix="$" inputMode="decimal" value={row.unit_price_usd || ''} disabled={adminReview}
-              onChange={(e) => updateRow('others', row.clientId, { unit_price_usd: parseNum(e.target.value) })} />
-            <ManualField label="단가(₫)" excelRef="O41" suffix="₫" inputMode="decimal" value={row.unit_price_vnd || ''} disabled={adminReview}
-              onChange={(e) => updateRow('others', row.clientId, { unit_price_vnd: parseNum(e.target.value) })} />
-          </div>
-          <CalculatedField
-            field={{ value: calcOtherAmountUsd(row), label: '금액($)', excelRef: 'H41', formula: 'D×E×F or E×F' }}
-            compact
-          />
-          <CalculatedField
-            field={{ value: calcOtherAmountVnd(row), label: '금액(₫)', excelRef: 'R41', formula: 'O×P' }}
-            currency="vnd"
-            compact
-          />
-          {!adminReview && (
-          <RowActions
-            onDuplicate={() => duplicateRow('others', row.clientId)}
-            onDelete={() => softDeleteRow('others', row.clientId)}
-          />
-          )}
-          <ItemWithReceipt
-            target={{ kind: 'other', rowId: row.id }}
-            rowLabel={row.description || undefined}
-          />
-        </>
-      )}
+      addLabel="+ 지출 추가"
+      renderRow={(row) => {
+        const combinedUsd = calcOtherRowCombinedUsd(row, rate)
+        return (
+          <>
+            <ManualField label="지출 항목" value={row.description} disabled={adminReview}
+              onChange={(e) => updateRow('others', row.clientId, { description: e.target.value })} />
+            <div className="grid grid-cols-2 gap-2">
+              <ManualField label="USD 금액" suffix="$" inputMode="decimal"
+                value={row.amount_usd || ''} disabled={adminReview}
+                onChange={(e) => updateRow('others', row.clientId, { amount_usd: parseNum(e.target.value) })} />
+              <ManualField label="VND 금액" suffix="₫" inputMode="decimal"
+                value={row.amount_vnd || ''} disabled={adminReview}
+                onChange={(e) => updateRow('others', row.clientId, { amount_vnd: parseNum(e.target.value) })} />
+            </div>
+            <ManualField label="메모 (선택)" value={row.note ?? ''} disabled={adminReview}
+              onChange={(e) => updateRow('others', row.clientId, { note: e.target.value || null })} />
+            {(row.amount_usd > 0 || row.amount_vnd > 0) && (
+              <CalculatedField
+                field={{
+                  value: combinedUsd,
+                  label: '환산 합계',
+                  excelRef: 'J53',
+                  formula: 'USD + ₫/Q2',
+                }}
+                compact
+              />
+            )}
+            {!adminReview && (
+            <RowActions
+              onDuplicate={() => duplicateRow('others', row.clientId)}
+              onDelete={() => softDeleteRow('others', row.clientId)}
+            />
+            )}
+            <ItemWithReceipt
+              target={{ kind: 'other', rowId: row.id }}
+              rowLabel={row.description || undefined}
+            />
+          </>
+        )
+      }}
     />
     </div>
   )

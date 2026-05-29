@@ -102,6 +102,7 @@ function mockSubmittedSettlement(): SettlementFull {
       updated_at: '',
     }],
     options: [],
+    company_expenses: [],
     receipts: [],
   }
 }

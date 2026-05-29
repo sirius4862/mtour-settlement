@@ -12,6 +12,7 @@ import type {
 } from '@/types'
 import {
   buildEntranceDbRows,
+  buildCompanyExpenseDbRows,
   buildHotelDbRows,
   buildMealDbRows,
   buildOptionDbRows,
@@ -25,6 +26,7 @@ import {
   isMissingDbColumnError,
   buildAdminSettlementHeaderPatch,
 } from '@/lib/settlement/mappers'
+import type { DraftCompanyExpenseRow } from '@/lib/settlement/form-types'
 import {
   buildSnapshotPayload,
   diffSnapshotPayloads,
@@ -191,7 +193,7 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
   const [
     { data: hotels }, { data: meals }, { data: entrances },
     { data: others }, { data: shoppings }, { data: options },
-    { data: receipts },
+    { data: companyExpenses }, { data: receipts },
   ] = await Promise.all([
     supabase.from('hotel_items').select('*').eq('settlement_id', id).order('sort_order'),
     supabase.from('meal_items').select('*').eq('settlement_id', id).order('sort_order'),
@@ -199,6 +201,7 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
     supabase.from('other_expense_items').select('*').eq('settlement_id', id).order('sort_order'),
     supabase.from('shopping_items').select('*').eq('settlement_id', id).order('sort_order'),
     supabase.from('option_items').select('*').eq('settlement_id', id).order('sort_order'),
+    supabase.from('company_expense_items').select('*').eq('settlement_id', id).order('sort_order'),
     supabase.from('receipts').select('*').eq('settlement_id', id).order('created_at'),
   ])
 
@@ -210,6 +213,7 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
     others:    others    ?? [],
     shoppings: shoppings ?? [],
     options:   options   ?? [],
+    company_expenses: companyExpenses ?? [],
     receipts:  receipts  ?? [],
   } as SettlementFull
 }
@@ -556,6 +560,36 @@ async function persistSettlementLineItems(
   return { ok: true }
 }
 
+/** Admin-only — guide save must never call this. */
+async function persistCompanyExpenseItems(
+  supabase: SupabaseClient,
+  settlementId: string,
+  rows: DraftCompanyExpenseRow[],
+): Promise<{ ok: boolean; error?: string }> {
+  const dbRows = buildCompanyExpenseDbRows(rows, settlementId)
+  const table = 'company_expense_items'
+  const { keepIds, toInsert, toUpdate } = splitDbRowsForPersist(dbRows)
+
+  let deleteQuery = supabase.from(table).delete().eq('settlement_id', settlementId)
+  if (keepIds.length > 0) {
+    deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.map((id) => `"${id}"`).join(',')})`)
+  }
+  const { error: delErr } = await deleteQuery
+  if (delErr) return { ok: false, error: delErr.message }
+
+  if (toInsert.length > 0) {
+    const { error: insErr } = await supabase.from(table).insert(toInsert)
+    if (insErr) return { ok: false, error: insErr.message }
+  }
+
+  if (toUpdate.length > 0) {
+    const { error: upsertErr } = await supabase.from(table).upsert(toUpdate, { onConflict: 'id' })
+    if (upsertErr) return { ok: false, error: upsertErr.message }
+  }
+
+  return { ok: true }
+}
+
 export async function saveSettlementItems(
   settlementId: string,
   payload: Pick<
@@ -652,6 +686,7 @@ export async function saveSettlementDraft(
       meals: full.meals,
       entrances: full.entrances,
       others: full.others,
+      company_expenses: full.company_expenses,
       shoppings: full.shoppings,
       options: full.options,
     },
@@ -716,6 +751,13 @@ export async function saveAdminSettlementEdits(
   const itemsResult = await persistSettlementLineItems(supabase, payload.settlementId, sanitized)
   if (!itemsResult.ok) return { ok: false, error: itemsResult.error }
 
+  const companyResult = await persistCompanyExpenseItems(
+    supabase,
+    payload.settlementId,
+    sanitized.companyExpenses ?? [],
+  )
+  if (!companyResult.ok) return { ok: false, error: companyResult.error }
+
   await persistSettlementCalcSummary(supabase, payload.settlementId)
 
   await insertAuditEvent(supabase, {
@@ -744,6 +786,7 @@ export async function saveAdminSettlementEdits(
       meals: full.meals,
       entrances: full.entrances,
       others: full.others,
+      company_expenses: full.company_expenses,
       shoppings: full.shoppings,
       options: full.options,
     },

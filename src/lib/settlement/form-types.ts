@@ -40,11 +40,18 @@ export interface DraftEntranceRow extends DraftMeta {
 export interface DraftOtherRow extends DraftMeta {
   id?: string
   description: string
-  days: number | null
-  pax: number
-  unit_price_usd: number
-  unit_price_vnd: number
-  use_days_for_usd?: boolean
+  amount_usd: number
+  amount_vnd: number
+  note: string | null
+}
+
+/** Admin-only 회사 비용 rows (회사 입력 항목). */
+export interface DraftCompanyExpenseRow extends DraftMeta {
+  id?: string
+  description: string
+  amount_usd: number
+  amount_vnd: number
+  note: string | null
 }
 
 export interface DraftShoppingRow extends DraftMeta {
@@ -82,6 +89,7 @@ export interface SettlementFormState {
   meals: DraftMealRow[]
   entrances: DraftEntranceRow[]
   others: DraftOtherRow[]
+  companyExpenses: DraftCompanyExpenseRow[]
   shoppings: DraftShoppingRow[]
   options: DraftOptionRow[]
   receipts: Receipt[]

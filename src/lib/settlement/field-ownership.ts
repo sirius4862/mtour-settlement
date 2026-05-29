@@ -268,7 +268,7 @@ export function hasGuideOwnedLineItemData(state: {
   hotels?: DraftHotelRow[]
   meals?: { deleted?: boolean; pax: number; unit_price_vnd: number; restaurant_name: string }[]
   entrances?: { deleted?: boolean; pax: number; unit_price_vnd: number; attraction_name: string }[]
-  others?: { deleted?: boolean; pax: number; unit_price_usd: number; unit_price_vnd: number; description: string }[]
+  others?: { deleted?: boolean; description: string; amount_usd: number; amount_vnd: number }[]
   shoppings?: { deleted?: boolean; sale_usd: number; com_usd: number; shop_name: string }[]
   options?: { deleted?: boolean; is_extra_vehicle?: boolean; pax: number; unit_price_usd: number; option_name: string }[]
 }): boolean {
@@ -284,7 +284,7 @@ export function hasGuideOwnedLineItemData(state: {
   }
   if (meals.some((r) => r.restaurant_name.trim() || r.pax > 0 || r.unit_price_vnd > 0)) return true
   if (entrances.some((r) => r.attraction_name.trim() || r.pax > 0 || r.unit_price_vnd > 0)) return true
-  if (others.some((r) => r.description.trim() || r.pax > 0 || r.unit_price_usd > 0 || r.unit_price_vnd > 0)) {
+  if (others.some((r) => r.description.trim() || r.amount_usd > 0 || r.amount_vnd > 0)) {
     return true
   }
   if (shoppings.some((r) => r.shop_name.trim() || r.sale_usd > 0 || r.com_usd > 0)) return true

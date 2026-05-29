@@ -78,6 +78,7 @@ function minimalSettlementFull(overrides: Partial<SettlementFull> = {}): Settlem
     others: [],
     shoppings: [],
     options: [],
+    company_expenses: [],
     receipts: [],
     ...overrides,
   }

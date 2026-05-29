@@ -29,13 +29,26 @@ export interface EntranceCalcRow extends SoftDeletable {
   unit_price_vnd: number
 }
 
-export interface OtherExpenseCalcRow extends SoftDeletable {
+export type OtherExpenseEntryMode = 'flat' | 'legacy'
+
+/** Legacy DB/input shape — used only when normalizing old rows. */
+export interface LegacyOtherExpenseInput {
   days: number | null
   pax: number
   unit_price_usd: number
   unit_price_vnd: number
-  /** When true, USD amount uses days × pax × unit (Excel rows 41–43) */
   use_days_for_usd?: boolean
+}
+
+export interface OtherExpenseCalcRow extends SoftDeletable {
+  amount_usd: number
+  amount_vnd: number
+}
+
+/** Admin-only 회사 비용 — same USD+VND/Q2 shape, separate from guide 기타지출. */
+export interface CompanyExpenseCalcRow extends SoftDeletable {
+  amount_usd: number
+  amount_vnd: number
 }
 
 export interface ShoppingCalcRow extends SoftDeletable {
@@ -93,6 +106,7 @@ export interface SettlementCalcInput {
   meals: MealCalcRow[]
   entrances: EntranceCalcRow[]
   others: OtherExpenseCalcRow[]
+  company_expenses: CompanyExpenseCalcRow[]
   shoppings: ShoppingCalcRow[]
   options: OptionCalcRow[]
 }
@@ -126,6 +140,9 @@ export interface SectionSubtotals {
   others: {
     total_usd: AnnotatedNumber
     total_vnd: AnnotatedNumber
+    combined_usd: AnnotatedNumber
+  }
+  company_expenses: {
     combined_usd: AnnotatedNumber
   }
   shopping: {

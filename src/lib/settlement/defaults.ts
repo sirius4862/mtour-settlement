@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid'
 import type {
+  DraftCompanyExpenseRow,
   DraftEntranceRow,
   DraftHotelRow,
   DraftMealRow,
@@ -72,11 +73,22 @@ export function emptyOtherRow(preset?: Partial<DraftOtherRow>): DraftOtherRow {
   return {
     clientId: newClientId(),
     description: '',
-    days: null,
-    pax: 0,
-    unit_price_usd: 0,
-    unit_price_vnd: 0,
-    use_days_for_usd: false,
+    amount_usd: 0,
+    amount_vnd: 0,
+    note: null,
+    ...preset,
+  }
+}
+
+export function emptyCompanyExpenseRow(
+  preset?: Partial<DraftCompanyExpenseRow>,
+): DraftCompanyExpenseRow {
+  return {
+    clientId: newClientId(),
+    description: '',
+    amount_usd: 0,
+    amount_vnd: 0,
+    note: null,
     ...preset,
   }
 }

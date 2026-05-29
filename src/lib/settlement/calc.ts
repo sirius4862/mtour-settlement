@@ -7,11 +7,13 @@
 
 import type {
   AnnotatedNumber,
+  CompanyExpenseCalcRow,
   EntranceCalcRow,
   HotelCalcRow,
   MealCalcRow,
   OptionCalcRow,
   OtherExpenseCalcRow,
+  LegacyOtherExpenseInput,
   SettlementCalcInput,
   SettlementCalcResult,
   SettlementMatrixRow,
@@ -85,17 +87,33 @@ export function calcEntranceAmountVnd(row: EntranceCalcRow): number {
   return row.pax * row.unit_price_vnd
 }
 
-/** H41: D41×E41×F41  |  H44+: E44×F44 */
-export function calcOtherAmountUsd(row: OtherExpenseCalcRow): number {
+/** Legacy row USD — D×E×F or E×F (normalization only). */
+export function calcOtherAmountUsd(row: LegacyOtherExpenseInput): number {
   if (row.use_days_for_usd && row.days != null) {
     return row.days * row.pax * row.unit_price_usd
   }
   return row.pax * row.unit_price_usd
 }
 
-/** R41: O41×P41 */
-export function calcOtherAmountVnd(row: OtherExpenseCalcRow): number {
+/** Legacy row VND — O×P (normalization only). */
+export function calcOtherAmountVnd(row: LegacyOtherExpenseInput): number {
   return row.pax * row.unit_price_vnd
+}
+
+/** Flat row total in USD — amount_usd + amount_vnd/Q2 → J53 row contribution. */
+export function calcOtherRowCombinedUsd(
+  row: Pick<OtherExpenseCalcRow, 'amount_usd' | 'amount_vnd'>,
+  exchangeRate: number,
+): number {
+  return row.amount_usd + vndToUsd(row.amount_vnd, exchangeRate)
+}
+
+/** Admin 회사 비용 row — same formula as guide 기타지출, separate calc path. */
+export function calcCompanyExpenseRowCombinedUsd(
+  row: Pick<CompanyExpenseCalcRow, 'amount_usd' | 'amount_vnd'>,
+  exchangeRate: number,
+): number {
+  return calcOtherRowCombinedUsd(row, exchangeRate)
 }
 
 /** O57: M57×N57 */
@@ -149,14 +167,29 @@ export function calcEntranceSubtotals(entrances: EntranceCalcRow[], exchangeRate
 
 export function calcOtherSubtotals(others: OtherExpenseCalcRow[], exchangeRate: number) {
   const rows = activeRows(others)
-  const totalUsd = sum(rows.map(calcOtherAmountUsd))
-  const totalVnd = sum(rows.map(calcOtherAmountVnd))
-  const vndAsUsd = vndToUsd(totalVnd, exchangeRate)
-  const combined = totalUsd + vndAsUsd
+  const totalUsd = sum(rows.map((r) => r.amount_usd))
+  const totalVnd = sum(rows.map((r) => r.amount_vnd))
+  const combined = sum(rows.map((r) => calcOtherRowCombinedUsd(r, exchangeRate)))
   return {
-    total_usd: annotate(totalUsd, '기타지출($)', 'H52', 'SUM(H41:I51)'),
-    total_vnd: annotate(totalVnd, '기타지출(₫)', 'R52', 'SUM(R41:S51)'),
+    total_usd: annotate(totalUsd, '기타지출($)', 'H52', 'SUM(amount_usd)'),
+    total_vnd: annotate(totalVnd, '기타지출(₫)', 'R52', 'SUM(amount_vnd)'),
     combined_usd: annotate(combined, '기타지출(USD 환산)', 'J53', 'H52 + R52/Q2'),
+  }
+}
+
+export function calcCompanyExpenseSubtotals(
+  rows: CompanyExpenseCalcRow[],
+  exchangeRate: number,
+) {
+  const active = activeRows(rows)
+  const combined = sum(active.map((r) => calcCompanyExpenseRowCombinedUsd(r, exchangeRate)))
+  return {
+    combined_usd: annotate(
+      combined,
+      '회사 비용 합',
+      'O82+',
+      'SUM(amount_usd + amount_vnd/Q2)',
+    ),
   }
 }
 
@@ -207,8 +240,9 @@ export function calcIncludedSubtotalO84(
   vehicleFeeUsd: number,
   headTaxUsd: number,
   seoulBizFeeUsd: number,
+  companyExpenseFlexUsd = 0,
 ): number {
-  return vehicleFeeUsd + headTaxUsd + seoulBizFeeUsd
+  return vehicleFeeUsd + headTaxUsd + seoulBizFeeUsd + companyExpenseFlexUsd
 }
 
 /**
@@ -310,6 +344,7 @@ export function computeSettlementMatrixValues(
     others: ReturnType<typeof calcOtherSubtotals>
     shopping: ReturnType<typeof calcShoppingSubtotals>
     options: ReturnType<typeof calcOptionSubtotals>
+    companyExpenses: ReturnType<typeof calcCompanyExpenseSubtotals>
   },
 ): SettlementMatrixValues {
   const h = header
@@ -336,7 +371,8 @@ export function computeSettlementMatrixValues(
   const o79 = h.vehicle_fee_usd
   const o80 = h.head_tax_usd
   const o81 = h.seoul_biz_fee_usd
-  const o84 = calcIncludedSubtotalO84(o79, o80, o81)
+  const companyFlexUsd = sections.companyExpenses?.combined_usd.value ?? 0
+  const o84 = calcIncludedSubtotalO84(o79, o80, o81, companyFlexUsd)
   const m84 = 0
   const h85 = calcExpenseTotalH85(h84, j84, o84)
 
@@ -471,6 +507,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
   const meals = calcMealSubtotals(input.meals, rate)
   const entrances = calcEntranceSubtotals(input.entrances, rate)
   const others = calcOtherSubtotals(input.others, rate)
+  const companyExpenses = calcCompanyExpenseSubtotals(input.company_expenses ?? [], rate)
   const shopping = calcShoppingSubtotals(input.shoppings)
   const options = calcOptionSubtotals(input.options, rate)
   const cash = calcCashSubtotals(
@@ -490,6 +527,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     others,
     shopping,
     options,
+    companyExpenses,
   })
   const {
     d80,
@@ -615,7 +653,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
   ]
 
   return {
-    sections: { hotels, meals, entrances, others, shopping, options, cash },
+    sections: { hotels, meals, entrances, others, company_expenses: companyExpenses, shopping, options, cash },
     matrix,
     summary: {
       income_total_usd: annotate(d84, '가이드 수익풀', 'D84', SETTLEMENT_PROFIT_INCOME_FORMULA),

@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { SettlementAuditMatrix } from '@/components/settlement/sections/SettlementAuditMatrix'
+import { SettlementBusinessSummary } from '@/components/settlement/sections/SettlementBusinessSummary'
 import { Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { createClient } from '@/lib/supabase/server'
 import { formatGuideDisplayName } from '@/lib/guide/display-name'
 import { calcSettlement } from '@/lib/settlement/calc'
-import { resolveGroundFeeUsd, stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
+import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { STATUS_META, canAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
@@ -35,8 +37,7 @@ export default async function AdminSettlementDetailPage({
   const meta = STATUS_META[s.status]
 
   const calc = calcSettlement(toCalcInput(stateFromSettlementFull(data, '')))
-  const { sections, summary, matrix } = calc
-  const m = (key: string) => matrix.find((r) => r.key === key)
+  const { sections, summary } = calc
 
   const companyDeposit = sections.cash.company_deposit_usd.value
   const q75IsNegative = companyDeposit < 0
@@ -44,7 +45,7 @@ export default async function AdminSettlementDetailPage({
   const guidePayout = summary.guide_payout_usd.value
   const companyProfit = summary.company_grand_total_usd.value
   const payoutIsFloored = guideSettlement < 0
-  const groundFeeUsd = resolveGroundFeeUsd(s)
+  const settlementRatio = s.settlement_ratio ?? 0.5
 
   const canSendForConfirmation = canAdminSendForConfirmation(s.status)
   const canAdminEdit = canAdminEditSettlement(s.status)
@@ -117,58 +118,11 @@ export default async function AdminSettlementDetailPage({
         </div>
       </div>
 
-      {/* 상세 계산표 — calcSettlement 단일 소스 */}
-      <div className="bg-white rounded-2xl p-4 border border-gray-100">
-        <p className="text-xs font-semibold text-gray-500 mb-3">상세 계산 (엑셀 R77-R87)</p>
-        <div className="space-y-1.5 text-xs">
-          {[
-            ['쇼핑수익 COM (D80)', fmt2(m('r80')?.income?.value ?? 0)],
-            ['쇼핑 SALE 참고 (D72)', fmt2(sections.shopping.sale_usd.value)],
-            ['옵션수익 COM (D81)', fmt2(m('r81')?.income?.value ?? 0)],
-            ['받은팁 (F75→수익)', fmt2(m('r82')?.income?.value ?? 0)],
-            ['차밍/기타 (D75→수익)', fmt2(m('r83')?.income?.value ?? 0)],
-            ['투어피/지상비 — 회사 수익', fmt2(groundFeeUsd)],
-            ['─ 회사 수익 합계', fmt2(summary.admin_income_usd.value), true],
-            ['─ 가이드 수익풀 D80+D81 (D84)', fmt2(summary.income_total_usd.value), true],
-            ['호텔 가이드 (H79)', fmt2(m('r79')?.guideExpense?.value ?? 0)],
-            ['식사비 환산 (H80)', fmt2(m('r80')?.guideExpense?.value ?? 0)],
-            ['입장료 환산 (H81)', fmt2(m('r81')?.guideExpense?.value ?? 0)],
-            ['기타지출 (H82)', fmt2(m('r82')?.guideExpense?.value ?? 0)],
-            ['T/C 가이드 (H83)', fmt2(m('r83')?.guideExpense?.value ?? 0)],
-            ['T/C 회사 (J83)', fmt2(m('r83')?.companyExpense?.value ?? 0)],
-            ['차량비 — 회사 지출 (O79)', fmt2(m('r79')?.included?.value ?? 0)],
-            ['인두세 — 회사 지출 (O80)', fmt2(m('r82')?.included?.value ?? 0)],
-            ['서울영업비 — 회사 지출 (O81)', fmt2(m('r81')?.included?.value ?? 0)],
-            ['─ 회사 지출 합 O84 (H85)', fmt2(summary.expense_total_usd.value), true],
-            ['─ 수익−지출 (F86)', fmt2(summary.company_gross_usd.value), true],
-            ['정산 수익풀 D80+D81 (R79)', fmt2(m('r79')?.settlement?.value ?? 0)],
-            ['메꾸기 (R80)', `- ${fmt2(m('r80')?.settlement?.value ?? 0)}`],
-            ['T/C정산공제 H83+J83 (R81)', `- ${fmt2(m('r81')?.settlement?.value ?? 0)}`],
-            ['─ 차액밸런스 R79−R80−R81 (R84)', fmt2(summary.balance_usd.value), true],
-            ['가이드일비 (R82)', fmt2(m('r82')?.settlement?.value ?? 0)],
-            ['─ 계산상 가이드정산 MAX((F72+D81−R80)×50%,0)+R82 (R85)', fmt2(guideSettlement), true, true],
-            ...(payoutIsFloored
-              ? [['─ 실제 지급액 MAX(R85,0) (P85)', fmt2(guidePayout), true] as const]
-              : []),
-            ['─ R86 중간값', fmt2(summary.company_profit_usd.value), true],
-            ['KB (회사 전용 수익) 합계 (H72)', fmt2(sections.shopping.kb_usd.value)],
-            ['추가차량비 (S75)', fmt2(sections.options.extra_vehicle_usd.value)],
-            ['─ 회사수익 R86+H72+S75 (R87)', fmt2(companyProfit), true],
-            ['옵션외상', fmt2(sections.cash.option_receivable_usd.value)],
-            ['팁송금', fmt2(sections.cash.tip_transfer_usd.value)],
-            ['옵션외상/팁송금 합 (P75)', fmt2(sections.cash.option_credit_usd.value)],
-            ['회사입금 J75−N75−P75 (Q75)', fmt2(companyDeposit)],
-          ].map(([l, v, bold, accent]) => (
-            <div key={l as string} className={`flex justify-between py-1 ${bold ? 'border-t border-gray-100 mt-1 pt-1.5' : ''}`}>
-              <span className={`${accent ? 'text-amber-700 font-semibold' : bold ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
-                {l}
-              </span>
-              <span className={`font-mono ${accent ? 'text-amber-800 font-bold' : bold ? 'text-gray-900 font-semibold' : 'text-gray-700'}`}>
-                {v}
-              </span>
-            </div>
-          ))}
-        </div>
+      {/* 정산 요약 — business view + collapsed audit matrix */}
+      <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-4">
+        <p className="text-xs font-semibold text-gray-500">정산 요약</p>
+        <SettlementBusinessSummary calc={calc} audience="admin" />
+        <SettlementAuditMatrix calc={calc} settlementRatio={settlementRatio} />
       </div>
 
       {/* 항목 테이블들 */}
@@ -188,6 +142,13 @@ export default async function AdminSettlementDetailPage({
       {meals.length > 0 && <ItemTable title="식사비" rows={meals.map(m => [
         m.restaurant_name, m.meal_date ?? '', `${m.pax}명`, fmtV(m.amount_vnd)
       ])} headers={['식당명', '날짜', '인원', '금액(VND)']} />}
+
+      {others.length > 0 && <ItemTable title="기타지출" rows={others.map(o => [
+        o.description || '—',
+        fmt2(o.amount_usd),
+        fmtV(o.amount_vnd),
+        o.note?.trim() || '—',
+      ])} headers={['지출 항목', 'USD', 'VND', '메모']} />}
 
       {/* 메모 */}
       {s.guide_note && (

@@ -28,7 +28,7 @@ export function assertNoGuideHiddenSectionCopy<T extends { id: string; title?: s
     if (title.includes('회사 확인')) {
       throw new Error(`Guide form must not show section title: ${title}`)
     }
-    if (title.includes('정산내역 (최종)')) {
+    if (title.includes('정산 요약') || title.includes('정산내역 (최종)')) {
       throw new Error(`Guide form must not show section title: ${title}`)
     }
   }

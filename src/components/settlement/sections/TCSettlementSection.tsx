@@ -7,6 +7,9 @@ import {
   GUIDE_INPUT_FIELD_HINT,
 } from '@/lib/settlement/field-ownership'
 import { ManualField, SectionCard } from '@/components/ui/FormPrimitives'
+import { calcCompanyExpenseRowCombinedUsd } from '@/lib/settlement/calc'
+import { DynamicRowList, parseNum, RowActions } from '../rows/DynamicRowList'
+import { CalculatedField } from '../CalculatedField'
 import { useSettlementFormRole } from '../SettlementFormContext'
 import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
@@ -138,6 +141,85 @@ export function TCSettlementSection() {
   )
 }
 
+function CompanyExpensesBlock() {
+  const rate = useSettlementFormStore((s) => s.exchange_rate)
+  const rows = useSettlementFormStore((s) => s.companyExpenses ?? [])
+  const addRow = useSettlementFormStore((s) => s.addCompanyExpenseRow)
+  const updateRow = useSettlementFormStore((s) => s.updateCompanyExpenseRow)
+  const duplicateRow = useSettlementFormStore((s) => s.duplicateCompanyExpenseRow)
+  const softDeleteRow = useSettlementFormStore((s) => s.softDeleteCompanyExpenseRow)
+
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold text-red-800 mb-2">회사 비용 (admin)</p>
+      <p className="text-[10px] text-gray-500 mb-2">
+        호텔 선결제·식당 보증금·차량 선금·티켓 선금·업체 결제 등 회사가 선지급한 비용. R87에만 반영됩니다.
+      </p>
+      <DynamicRowList
+        rows={rows}
+        onAdd={() => addRow()}
+        addLabel="+ 회사 비용 추가"
+        renderRow={(row) => {
+          const combinedUsd = calcCompanyExpenseRowCombinedUsd(row, rate)
+          return (
+            <>
+              <ManualField
+                label="비용 항목"
+                value={row.description}
+                onChange={(e) =>
+                  updateRow(row.clientId, { description: e.target.value })
+                }
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <ManualField
+                  label="USD 금액"
+                  suffix="$"
+                  inputMode="decimal"
+                  value={row.amount_usd || ''}
+                  onChange={(e) =>
+                    updateRow(row.clientId, { amount_usd: parseNum(e.target.value) })
+                  }
+                />
+                <ManualField
+                  label="VND 금액"
+                  suffix="₫"
+                  inputMode="decimal"
+                  value={row.amount_vnd || ''}
+                  onChange={(e) =>
+                    updateRow(row.clientId, { amount_vnd: parseNum(e.target.value) })
+                  }
+                />
+              </div>
+              <ManualField
+                label="메모 (선택)"
+                value={row.note ?? ''}
+                onChange={(e) =>
+                  updateRow(row.clientId, { note: e.target.value || null })
+                }
+              />
+              {(row.amount_usd > 0 || row.amount_vnd > 0) && (
+                <CalculatedField
+                  field={{
+                    value: combinedUsd,
+                    label: '환산 합계',
+                    excelRef: 'O82+',
+                    formula: 'USD + ₫/Q2',
+                  }}
+                  compact
+                />
+              )}
+              <RowActions
+                onDuplicate={() => duplicateRow(row.clientId)}
+                onDelete={() => softDeleteRow(row.clientId)}
+              />
+            </>
+          )
+        }}
+      />
+    </div>
+  )
+}
+
 export function FinalAdjustmentsSection() {
   const header = useSettlementFormStore((s) => s.header)
   const patchHeader = useSettlementFormStore((s) => s.patchHeader)
@@ -188,6 +270,7 @@ export function FinalAdjustmentsSection() {
             patchHeader({ seoul_biz_fee_usd: parseFloat(e.target.value) || 0 })
           }
         />
+        <CompanyExpensesBlock />
         <CompanyReviewFields adminView />
         <div className="mt-4 pt-3 border-t border-gray-100">
           <p className="text-xs text-gray-600">

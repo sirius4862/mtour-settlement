@@ -18,7 +18,7 @@ export const EXCEL_SECTIONS = {
   },
   others: {
     rows: 'R40–53',
-    hint: '기타지출: $는 D×E×F 또는 E×F, ₫는 O×P. 합계 J53 = H52 + R52/Q2.',
+    hint: '현장에서 발생한 기타 비용 — 항목명과 USD/₫ 금액을 직접 입력합니다. (주차, 통행료, 팁, 포터 등)',
   },
   shopping: {
     rows: 'R55–72 (B–H)',
@@ -37,12 +37,12 @@ export const EXCEL_SECTIONS = {
     hint: 'T/C 정산 가이드분(H83)·회사분(J83).',
   },
   adjustments: {
-    rows: 'O79–81, R77, R80, R82, ground_fee',
-    hint: '투어피/지상비(회사 수익), 차량비·인두세·서울영업비(회사 지출), 메꾸기(R80), 가이드일비(R82). R77은 참고 전용.',
+    rows: 'O79–81, O82+, R77, R80, R82, ground_fee',
+    hint: '투어피/지상비(회사 수익), 고정 회사 지출(O79–81), 회사 비용(자유 입력), 메꾸기(R80), 가이드일비(R82). R77은 참고 전용.',
   },
   summary: {
     rows: 'R77–R87',
-    hint: '정산내역 매트릭스 — 투어피/지상비는 admin 회사 수익(ground_fee)으로 R87에 반영.',
+    hint: '정산 요약 — COM 기준 분배·밸런스·최종 금액. 감사용 Excel 매트릭스는 admin 화면에서 펼쳐 확인.',
   },
   receipts: {
     rows: '—',

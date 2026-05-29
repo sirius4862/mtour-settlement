@@ -15,7 +15,7 @@ export const MOCK_TOUR_INFO = {
   year_month: '2025-11',
 }
 
-/** Representative settlement input — mirrors Excel template structure. */
+/** Representative settlement input — flat other-expense amounts (same J53 as legacy mock). */
 export const MOCK_SETTLEMENT_INPUT: SettlementCalcInput = {
   exchange_rate: 26000,
   header: {
@@ -64,11 +64,12 @@ export const MOCK_SETTLEMENT_INPUT: SettlementCalcInput = {
     { pax: 18, unit_price_vnd: 80000 },
   ],
   others: [
-    { days: 4, pax: 1, unit_price_usd: 10, unit_price_vnd: 0, use_days_for_usd: true },
-    { days: 4, pax: 1, unit_price_usd: 5, unit_price_vnd: 0, use_days_for_usd: true },
-    { days: null, pax: 3, unit_price_usd: 15, unit_price_vnd: 0 },
-    { days: null, pax: 2, unit_price_usd: 0, unit_price_vnd: 200000 },
+    { amount_usd: 40, amount_vnd: 0 },
+    { amount_usd: 20, amount_vnd: 0 },
+    { amount_usd: 45, amount_vnd: 0 },
+    { amount_usd: 0, amount_vnd: 400_000 },
   ],
+  company_expenses: [],
   shoppings: [
     { sale_usd: 80, com_usd: 24, kb_usd: 6 },
     { sale_usd: 120, com_usd: 36, kb_usd: 10 },
@@ -79,3 +80,11 @@ export const MOCK_SETTLEMENT_INPUT: SettlementCalcInput = {
     { unit_price_usd: 0, pax: 0, expense_usd: 35, expense_vnd: 780000, is_extra_vehicle: true },
   ],
 }
+
+/** Legacy-shaped rows for migration parity tests (D×E×F / E×F / O×P). */
+export const MOCK_LEGACY_OTHER_ROWS = [
+  { days: 4, pax: 1, unit_price_usd: 10, unit_price_vnd: 0, use_days_for_usd: true },
+  { days: 4, pax: 1, unit_price_usd: 5, unit_price_vnd: 0, use_days_for_usd: true },
+  { days: null, pax: 3, unit_price_usd: 15, unit_price_vnd: 0 },
+  { days: null, pax: 2, unit_price_usd: 0, unit_price_vnd: 200_000 },
+] as const

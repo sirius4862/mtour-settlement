@@ -3,8 +3,9 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Tour, SettlementFull, Receipt } from '@/types'
-import type { LineSection, SettlementFormState } from '@/lib/settlement/form-types'
+import type { DraftCompanyExpenseRow, LineSection, SettlementFormState } from '@/lib/settlement/form-types'
 import {
+  emptyCompanyExpenseRow,
   emptyEntranceRow,
   emptyHotelRow,
   emptyMealRow,
@@ -53,6 +54,10 @@ interface SettlementFormActions {
     clientId: string,
     patch: Partial<RowArrays[typeof ROW_KEYS[S]][number]>,
   ) => void
+  addCompanyExpenseRow: () => void
+  duplicateCompanyExpenseRow: (clientId: string) => void
+  softDeleteCompanyExpenseRow: (clientId: string) => void
+  updateCompanyExpenseRow: (clientId: string, patch: Partial<DraftCompanyExpenseRow>) => void
   markSaved: (id: string) => void
   setSaving: () => void
   setSaveError: (msg: string) => void
@@ -75,6 +80,7 @@ const persistable = (s: SettlementFormStore) => ({
   meals: s.meals,
   entrances: s.entrances,
   others: s.others,
+  companyExpenses: s.companyExpenses,
   shoppings: s.shoppings,
   options: s.options,
 })
@@ -141,6 +147,42 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
         } as Partial<SettlementFormState>))
       },
 
+      addCompanyExpenseRow: () =>
+        set((s) => ({
+          companyExpenses: [...(s.companyExpenses ?? []), emptyCompanyExpenseRow()],
+          dirty: true,
+        })),
+
+      duplicateCompanyExpenseRow: (clientId) =>
+        set((s) => {
+          const rows = s.companyExpenses ?? []
+          const src = rows.find((r) => r.clientId === clientId)
+          if (!src) return s
+          const copy: DraftCompanyExpenseRow = {
+            ...src,
+            clientId: `dup-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: undefined,
+            deleted: false,
+          }
+          return { companyExpenses: [...rows, copy], dirty: true }
+        }),
+
+      softDeleteCompanyExpenseRow: (clientId) =>
+        set((s) => ({
+          companyExpenses: (s.companyExpenses ?? []).map((r) =>
+            r.clientId === clientId ? { ...r, deleted: true } : r,
+          ),
+          dirty: true,
+        })),
+
+      updateCompanyExpenseRow: (clientId, patch) =>
+        set((s) => ({
+          companyExpenses: (s.companyExpenses ?? []).map((r) =>
+            r.clientId === clientId ? { ...r, ...patch } : r,
+          ),
+          dirty: true,
+        })),
+
       markSaved: (id) =>
         set({
           settlementId: id,
@@ -185,6 +227,10 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
         meals: (persisted as Partial<SettlementFormState>)?.meals ?? current.meals ?? [],
         entrances: (persisted as Partial<SettlementFormState>)?.entrances ?? current.entrances ?? [],
         others: (persisted as Partial<SettlementFormState>)?.others ?? current.others ?? [],
+        companyExpenses:
+          (persisted as Partial<SettlementFormState>)?.companyExpenses ??
+          current.companyExpenses ??
+          [],
         shoppings: (persisted as Partial<SettlementFormState>)?.shoppings ?? current.shoppings ?? [],
         options: (persisted as Partial<SettlementFormState>)?.options ?? current.options ?? [],
       }),
@@ -196,6 +242,10 @@ export function activeRowCount(section: LineSection, state: SettlementFormState)
   const key = ROW_KEYS[section]
   const rows = (state[key] as Array<{ deleted?: boolean }> | undefined) ?? []
   return rows.filter((r) => !r.deleted).length
+}
+
+export function activeCompanyExpenseCount(state: SettlementFormState): number {
+  return (state.companyExpenses ?? []).filter((r) => !r.deleted).length
 }
 
 export function isReceiptEditable(state: Pick<SettlementFormState, 'settlementStatus'>): boolean {

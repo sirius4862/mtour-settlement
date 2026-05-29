@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { SettlementFull, Tour } from '@/types'
 import { saveSettlementDraft, saveAdminSettlementEdits, sendForConfirmation, submitSettlement } from '@/lib/actions/settlementActions'
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
+import { sanitizeSettlementFullForGuide } from '@/lib/settlement/snapshot'
 import { canAdminSendForConfirmation } from '@/lib/settlement/status-guards'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
@@ -110,7 +111,10 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       if (mode === 'edit' && initialFull) {
         // Server data must win over sessionStorage draft on edit reload
         useSettlementFormStore.persist.clearStorage()
-        hydrateFromFull(initialFull, guideName)
+        const fullForRole = formRole === 'guide'
+          ? sanitizeSettlementFullForGuide(initialFull)
+          : initialFull
+        hydrateFromFull(fullForRole, guideName)
         return
       }
 
@@ -126,7 +130,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
     }
 
     return useSettlementFormStore.persist.onFinishHydration(bootstrap)
-  }, [mode, initialFull, guideName, hydrateFromFull, resetNew])
+  }, [mode, initialFull, guideName, formRole, hydrateFromFull, resetNew])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
     const actor = isAdminReview ? 'admin' : 'guide'
@@ -410,7 +414,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
           },
           {
             id: 'summary',
-            title: '정산내역 (최종)',
+            title: '정산 요약',
             excelRows: EXCEL_SECTIONS.summary.rows,
             preview: calc.summary.guide_payout_usd,
             children: (

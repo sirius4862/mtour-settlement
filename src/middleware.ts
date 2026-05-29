@@ -6,6 +6,7 @@ const PUBLIC_PREFIXES = [
   '/login',
   '/auth/callback',
   '/api/internal/apply-external-receivable-migration',
+  '/api/internal/apply-settlement-schema-migrations',
 ]
 
 function isPublicPath(pathname: string): boolean {

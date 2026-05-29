@@ -82,6 +82,7 @@ function mockSubmittedSettlement(): SettlementFull {
     others: [],
     shoppings: [],
     options: [],
+    company_expenses: [],
     receipts: [],
   }
 }

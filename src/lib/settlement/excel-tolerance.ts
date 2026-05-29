@@ -11,6 +11,7 @@
 import {
   calcCashSubtotals,
   calcEntranceSubtotals,
+  calcCompanyExpenseSubtotals,
   calcGuideSettlementFromProfitPool,
   calcHotelSubtotals,
   calcMealSubtotals,
@@ -108,6 +109,7 @@ export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelRe
   const meals = calcMealSubtotals(input.meals, rate)
   const entrances = calcEntranceSubtotals(input.entrances, rate)
   const others = calcOtherSubtotals(input.others, rate)
+  const companyExpenses = calcCompanyExpenseSubtotals(input.company_expenses ?? [], rate)
   const shopping = calcShoppingSubtotals(input.shoppings)
   const options = calcOptionSubtotals(input.options, rate)
 
@@ -128,6 +130,7 @@ export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelRe
     others,
     shopping,
     options,
+    companyExpenses,
   })
 
   const guideSettlement = calcGuideSettlementFromProfitPool(
@@ -142,7 +145,7 @@ export function computeExcelReferenceFinals(input: SettlementCalcInput): ExcelRe
     input.header.advance_vnd !== 0 ||
     input.meals.some((m) => !m.deleted && m.unit_price_vnd !== 0) ||
     input.entrances.some((e) => !e.deleted && e.unit_price_vnd !== 0) ||
-    input.others.some((o) => !o.deleted && o.unit_price_vnd !== 0) ||
+    input.others.some((o) => !o.deleted && o.amount_vnd !== 0) ||
     input.options.some((o) => !o.deleted && o.expense_vnd !== 0)
 
   return {

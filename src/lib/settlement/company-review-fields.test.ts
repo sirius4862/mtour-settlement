@@ -142,6 +142,7 @@ describe('company review header fields (megugi / guide daily fee)', () => {
       others: [],
       shoppings: [],
       options: [],
+      company_expenses: [],
       receipts: [],
     }
 

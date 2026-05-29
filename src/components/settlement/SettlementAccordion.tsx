@@ -72,7 +72,7 @@ export function SettlementAccordion({
 
             {isOpen && (
               <div className="px-4 pb-4 border-t border-gray-50">
-                <div className="pt-4">{section.children}</div>
+                <div className={section.footer ? 'pt-4 pb-20' : 'pt-4'}>{section.children}</div>
                 {section.footer}
               </div>
             )}

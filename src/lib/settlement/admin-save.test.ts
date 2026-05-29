@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { MOCK_SETTLEMENT_INPUT } from './mock-data'
 import { buildSnapshotPayload, diffSnapshotPayloads } from './snapshot'
-import { sanitizeAdminDraftPayload, stateFromSettlementFull, toDraftPayload } from './mappers'
+import { buildHotelDbRows, sanitizeAdminDraftPayload, stateFromSettlementFull, toDraftPayload } from './mappers'
+import { emptyHotelRow } from './defaults'
 import type { SettlementFull } from '@/types'
 import { assertAdminSaveSettlement } from './status-guards'
 
@@ -136,6 +137,30 @@ describe('sanitizeAdminDraftPayload', () => {
     expect(sanitized.hotels[0].guide_amount_usd).toBe(80)
     expect(sanitized.shoppings[0].sale_usd).toBe(100)
     expect(sanitized.exchange_rate).toBe(existing.exchange_rate)
+  })
+
+  it('persists admin-added hotel rows through sanitizeAdminDraftPayload', () => {
+    const existing = { ...mockSubmittedSettlement(), hotels: [] }
+    const state = stateFromSettlementFull(existing, 'Guide')
+    state.hotels.push({
+      ...emptyHotelRow(),
+      clientId: 'admin-hotel-new',
+      unit_price_sgl_usd: 62,
+      unit_price_trp_usd: 48,
+    })
+
+    const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
+
+    expect(sanitized.hotels).toHaveLength(1)
+    expect(sanitized.hotels[0].unit_price_sgl_usd).toBe(62)
+    expect(sanitized.hotels[0].unit_price_trp_usd).toBe(48)
+    expect(sanitized.hotels[0].guide_amount_usd).toBe(0)
+
+    const dbRows = buildHotelDbRows(sanitized.hotels, existing.id)
+    expect(dbRows).toHaveLength(1)
+    expect(dbRows[0].unit_price_sgl_usd).toBe(62)
+    expect(dbRows[0].unit_price_trp_usd).toBe(48)
+    expect(dbRows[0].company_amount_usd).toBe(0)
   })
 
   it('keeps submitted status context via unchanged guide fields for diff baseline', () => {

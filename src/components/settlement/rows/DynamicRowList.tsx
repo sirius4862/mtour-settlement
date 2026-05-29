@@ -45,11 +45,15 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
   hideAdd?: boolean
 }) {
   const visible = rows.filter((r) => !r.deleted)
+  const resolvedEmptyLabel =
+    hideAdd && emptyLabel.includes('아래 버튼')
+      ? '항목이 없습니다.'
+      : emptyLabel
 
   return (
     <div className="space-y-3">
       {visible.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-4">{emptyLabel}</p>
+        <p className="text-sm text-gray-400 text-center py-4">{resolvedEmptyLabel}</p>
       ) : (
         visible.map((row, index) => (
           <div

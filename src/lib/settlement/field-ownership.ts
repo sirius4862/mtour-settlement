@@ -78,6 +78,11 @@ export function canAddExtraVehicle(role: SettlementFormRole): boolean {
   return role === 'admin'
 }
 
+/** Guide adds hotel rows in draft; admin may add rows to enter unit prices during review. */
+export function canAddHotelRows(role: SettlementFormRole): boolean {
+  return role !== 'readOnly'
+}
+
 /** Merge admin-owned header from incoming; preserve guide-owned from existing. */
 export function mergeAdminHeaderForSave(
   incoming: SettlementFormHeader,
@@ -89,21 +94,61 @@ export function mergeAdminHeaderForSave(
   }
 }
 
-/** Preserve guide-owned hotel columns; apply admin unit prices from incoming. */
+/** Admin-owned hotel unit prices (M8/O8) with at least one non-zero value. */
+export function hasMeaningfulAdminHotelCompanyData(
+  row: Pick<DraftHotelRow, 'unit_price_sgl_usd' | 'unit_price_trp_usd'>,
+): boolean {
+  return row.unit_price_sgl_usd > 0 || row.unit_price_trp_usd > 0
+}
+
+function adminOwnedHotelFields(
+  incoming: Pick<DraftHotelRow, 'unit_price_sgl_usd' | 'unit_price_trp_usd'>,
+): Pick<DraftHotelRow, 'unit_price_sgl_usd' | 'unit_price_trp_usd'> {
+  return {
+    unit_price_sgl_usd: incoming.unit_price_sgl_usd,
+    unit_price_trp_usd: incoming.unit_price_trp_usd,
+  }
+}
+
+function adminAddedHotelRow(incoming: DraftHotelRow): DraftHotelRow {
+  return {
+    clientId: incoming.clientId,
+    hotel_name: '',
+    check_in_date: null,
+    nights: 0,
+    sgl_count: 0,
+    twn_count: 0,
+    trp_count: 0,
+    guide_amount_usd: 0,
+    ...adminOwnedHotelFields(incoming),
+  }
+}
+
+/** Preserve guide-owned hotel columns; apply admin unit prices; append admin-added rows. */
 export function mergeAdminHotelRowsForSave(
   incoming: DraftHotelRow[],
   existing: DraftHotelRow[],
 ): DraftHotelRow[] {
-  const byId = new Map(incoming.filter((r) => r.id).map((r) => [r.id!, r]))
-  return existing.map((row) => {
-    const inc = row.id ? byId.get(row.id) : undefined
-    if (!inc) return row
-    return {
-      ...row,
-      unit_price_sgl_usd: inc.unit_price_sgl_usd,
-      unit_price_trp_usd: inc.unit_price_trp_usd,
-    }
-  })
+  const incomingActive = incoming.filter((r) => !r.deleted)
+  const incomingById = new Map(incomingActive.filter((r) => r.id).map((r) => [r.id!, r]))
+
+  const mergedExisting = existing
+    .filter((r) => !r.deleted)
+    .map((row) => {
+      const inc = row.id ? incomingById.get(row.id) : undefined
+      if (!inc) return row
+      return {
+        ...row,
+        ...adminOwnedHotelFields(inc),
+      }
+    })
+
+  const adminAdded = incomingActive
+    .filter((row) => !row.id)
+    .filter((row) => hasMeaningfulAdminHotelCompanyData(row))
+    .map(adminAddedHotelRow)
+
+  return [...mergedExisting, ...adminAdded]
 }
 
 /** Preserve guide sale/com; apply admin KB from incoming. */

@@ -21,6 +21,7 @@ import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
   canAddExtraVehicle,
+  canAddHotelRows,
   canEditExtraVehicle,
 } from '@/lib/settlement/field-ownership'
 import { useSettlementFormRole, useAdminReviewEdit } from '../SettlementFormContext'
@@ -42,7 +43,7 @@ export function HotelsSection() {
       <DynamicRowList
       rows={hotels}
       onAdd={() => addRow('hotels')}
-      hideAdd={guideFieldsLocked}
+      hideAdd={!canAddHotelRows(role)}
       addLabel="+ 호텔 추가"
       renderRow={(row: DraftHotelRow) => {
         const calc = calcHotelRow(row)

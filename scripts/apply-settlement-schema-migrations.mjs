@@ -15,6 +15,7 @@ if (!dbUrl) {
 
 const migrations = [
   'other_expense_flat_migration.sql',
+  'other_expense_flat_constraints_migration.sql',
   'company_expense_items_migration.sql',
 ]
 

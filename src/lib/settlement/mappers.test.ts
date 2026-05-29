@@ -280,6 +280,37 @@ describe('DB round-trip mappers', () => {
     expect(hotels[0].sort_order).toBe(0)
   })
 
+  it('buildOtherDbRows writes flat entry_mode with zero legacy placeholders', () => {
+    const rows = buildOtherDbRows(
+      [
+        {
+          clientId: 'o-1',
+          description: 'SIM',
+          amount_usd: 12,
+          amount_vnd: 26_000,
+          note: 'flat row',
+        },
+      ],
+      SETTLEMENT_ID,
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      settlement_id: SETTLEMENT_ID,
+      description: 'SIM',
+      days: 0,
+      pax: 0,
+      unit_price_usd: 0,
+      unit_price_vnd: 0,
+      amount_usd: 12,
+      amount_vnd: 26_000,
+      is_tip: false,
+      note: 'flat row',
+      entry_mode: 'flat',
+      sort_order: 0,
+    })
+  })
+
   it('mergeServerSync assigns DB ids to draft rows by active index', () => {
     const state = stateFromSettlementFull(mockSettlementFull(), 'Guide')
     state.hotels.push({

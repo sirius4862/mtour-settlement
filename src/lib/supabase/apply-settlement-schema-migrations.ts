@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 const MIGRATION_FILES = [
   'other_expense_flat_migration.sql',
+  'other_expense_flat_constraints_migration.sql',
   'company_expense_items_migration.sql',
 ] as const
 
@@ -113,10 +114,31 @@ async function verifySettlementSchemaMigrations(
   const companyOk =
     companyTable.length > 0 && requiredCompany.every((c) => companyColumns.includes(c))
 
-  if (otherOk && companyOk) {
+  const legacyChecks = await sql<{ conname: string }[]>`
+    SELECT c.conname
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public'
+      AND t.relname = 'other_expense_items'
+      AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) NOT ILIKE '%entry_mode%'
+      AND (
+        pg_get_constraintdef(c.oid) ILIKE '%days%'
+        OR pg_get_constraintdef(c.oid) ILIKE '%pax%'
+        OR pg_get_constraintdef(c.oid) ILIKE '%unit_price%'
+      )
+  `
+  const constraintsOk = legacyChecks.length === 0
+
+  if (otherOk && companyOk && constraintsOk) {
     return {
       ok: true,
-      details: { other_expense_items: otherNames, company_expense_items: companyColumns },
+      details: {
+        other_expense_items: otherNames,
+        company_expense_items: companyColumns,
+        other_expense_legacy_checks: [],
+      },
     }
   }
 
@@ -127,6 +149,7 @@ async function verifySettlementSchemaMigrations(
       other_expense_items: otherNames,
       company_expense_items_exists: companyTable.length > 0,
       company_expense_items: companyColumns,
+      other_expense_legacy_checks: legacyChecks.map((r) => r.conname),
     },
   }
 }

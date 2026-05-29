@@ -2,7 +2,11 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
 
 /** Middleware에서 통과시키는 경로 (세션 없어도 OK) */
-const PUBLIC_PREFIXES = ['/login', '/auth/callback']
+const PUBLIC_PREFIXES = [
+  '/login',
+  '/auth/callback',
+  '/api/internal/apply-external-receivable-migration',
+]
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(

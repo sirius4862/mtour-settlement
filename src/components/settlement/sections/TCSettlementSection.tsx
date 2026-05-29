@@ -148,7 +148,7 @@ export function FinalAdjustmentsSection() {
       <SectionCard>
         <p className="text-xs font-semibold text-emerald-800 mb-2">회사 수익 (admin)</p>
         <ManualField
-          label="지상비 (회사 수익)"
+          label="투어피/지상비 (회사 수익)"
           excelRef="—"
           suffix="$"
           inputMode="decimal"

@@ -59,11 +59,13 @@ export interface SettlementHeaderCalc {
   charming_other_usd: number
   /** F75 — tip received */
   tip_received_usd: number
-  /** P75 — option credit / tip remittance */
-  option_credit_usd: number
-  /** D79 — tour fee (company prepaid to guide; Q75 deduction, not company revenue) */
-  tour_fee_usd: number
-  /** Web-only — ground fee (company revenue; admin only) */
+  /** 옵션외상 — option paid to company account (P75 component) */
+  option_receivable_usd: number
+  /** 팁송금 — tip transferred to company account (P75 component) */
+  tip_transfer_usd: number
+  /** Legacy P75 total — read-only fallback when split fields are empty */
+  option_credit_usd?: number
+  /** 투어피/지상비 — company revenue (admin only; SSOT for tour/ground fee) */
   ground_fee_usd: number
   /** O79 — vehicle fee (company expense) */
   vehicle_fee_usd: number
@@ -144,6 +146,9 @@ export interface SectionSubtotals {
     extra_vehicle_usd: AnnotatedNumber
     income_total_usd: AnnotatedNumber
     guide_expense_deposit_usd: AnnotatedNumber
+    option_receivable_usd: AnnotatedNumber
+    tip_transfer_usd: AnnotatedNumber
+    option_credit_usd: AnnotatedNumber
     company_deposit_usd: AnnotatedNumber
   }
 }
@@ -170,7 +175,7 @@ export interface SettlementCalcResult {
   summary: {
     /** Guide profit pool D80+D81 */
     income_total_usd: AnnotatedNumber
-    /** Admin company revenue (excludes D79 tour fee) */
+    /** Admin company revenue (includes ground_fee / tour fee) */
     admin_income_usd: AnnotatedNumber
     expense_total_usd: AnnotatedNumber
     company_gross_usd: AnnotatedNumber

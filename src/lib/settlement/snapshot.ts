@@ -1,7 +1,8 @@
 import { calcSettlement } from './calc'
 import type { SettlementCalcResult } from './types-calc'
 import { CONFIRM_DIFF_HEADER_KEYS } from './field-ownership'
-import { stateFromSettlementFull, toCalcInput } from './mappers'
+import { resolveGroundFeeUsd, stateFromSettlementFull, toCalcInput } from './mappers'
+import { normalizeExternalReceivableForForm, resolveOptionCreditUsd } from './external-receivable'
 import type { SettlementFieldOwner, SettlementFull } from '@/types'
 
 /** Serializable settlement state stored in settlement_snapshots.payload_json */
@@ -36,7 +37,7 @@ export interface FieldChangeDraft {
 }
 
 const HEADER_LABELS: Record<string, { label: string; excelRef: string; owner: SettlementFieldOwner }> = {
-  ground_fee_usd: { label: '지상비 (회사 수익)', excelRef: '—', owner: 'admin' },
+  ground_fee_usd: { label: '투어피/지상비 (회사 수익)', excelRef: '—', owner: 'admin' },
   vehicle_fee_usd: { label: '차량비', excelRef: 'O79', owner: 'admin' },
   head_tax_usd: { label: '인두세', excelRef: 'O80', owner: 'admin' },
   seoul_biz_fee_usd: { label: '서울영업비', excelRef: 'O81', owner: 'admin' },
@@ -44,7 +45,6 @@ const HEADER_LABELS: Record<string, { label: string; excelRef: string; owner: Se
   megugi_usd: { label: '메꾸기', excelRef: 'R80', owner: 'guide' },
   guide_daily_fee_usd: { label: '가이드 일비', excelRef: 'R82', owner: 'guide' },
   settlement_ratio: { label: '정산비율', excelRef: 'R77', owner: 'admin' },
-  tour_fee_usd: { label: '투어피 (회사 선지급)', excelRef: 'D79', owner: 'guide' },
   advance_vnd: { label: '전도금', excelRef: 'A76', owner: 'guide' },
   tc_guide_usd: { label: 'T/C 가이드분', excelRef: 'H83', owner: 'guide' },
 }
@@ -68,6 +68,12 @@ export const GUIDE_HIDDEN_CONFIRM_FIELD_PATHS = [
   'calc_summary.company_grand_total_usd',
 ] as const
 
+export const SHOPPING_KB_LABEL = 'KB (회사 전용 수익)'
+
+export function isShoppingKbFieldPath(fieldPath: string): boolean {
+  return fieldPath.endsWith('.kb_usd')
+}
+
 export function isGuideHiddenConfirmChange(change: {
   field_path: string
   excel_ref?: string | null
@@ -76,6 +82,9 @@ export function isGuideHiddenConfirmChange(change: {
   if ((GUIDE_HIDDEN_CONFIRM_FIELD_PATHS as readonly string[]).includes(change.field_path)) {
     return true
   }
+  if (isShoppingKbFieldPath(change.field_path)) return true
+  if (change.excel_ref === 'H57' || change.excel_ref === 'H72') return true
+  if (change.label === SHOPPING_KB_LABEL || change.label === '쇼핑 KB') return true
   if (change.excel_ref === 'R87') return true
   if (change.label === '회사수익' || change.label?.includes('회사총수익')) return true
   return false
@@ -88,6 +97,25 @@ export function filterGuideConfirmationChanges<T extends {
   label?: string
 }>(changes: T[]): T[] {
   return changes.filter((c) => !isGuideHiddenConfirmChange(c))
+}
+
+/** Remove company-only KB from snapshot payloads returned to guides. */
+export function stripKbFromGuideSnapshotPayload(payload: SnapshotPayload): SnapshotPayload {
+  return {
+    ...payload,
+    shoppings: payload.shoppings.map((row) => {
+      const { kb_usd: _kb, ...rest } = row as { kb_usd?: number; [key: string]: unknown }
+      return rest
+    }),
+  }
+}
+
+/** Strip KB from settlement rows in guide-facing API responses. */
+export function sanitizeSettlementFullForGuide(full: SettlementFull): SettlementFull {
+  return {
+    ...full,
+    shoppings: full.shoppings.map((s) => ({ ...s, kb_usd: 0 })),
+  }
 }
 
 export function calcSummaryFromResult(result: SettlementCalcResult): SnapshotCalcSummary {
@@ -105,11 +133,11 @@ export function buildSnapshotPayload(full: SettlementFull): SnapshotPayload {
     exchange_rate: full.exchange_rate,
     header: {
       advance_vnd: full.advance_vnd,
-      tour_fee_usd: full.tour_fee_usd,
-      ground_fee_usd: full.ground_fee_usd ?? 0,
+      ground_fee_usd: resolveGroundFeeUsd(full),
       charming_other_usd: full.charming_other_usd,
       tip_received_usd: full.tip_received_usd,
-      option_credit_usd: full.option_credit_usd,
+      ...normalizeExternalReceivableForForm(full),
+      option_credit_usd: resolveOptionCreditUsd(full),
       vehicle_fee_usd: full.vehicle_fee_usd,
       head_tax_usd: full.head_tax_usd,
       seoul_biz_fee_usd: full.seoul_biz_fee_usd,
@@ -238,7 +266,7 @@ export function diffSnapshotPayloads(
   for (const row of after.shoppings) {
     const prev = beforeShops.get(String(row.id))
     if (!prev) continue
-    pushChange(changes, `shoppings.${row.id}.kb_usd`, '쇼핑 KB', 'H57', 'admin', prev.kb_usd, row.kb_usd)
+    pushChange(changes, `shoppings.${row.id}.kb_usd`, SHOPPING_KB_LABEL, 'H57', 'admin', prev.kb_usd, row.kb_usd)
   }
 
   return changes

@@ -1,4 +1,4 @@
-import type { Tour, SettlementFull, Receipt, SettlementStatus } from '@/types'
+import type { Tour, SettlementFull, Receipt, SettlementStatus, Settlement } from '@/types'
 import { MOCK_SETTLEMENT_INPUT, MOCK_TOUR_INFO } from './mock-data'
 import type { SettlementCalcInput } from './types-calc'
 import type {
@@ -22,6 +22,7 @@ import {
   mergeGuideShoppingRowsForSave,
   pickAdminHeaderFields,
 } from './field-ownership'
+import { normalizeExternalReceivableForForm } from './external-receivable'
 import {
   calcEntranceAmountVnd,
   calcHotelCompanyUsd,
@@ -31,6 +32,15 @@ import {
   calcOtherAmountUsd,
   calcOtherAmountVnd,
 } from './calc'
+
+/** SSOT for tour/ground fee until tour_fee_usd column is dropped. */
+export function resolveGroundFeeUsd(
+  row: Pick<Settlement, 'ground_fee_usd' | 'tour_fee_usd'>,
+): number {
+  const ground = row.ground_fee_usd ?? 0
+  if (ground > 0) return ground
+  return row.tour_fee_usd ?? 0
+}
 
 function withClientId<T extends { id: string }>(
   row: T,
@@ -52,9 +62,8 @@ export function stateFromSettlementFull(
       advance_vnd: full.advance_vnd,
       charming_other_usd: full.charming_other_usd,
       tip_received_usd: full.tip_received_usd,
-      option_credit_usd: full.option_credit_usd,
-      tour_fee_usd: full.tour_fee_usd,
-      ground_fee_usd: full.ground_fee_usd ?? 0,
+      ...normalizeExternalReceivableForForm(full),
+      ground_fee_usd: resolveGroundFeeUsd(full),
       vehicle_fee_usd: full.vehicle_fee_usd,
       head_tax_usd: full.head_tax_usd,
       seoul_biz_fee_usd: full.seoul_biz_fee_usd,

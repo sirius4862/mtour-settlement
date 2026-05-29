@@ -19,7 +19,7 @@ Route: `/guide/settlements/new`
 
 | Step | Action | Expected DB / UI |
 |------|--------|------------------|
-| 1.1 | Select tour, set Q2, A76, D79 | Form shows tour metadata |
+| 1.1 | Select tour, set Q2, A76 | Form shows tour metadata |
 | 1.2 | Add rows in hotels, meals, shopping, options | Row calcs update live |
 | 1.3 | Click **임시저장** | No validation errors |
 | 1.4 | Check Supabase `settlements` | New row: `status=draft`, header fields match form |
@@ -30,7 +30,7 @@ Route: `/guide/settlements/new`
 ### SQL spot-check
 
 ```sql
-SELECT id, status, tour_id, exchange_rate, tour_fee_usd, advance_vnd
+SELECT id, status, tour_id, exchange_rate, ground_fee_usd, advance_vnd
 FROM settlements ORDER BY created_at DESC LIMIT 1;
 ```
 
@@ -67,7 +67,7 @@ Automated: `npm test` → `mappers.test.ts` round-trip test.
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 4.1 | Fill tour fee + ≥1 line item | Validation passes |
+| 4.1 | Fill advance + ≥1 line item | Validation passes |
 | 4.2 | Click **제출하기** | Redirect to detail |
 | 4.3 | `settlements.status` | `submitted` |
 | 4.4 | `/edit` route | Redirects to read-only detail |

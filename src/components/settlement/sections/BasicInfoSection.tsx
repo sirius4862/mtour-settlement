@@ -88,18 +88,6 @@ export function BasicInfoSection({ tours, advanceUsd, readOnlyTour }: Props) {
         />
         <CalculatedField field={advanceUsd} />
         <ManualField
-          label="투어피 (회사 선지급)"
-          excelRef="D79"
-          suffix="$"
-          inputMode="decimal"
-          hint="회사가 가이드에게 먼저 지급한 금액 · Q75에서 차감"
-          value={header.tour_fee_usd || ''}
-          disabled={role === 'readOnly'}
-          onChange={(e) =>
-            patchHeader({ tour_fee_usd: parseFloat(e.target.value) || 0 })
-          }
-        />
-        <ManualField
           label="가이드 메모"
           value={header.guide_note ?? ''}
           disabled={role === 'admin'}

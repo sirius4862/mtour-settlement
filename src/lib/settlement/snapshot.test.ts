@@ -3,7 +3,10 @@ import { MOCK_SETTLEMENT_INPUT } from './mock-data'
 import {
   buildSnapshotPayload,
   diffSnapshotPayloads,
+  filterGuideConfirmationChanges,
+  isGuideHiddenConfirmChange,
   parseSnapshotPayload,
+  stripKbFromGuideSnapshotPayload,
 } from './snapshot'
 import type { SettlementFull } from '@/types'
 
@@ -17,11 +20,13 @@ function minimalSettlementFull(overrides: Partial<SettlementFull> = {}): Settlem
     year_month: '2025-11',
     exchange_rate: MOCK_SETTLEMENT_INPUT.exchange_rate,
     advance_vnd: MOCK_SETTLEMENT_INPUT.header.advance_vnd,
-    tour_fee_usd: MOCK_SETTLEMENT_INPUT.header.tour_fee_usd,
+    tour_fee_usd: 0,
     ground_fee_usd: MOCK_SETTLEMENT_INPUT.header.ground_fee_usd,
     charming_other_usd: MOCK_SETTLEMENT_INPUT.header.charming_other_usd,
     tip_received_usd: MOCK_SETTLEMENT_INPUT.header.tip_received_usd,
-    option_credit_usd: MOCK_SETTLEMENT_INPUT.header.option_credit_usd,
+    option_receivable_usd: MOCK_SETTLEMENT_INPUT.header.option_receivable_usd,
+    tip_transfer_usd: MOCK_SETTLEMENT_INPUT.header.tip_transfer_usd,
+    option_credit_usd: 0,
     vehicle_fee_usd: MOCK_SETTLEMENT_INPUT.header.vehicle_fee_usd,
     head_tax_usd: MOCK_SETTLEMENT_INPUT.header.head_tax_usd,
     seoul_biz_fee_usd: MOCK_SETTLEMENT_INPUT.header.seoul_biz_fee_usd,
@@ -141,6 +146,52 @@ describe('diffSnapshotPayloads', () => {
 
     const changes = diffSnapshotPayloads(before, afterPayload)
     expect(changes.some((c) => c.field_path === 'hotels.hotel-1.unit_price_sgl_usd')).toBe(true)
+  })
+
+  it('includes KB changes in full diff but hides them from guide filter', () => {
+    const shop = {
+      id: 'shop-1',
+      settlement_id: 'settlement-1',
+      visit_date: null,
+      shop_name: 'Shop A',
+      sale_usd: 100,
+      com_usd: 20,
+      kb_usd: 5,
+      sort_order: 0,
+      created_at: '',
+      updated_at: '',
+    }
+    const before = buildSnapshotPayload(minimalSettlementFull({ shoppings: [shop] }))
+    const after = buildSnapshotPayload(
+      minimalSettlementFull({ shoppings: [{ ...shop, kb_usd: 20 }] }),
+    )
+    const allChanges = diffSnapshotPayloads(before, after)
+    expect(allChanges.some((c) => c.field_path === 'shoppings.shop-1.kb_usd')).toBe(true)
+    expect(filterGuideConfirmationChanges(allChanges)).toEqual([])
+  })
+})
+
+describe('stripKbFromGuideSnapshotPayload', () => {
+  it('removes kb_usd from shopping rows', () => {
+    const payload = buildSnapshotPayload(
+      minimalSettlementFull({
+        shoppings: [{
+          id: 'shop-1',
+          settlement_id: 'settlement-1',
+          visit_date: null,
+          shop_name: 'Shop A',
+          sale_usd: 100,
+          com_usd: 20,
+          kb_usd: 12,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        }],
+      }),
+    )
+    const stripped = stripKbFromGuideSnapshotPayload(payload)
+    expect(stripped.shoppings[0]).not.toHaveProperty('kb_usd')
+    expect(stripped.shoppings[0]).toMatchObject({ sale_usd: 100, com_usd: 20 })
   })
 })
 

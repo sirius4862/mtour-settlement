@@ -27,8 +27,10 @@ import {
   diffSnapshotPayloads,
   filterGuideConfirmationChanges,
   parseSnapshotPayload,
+  sanitizeSettlementFullForGuide,
 } from '@/lib/settlement/snapshot'
 import type { SnapshotPayload } from '@/lib/settlement/snapshot'
+import { externalReceivableDbFields } from '@/lib/settlement/external-receivable'
 import {
   assertAdminReviewAction,
   assertAdminSaveSettlement,
@@ -336,6 +338,8 @@ export async function upsertSettlement(payload: {
   ground_fee_usd: number
   charming_other_usd: number
   tip_received_usd: number
+  option_receivable_usd: number
+  tip_transfer_usd: number
   option_credit_usd: number
   vehicle_fee_usd: number
   head_tax_usd: number
@@ -547,9 +551,11 @@ export async function saveSettlementDraft(
   error?: string
 }> {
   let payloadToSave = payload
+  let preservedTourFeeUsd = 0
   if (payload.settlementId) {
     const existing = await getSettlementFull(payload.settlementId)
     if (existing) {
+      preservedTourFeeUsd = existing.tour_fee_usd ?? 0
       payloadToSave = sanitizeGuideDraftPayload(payload, existing)
     }
   } else {
@@ -561,11 +567,11 @@ export async function saveSettlementDraft(
     tour_id: payloadToSave.tourId,
     exchange_rate: payloadToSave.exchange_rate,
     advance_vnd: payloadToSave.header.advance_vnd,
-    tour_fee_usd: payloadToSave.header.tour_fee_usd,
+    tour_fee_usd: preservedTourFeeUsd,
     ground_fee_usd: payloadToSave.header.ground_fee_usd ?? 0,
     charming_other_usd: payloadToSave.header.charming_other_usd,
     tip_received_usd: payloadToSave.header.tip_received_usd,
-    option_credit_usd: payloadToSave.header.option_credit_usd,
+    ...externalReceivableDbFields(payloadToSave.header),
     vehicle_fee_usd: payloadToSave.header.vehicle_fee_usd,
     head_tax_usd: payloadToSave.header.head_tax_usd,
     seoul_biz_fee_usd: payloadToSave.header.seoul_biz_fee_usd,
@@ -638,7 +644,7 @@ export async function saveAdminSettlementEdits(
   const { error: headerErr } = await supabase
     .from('settlements')
     .update({
-      tour_fee_usd: sanitized.header.tour_fee_usd,
+      tour_fee_usd: existing.tour_fee_usd ?? 0,
       ground_fee_usd: sanitized.header.ground_fee_usd ?? 0,
       vehicle_fee_usd: sanitized.header.vehicle_fee_usd,
       head_tax_usd: sanitized.header.head_tax_usd,
@@ -1095,7 +1101,7 @@ export async function getGuideConfirmationPacket(
   const visibleChanges = filterGuideConfirmationChanges((changes ?? []) as SettlementFieldChange[])
 
   return {
-    settlement: full,
+    settlement: sanitizeSettlementFullForGuide(full),
     changes: visibleChanges,
     companyDepositBefore: beforePayload?.calc_summary.company_deposit_usd ?? null,
     companyDepositAfter: afterPayload?.calc_summary.company_deposit_usd ?? null,

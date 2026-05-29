@@ -6,7 +6,6 @@ import {
   GUIDE_FOOTER_LABELS,
   GUIDE_PAYOUT_FLOOR_WARNING,
   Q75_NEGATIVE_WARNING,
-  R87_EXCLUDES_D79_NOTE,
   R77_REFERENCE_ONLY_NOTE,
   companyDepositIsNegative,
   guideSettlementIsNegative,
@@ -15,13 +14,12 @@ import {
   shouldShowSummaryField,
   type SummaryAudience,
 } from '@/lib/settlement/display-labels'
-import { uiFormulaLabel } from '@/lib/settlement/field-display'
 import { CalculatedField, formatUsd } from '../CalculatedField'
 import { SectionHint } from '../SectionHint'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 
 const COL_HEADERS = [
-  { key: 'd', label: '수익·선지급', ref: 'D', sub: 'COM·팁(수익) · D79=Q75차감' },
+  { key: 'd', label: '수익', ref: 'D', sub: 'COM·팁·차밍 등' },
   { key: 'h', label: '가이드지출', ref: 'H', sub: 'Hotel, meals, TC…' },
   { key: 'j', label: '회사지출', ref: 'J', sub: 'Company hotel, TC…' },
   { key: 'o', label: '기타포함', ref: 'O', sub: 'Vehicle, taxes…' },
@@ -42,7 +40,6 @@ function MatrixCell({
   if (!field) {
     return <span className="text-gray-200 text-sm">{empty}</span>
   }
-  const isBasicInfoMirror = field.excelRef === 'D79'
   return (
     <div className={highlight ? 'text-amber-900' : ''}>
       <div className={`font-mono text-sm tabular-nums ${highlight ? 'font-bold' : 'font-semibold text-gray-900'}`}>
@@ -51,13 +48,7 @@ function MatrixCell({
       {showExcelRef && (
         <div className="flex items-center gap-1 flex-wrap">
           <span className="text-[9px] font-mono text-blue-600/80">{field.excelRef}</span>
-          {isBasicInfoMirror && (
-            <span className="text-[8px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">회사 선지급 · Q75 차감</span>
-          )}
         </div>
-      )}
-      {isBasicInfoMirror && (
-        <p className="text-[8px] text-gray-400 mt-0.5">{uiFormulaLabel(field)}</p>
       )}
     </div>
   )
@@ -258,11 +249,6 @@ export function FinalSummarySection({
               />
             ))}
           </div>
-        )}
-        {audience === 'admin' && shouldShowSummaryField(summary.company_grand_total_usd, audience) && (
-          <p className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
-            {R87_EXCLUDES_D79_NOTE}
-          </p>
         )}
       </div>
     </div>

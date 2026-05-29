@@ -20,11 +20,13 @@ function minimalSettlementFull(overrides: Partial<SettlementFull> = {}): Settlem
     year_month: '2025-11',
     exchange_rate: MOCK_SETTLEMENT_INPUT.exchange_rate,
     advance_vnd: MOCK_SETTLEMENT_INPUT.header.advance_vnd,
-    tour_fee_usd: MOCK_SETTLEMENT_INPUT.header.tour_fee_usd,
+    tour_fee_usd: 0,
     ground_fee_usd: MOCK_SETTLEMENT_INPUT.header.ground_fee_usd,
     charming_other_usd: MOCK_SETTLEMENT_INPUT.header.charming_other_usd,
     tip_received_usd: MOCK_SETTLEMENT_INPUT.header.tip_received_usd,
-    option_credit_usd: MOCK_SETTLEMENT_INPUT.header.option_credit_usd,
+    option_receivable_usd: MOCK_SETTLEMENT_INPUT.header.option_receivable_usd,
+    tip_transfer_usd: MOCK_SETTLEMENT_INPUT.header.tip_transfer_usd,
+    option_credit_usd: 0,
     vehicle_fee_usd: MOCK_SETTLEMENT_INPUT.header.vehicle_fee_usd,
     head_tax_usd: MOCK_SETTLEMENT_INPUT.header.head_tax_usd,
     seoul_biz_fee_usd: MOCK_SETTLEMENT_INPUT.header.seoul_biz_fee_usd,
@@ -98,24 +100,6 @@ describe('guide confirm packet policy', () => {
     expect(changes.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
   })
 
-  it('filterGuideConfirmationChanges removes legacy R87 rows', () => {
-    const legacy = [
-      {
-        field_path: 'calc_summary.company_grand_total_usd',
-        excel_ref: 'R87',
-        label: '회사수익',
-      },
-      {
-        field_path: 'header.megugi_usd',
-        excel_ref: 'R80',
-        label: '메꾸기',
-      },
-    ]
-
-    expect(isGuideHiddenConfirmChange(legacy[0])).toBe(true)
-    expect(filterGuideConfirmationChanges(legacy)).toEqual([legacy[1]])
-  })
-
   it('guide packet summary uses deposit and payout only (no R87 fields)', () => {
     const before = buildSnapshotPayload(minimalSettlementFull())
     const after = buildSnapshotPayload(
@@ -134,6 +118,48 @@ describe('guide confirm packet policy', () => {
     expect(packetSummary).not.toHaveProperty('company_grand_total_usd')
     expect(typeof packetSummary.companyDepositBefore).toBe('number')
     expect(typeof packetSummary.guidePayoutAfter).toBe('number')
+  })
+
+  it('C: filterGuideConfirmationChanges hides shopping KB changes', () => {
+    const shop = {
+      id: 'shop-1',
+      settlement_id: 'settlement-1',
+      visit_date: null,
+      shop_name: 'Shop A',
+      sale_usd: 100,
+      com_usd: 20,
+      kb_usd: 5,
+      sort_order: 0,
+      created_at: '',
+      updated_at: '',
+    }
+    const before = buildSnapshotPayload(minimalSettlementFull({ shoppings: [shop] }))
+    const after = buildSnapshotPayload(
+      minimalSettlementFull({ shoppings: [{ ...shop, kb_usd: 15 }] }),
+    )
+    const allChanges = diffSnapshotPayloads(before, after)
+    expect(allChanges.some((c) => c.field_path === 'shoppings.shop-1.kb_usd')).toBe(true)
+    const visible = filterGuideConfirmationChanges(allChanges)
+    expect(visible.some((c) => c.field_path.includes('kb_usd'))).toBe(false)
+    expect(isGuideHiddenConfirmChange(allChanges.find((c) => c.field_path.includes('kb_usd'))!)).toBe(true)
+  })
+
+  it('filterGuideConfirmationChanges removes legacy R87 rows', () => {
+    const legacy = [
+      {
+        field_path: 'calc_summary.company_grand_total_usd',
+        excel_ref: 'R87',
+        label: '회사수익',
+      },
+      {
+        field_path: 'header.megugi_usd',
+        excel_ref: 'R80',
+        label: '메꾸기',
+      },
+    ]
+
+    expect(isGuideHiddenConfirmChange(legacy[0])).toBe(true)
+    expect(filterGuideConfirmationChanges(legacy)).toEqual([legacy[1]])
   })
 })
 

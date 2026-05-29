@@ -23,11 +23,6 @@ export const ADMIN_STRICT_HEADER_KEYS = [
 ] as const satisfies readonly (keyof SettlementHeaderCalc)[]
 
 /**
- * Guide enters tour fee; admin verifies on review.
- */
-export const GUIDE_TOUR_FEE_HEADER_KEYS = ['tour_fee_usd'] as const satisfies readonly (keyof SettlementHeaderCalc)[]
-
-/**
  * Guide enters in draft; company reviews after submit.
  * Admin may adjust in submitted / clarification_requested.
  * Included in confirm-workflow diff when values change post-submit.
@@ -40,7 +35,6 @@ export const COMPANY_REVIEW_HEADER_KEYS = [
 /** All header fields admin may change during post-submit review save. */
 export const ADMIN_OWNED_HEADER_KEYS = [
   ...ADMIN_STRICT_HEADER_KEYS,
-  ...GUIDE_TOUR_FEE_HEADER_KEYS,
   ...COMPANY_REVIEW_HEADER_KEYS,
 ] as const satisfies readonly (keyof SettlementHeaderCalc)[]
 
@@ -156,7 +150,6 @@ export function pickAdminHeaderFields(
   row: Partial<SettlementHeaderCalc>,
 ): Pick<SettlementHeaderCalc, AdminOwnedHeaderKey> {
   return {
-    tour_fee_usd: row.tour_fee_usd ?? 0,
     ground_fee_usd: row.ground_fee_usd ?? 0,
     vehicle_fee_usd: row.vehicle_fee_usd ?? 0,
     head_tax_usd: row.head_tax_usd ?? 0,

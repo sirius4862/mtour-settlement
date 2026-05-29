@@ -48,6 +48,22 @@ export function validateSettlementForm(
     })
   }
 
+  if (state.header.option_receivable_usd < 0) {
+    issues.push({
+      sectionId: 'cash',
+      message: '옵션외상은 0 이상이어야 합니다.',
+      severity: 'error',
+    })
+  }
+
+  if (state.header.tip_transfer_usd < 0) {
+    issues.push({
+      sectionId: 'cash',
+      message: '팁송금은 0 이상이어야 합니다.',
+      severity: 'error',
+    })
+  }
+
   const hotels = activeRows(state.hotels)
   const meals = activeRows(state.meals)
 
@@ -60,17 +76,9 @@ export function validateSettlementForm(
       })
     }
 
-    if (state.header.tour_fee_usd <= 0) {
-      issues.push({
-        sectionId: 'basic',
-        message: '투어피(D79)가 입력되지 않았습니다. 제출 후 관리자가 확인합니다.',
-        severity: 'warning',
-      })
-    }
-
     issues.push({
       sectionId: 'adjustments',
-      message: '차량비·인두세·서울영업비·지상비·정산비율(R77)은 제출 후 관리자가 입력합니다.',
+      message: '차량비·인두세·서울영업비·투어피/지상비·정산비율(R77)은 제출 후 관리자가 입력합니다.',
       severity: 'warning',
     })
   }

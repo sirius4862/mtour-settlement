@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Q75_NEGATIVE_WARNING, R87_EXCLUDES_D79_NOTE } from '@/lib/settlement/display-labels'
+import { Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { createClient } from '@/lib/supabase/server'
 import { formatGuideDisplayName } from '@/lib/guide/display-name'
 import { calcSettlement } from '@/lib/settlement/calc'
-import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
+import { resolveGroundFeeUsd, stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { STATUS_META, canAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
@@ -44,6 +44,7 @@ export default async function AdminSettlementDetailPage({
   const guidePayout = summary.guide_payout_usd.value
   const companyProfit = summary.company_grand_total_usd.value
   const payoutIsFloored = guideSettlement < 0
+  const groundFeeUsd = resolveGroundFeeUsd(s)
 
   const canSendForConfirmation = canAdminSendForConfirmation(s.status)
   const canAdminEdit = canAdminEditSettlement(s.status)
@@ -112,7 +113,6 @@ export default async function AdminSettlementDetailPage({
             <p className="text-emerald-700 font-semibold">
               회사수익 (R87): <span className="font-mono">{fmt2(companyProfit)}</span>
             </p>
-            <p className="text-emerald-700 text-[10px]">{R87_EXCLUDES_D79_NOTE}</p>
           </div>
         </div>
       </div>
@@ -122,13 +122,12 @@ export default async function AdminSettlementDetailPage({
         <p className="text-xs font-semibold text-gray-500 mb-3">상세 계산 (엑셀 R77-R87)</p>
         <div className="space-y-1.5 text-xs">
           {[
-            ['투어피 — 회사 선지급 / Q75 차감 (D79, R87 미포함)', fmt2(m('r79')?.income?.value ?? 0)],
             ['쇼핑수익 COM (D80)', fmt2(m('r80')?.income?.value ?? 0)],
             ['쇼핑 SALE 참고 (D72)', fmt2(sections.shopping.sale_usd.value)],
             ['옵션수익 COM (D81)', fmt2(m('r81')?.income?.value ?? 0)],
             ['받은팁 (F75→수익)', fmt2(m('r82')?.income?.value ?? 0)],
             ['차밍/기타 (D75→수익)', fmt2(m('r83')?.income?.value ?? 0)],
-            ['지상비 — 회사 수익', fmt2(data.ground_fee_usd ?? 0)],
+            ['투어피/지상비 — 회사 수익', fmt2(groundFeeUsd)],
             ['─ 회사 수익 합계', fmt2(summary.admin_income_usd.value), true],
             ['─ 가이드 수익풀 D80+D81 (D84)', fmt2(summary.income_total_usd.value), true],
             ['호텔 가이드 (H79)', fmt2(m('r79')?.guideExpense?.value ?? 0)],
@@ -152,10 +151,13 @@ export default async function AdminSettlementDetailPage({
               ? [['─ 실제 지급액 MAX(R85,0) (P85)', fmt2(guidePayout), true] as const]
               : []),
             ['─ R86 중간값', fmt2(summary.company_profit_usd.value), true],
-            ['KB합계 (H72)', fmt2(sections.shopping.kb_usd.value)],
+            ['KB (회사 전용 수익) 합계 (H72)', fmt2(sections.shopping.kb_usd.value)],
             ['추가차량비 (S75)', fmt2(sections.options.extra_vehicle_usd.value)],
             ['─ 회사수익 R86+H72+S75 (R87)', fmt2(companyProfit), true],
-            ['회사입금 J75−N75−P75−D79 (Q75)', fmt2(companyDeposit)],
+            ['옵션외상', fmt2(sections.cash.option_receivable_usd.value)],
+            ['팁송금', fmt2(sections.cash.tip_transfer_usd.value)],
+            ['옵션외상/팁송금 합 (P75)', fmt2(sections.cash.option_credit_usd.value)],
+            ['회사입금 J75−N75−P75 (Q75)', fmt2(companyDeposit)],
           ].map(([l, v, bold, accent]) => (
             <div key={l as string} className={`flex justify-between py-1 ${bold ? 'border-t border-gray-100 mt-1 pt-1.5' : ''}`}>
               <span className={`${accent ? 'text-amber-700 font-semibold' : bold ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
@@ -176,7 +178,7 @@ export default async function AdminSettlementDetailPage({
 
       {shoppings.length > 0 && <ItemTable title="쇼핑 수익" rows={shoppings.map(sh => [
         sh.shop_name, sh.visit_date ?? '', fmt2(sh.sale_usd), fmt2(sh.com_usd), fmt2(sh.kb_usd)
-      ])} headers={['샵명', '날짜', 'SALE (참고)', 'COM (수익)', 'KB']} />}
+      ])} headers={['샵명', '날짜', 'SALE (참고)', 'COM (수익)', 'KB (회사 전용 수익)']} />}
 
       {options.length > 0 && <ItemTable title="옵션 수익" rows={options.map(op => [
         op.is_extra_vehicle ? '🚌 추가차량비' : op.option_name,
@@ -202,7 +204,7 @@ export default async function AdminSettlementDetailPage({
           className="block bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 hover:border-blue-200"
         >
           <p className="text-sm font-semibold text-blue-800">회사 전용 필드 수정</p>
-          <p className="text-xs text-blue-600 mt-0.5">지상비·호텔 단가·KB·추가차량·회사 지출 등 admin 필드 저장 →</p>
+          <p className="text-xs text-blue-600 mt-0.5">투어피/지상비·호텔 단가·KB·추가차량·회사 지출 등 admin 필드 저장 →</p>
         </Link>
       )}
 

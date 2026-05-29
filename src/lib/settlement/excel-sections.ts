@@ -1,8 +1,8 @@
 /** Excel sheet "정산서양식" — section metadata for guide UX. */
 export const EXCEL_SECTIONS = {
   basic: {
-    rows: 'R1–4, Q2, A76, D79',
-    hint: '투어 정보·환율(Q2)·전도금(A76)·투어피(D79, 회사 선지급·Q75 차감)를 입력합니다.',
+    rows: 'R1–4, Q2, A76',
+    hint: '투어 정보·환율(Q2)·전도금(A76)을 입력합니다.',
   },
   hotels: {
     rows: 'R6–12',
@@ -38,11 +38,11 @@ export const EXCEL_SECTIONS = {
   },
   adjustments: {
     rows: 'O79–81, R77, R80, R82, ground_fee',
-    hint: '지상비(회사 수익), 차량비·인두세·서울영업비(회사 지출), 메꾸기(R80), 가이드일비(R82). R77은 참고 전용.',
+    hint: '투어피/지상비(회사 수익), 차량비·인두세·서울영업비(회사 지출), 메꾸기(R80), 가이드일비(R82). R77은 참고 전용.',
   },
   summary: {
     rows: 'R77–R87',
-    hint: '정산내역 매트릭스 — D79(투어피)는 회사 선지급·Q75 차감 표시, R87 미포함.',
+    hint: '정산내역 매트릭스 — 투어피/지상비는 admin 회사 수익(ground_fee)으로 R87에 반영.',
   },
   receipts: {
     rows: '—',

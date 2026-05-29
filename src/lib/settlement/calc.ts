@@ -18,6 +18,7 @@ import type {
   ShoppingCalcRow,
   SoftDeletable,
 } from './types-calc'
+import { resolveOptionCreditUsd } from './external-receivable'
 
 // ── Primitives ───────────────────────────────────────────────────
 
@@ -164,7 +165,7 @@ export function calcShoppingSubtotals(shoppings: ShoppingCalcRow[]) {
   return {
     sale_usd: annotate(sum(rows.map((r) => r.sale_usd)), 'SALE 합', 'D72', 'SUM(D57:E71)'),
     com_usd: annotate(sum(rows.map((r) => r.com_usd)), 'COM 합', 'F72', 'SUM(F57:G71)'),
-    kb_usd: annotate(sum(rows.map((r) => r.kb_usd)), 'KB 합', 'H72', 'SUM(H57:I71)'),
+    kb_usd: annotate(sum(rows.map((r) => r.kb_usd)), 'KB (회사 전용 수익) 합', 'H72', 'SUM(H57:I71)'),
   }
 }
 
@@ -220,7 +221,6 @@ export function calcExpenseTotalH85(h84: number, j84: number, o84: number): numb
 }
 
 export interface SettlementMatrixValues {
-  d79: number
   d80: number
   d81: number
   d82: number
@@ -265,14 +265,14 @@ export const SETTLEMENT_SHOPPING_PROFIT_FORMULA = 'SUM(F72)'
 /** Operational D84 / R79 — shopping COM + option COM only (excludes tour fee, tips, SALE). */
 export const SETTLEMENT_PROFIT_INCOME_FORMULA = 'D80+D81'
 
-/** Admin company revenue — excludes D79 tour fee and shopping SALE. */
+/** Admin company revenue — includes ground_fee (투어피/지상비); excludes shopping SALE. */
 export const ADMIN_COMPANY_INCOME_FORMULA = 'F72+D81+F75+D75+ground_fee'
 
 /** Admin company profit before KB/extra vehicle. */
 export const ADMIN_COMPANY_PROFIT_FORMULA = 'admin_income−admin_expense−P85'
 
-/** Cash reconciliation — tour fee is company prepaid to guide. */
-export const Q75_FORMULA = 'J75−N75−P75−D79'
+/** Cash reconciliation — advance (A76) remains in J75; no tour/ground fee deduction. */
+export const Q75_FORMULA = 'J75−N75−P75'
 
 /** Shopping profit for guide settlement — COM (F72) only, not D80 (SALE+COM). */
 export function calcShoppingActualProfitUsd(comUsd: number): number {
@@ -314,11 +314,10 @@ export function computeSettlementMatrixValues(
   const d72 = sections.shopping.sale_usd.value
   const f72 = sections.shopping.com_usd.value
   const d80 = calcShoppingActualProfitUsd(f72)
-  const d79 = h.tour_fee_usd
   const d81 = sections.options.com_usd.value
   const d82 = h.tip_received_usd
   const d83 = h.charming_other_usd
-  /** Settlement profit income — COM + option COM; excludes D79/D82/D83 and shopping SALE. */
+  /** Settlement profit income — COM + option COM; excludes tips/charming/SALE. */
   const d84 = d80 + d81
 
   const h79 = sections.hotels.guide_total_usd.value
@@ -358,7 +357,6 @@ export function computeSettlementMatrixValues(
   const r87 = r86 + sections.shopping.kb_usd.value + sections.options.extra_vehicle_usd.value
 
   return {
-    d79,
     d80,
     d81,
     d82,
@@ -419,8 +417,8 @@ export function calcCashSubtotals(
     othersCombined.value +
     header.tc_guide_usd
 
-  const companyDeposit =
-    incomeTotal - guideDeposit - header.option_credit_usd - header.tour_fee_usd
+  const optionCredit = resolveOptionCreditUsd(header)
+  const companyDeposit = incomeTotal - guideDeposit - optionCredit
 
   return {
     advance_usd: annotate(advanceUsd, '전도금(USD)', 'A75', 'A76/Q2'),
@@ -432,6 +430,24 @@ export function calcCashSubtotals(
       '가이드지출금',
       'N75',
       'R11+J25+J38+J53+H83',
+    ),
+    option_receivable_usd: annotate(
+      header.option_receivable_usd ?? 0,
+      '옵션외상',
+      '—',
+      '회사 계좌 입금',
+    ),
+    tip_transfer_usd: annotate(
+      header.tip_transfer_usd ?? 0,
+      '팁송금',
+      '—',
+      '회사 계좌 입금',
+    ),
+    option_credit_usd: annotate(
+      optionCredit,
+      '옵션외상/팁송금 합',
+      'P75',
+      'option_receivable_usd + tip_transfer_usd',
     ),
     company_deposit_usd: annotate(
       companyDeposit,
@@ -473,7 +489,6 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     options,
   })
   const {
-    d79,
     d80,
     d81,
     d82,
@@ -509,8 +524,6 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
   const matrix: SettlementMatrixRow[] = [
     {
       key: 'r79',
-      incomeLabel: '투어피',
-      income: annotate(d79, '투어피(선지급)', 'D79', '가이드 입력 · Q75 차감'),
       expenseLabel: '호텔비',
       guideExpense: annotate(h79, '호텔비(가이드)', 'H79', 'R11'),
       companyExpense: annotate(j79, '호텔비(회사)', 'J79', 'P11'),

@@ -16,11 +16,13 @@ function mockSubmittedSettlement(): SettlementFull {
     year_month: '2025-11',
     exchange_rate: input.exchange_rate,
     advance_vnd: input.header.advance_vnd,
-    tour_fee_usd: 500,
-    ground_fee_usd: 0,
+    tour_fee_usd: 0,
+    ground_fee_usd: 500,
     charming_other_usd: input.header.charming_other_usd,
     tip_received_usd: input.header.tip_received_usd,
-    option_credit_usd: input.header.option_credit_usd,
+    option_receivable_usd: input.header.option_receivable_usd,
+    tip_transfer_usd: input.header.tip_transfer_usd,
+    option_credit_usd: 0,
     vehicle_fee_usd: 10,
     head_tax_usd: 5,
     seoul_biz_fee_usd: 3,
@@ -120,7 +122,7 @@ describe('sanitizeAdminDraftPayload', () => {
   it('preserves guide-owned header and line items when admin tries to overwrite', () => {
     const existing = mockSubmittedSettlement()
     const state = stateFromSettlementFull(existing, 'Guide')
-    state.header.tour_fee_usd = 999
+    state.header.ground_fee_usd = 999
     state.header.megugi_usd = 99
     state.header.guide_daily_fee_usd = 88
     state.hotels[0].guide_amount_usd = 999
@@ -128,7 +130,7 @@ describe('sanitizeAdminDraftPayload', () => {
 
     const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
 
-    expect(sanitized.header.tour_fee_usd).toBe(999)
+    expect(sanitized.header.ground_fee_usd).toBe(999)
     expect(sanitized.header.megugi_usd).toBe(99)
     expect(sanitized.header.guide_daily_fee_usd).toBe(88)
     expect(sanitized.hotels[0].guide_amount_usd).toBe(80)
@@ -141,21 +143,21 @@ describe('sanitizeAdminDraftPayload', () => {
     const before = buildSnapshotPayload(existing)
 
     const state = stateFromSettlementFull(existing, 'Guide')
-    state.header.tour_fee_usd = 600
+    state.header.ground_fee_usd = 600
     state.header.megugi_usd = 20
     state.header.guide_daily_fee_usd = 25
     const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
 
     const afterFull = {
       ...existing,
-      tour_fee_usd: sanitized.header.tour_fee_usd,
+      ground_fee_usd: sanitized.header.ground_fee_usd,
       megugi_usd: sanitized.header.megugi_usd,
       guide_daily_fee_usd: sanitized.header.guide_daily_fee_usd,
     }
     const after = buildSnapshotPayload(afterFull)
 
     const changes = diffSnapshotPayloads(before, after)
-    expect(changes.some((c) => c.field_path === 'header.tour_fee_usd')).toBe(true)
+    expect(changes.some((c) => c.field_path === 'header.ground_fee_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.megugi_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.guide_daily_fee_usd')).toBe(true)
   })
@@ -165,7 +167,7 @@ describe('sanitizeAdminDraftPayload', () => {
     const before = buildSnapshotPayload(existing)
 
     const state = stateFromSettlementFull(existing, 'Guide')
-    state.header.tour_fee_usd = 650
+    state.header.ground_fee_usd = 650
     state.header.vehicle_fee_usd = 50
     state.header.megugi_usd = 20
     state.header.guide_daily_fee_usd = 25
@@ -173,7 +175,7 @@ describe('sanitizeAdminDraftPayload', () => {
 
     const afterFull: SettlementFull = {
       ...existing,
-      tour_fee_usd: sanitized.header.tour_fee_usd,
+      ground_fee_usd: sanitized.header.ground_fee_usd,
       vehicle_fee_usd: sanitized.header.vehicle_fee_usd,
       head_tax_usd: sanitized.header.head_tax_usd,
       seoul_biz_fee_usd: sanitized.header.seoul_biz_fee_usd,
@@ -184,7 +186,7 @@ describe('sanitizeAdminDraftPayload', () => {
     }
     const changes = diffSnapshotPayloads(before, buildSnapshotPayload(afterFull))
 
-    expect(changes.some((c) => c.field_path === 'header.tour_fee_usd')).toBe(true)
+    expect(changes.some((c) => c.field_path === 'header.ground_fee_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.megugi_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.guide_daily_fee_usd')).toBe(true)

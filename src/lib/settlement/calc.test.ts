@@ -31,8 +31,8 @@ function emptyInput(overrides: Partial<SettlementCalcInput> = {}): SettlementCal
       advance_vnd: 0,
       charming_other_usd: 0,
       tip_received_usd: 0,
-      option_credit_usd: 0,
-      tour_fee_usd: 0,
+      option_receivable_usd: 0,
+      tip_transfer_usd: 0,
       ground_fee_usd: 0,
       vehicle_fee_usd: 0,
       head_tax_usd: 0,
@@ -235,9 +235,9 @@ describe('settlement matrix', () => {
           advance_vnd: 260000,
           charming_other_usd: 10,
           tip_received_usd: 5,
-          option_credit_usd: 0,
-          tour_fee_usd: 100,
-          ground_fee_usd: 0,
+          option_receivable_usd: 0,
+          tip_transfer_usd: 0,
+          ground_fee_usd: 100,
           vehicle_fee_usd: 20,
           head_tax_usd: 5,
           seoul_biz_fee_usd: 3,
@@ -281,7 +281,7 @@ describe('settlement matrix', () => {
       emptyInput({
         header: {
           ...emptyInput().header,
-          tour_fee_usd: -10,
+          ground_fee_usd: -10,
           megugi_usd: 0,
           guide_daily_fee_usd: 0,
         },
@@ -432,11 +432,11 @@ describe('guide settlement policy — calcSettlement integration', () => {
     expect(highMegugi.sections.cash.company_deposit_usd.value).toBe(
       lowMegugi.sections.cash.company_deposit_usd.value,
     )
-    expect(highMegugi.sections.cash.company_deposit_usd.formula).toBe('J75−N75−P75−D79')
+    expect(highMegugi.sections.cash.company_deposit_usd.formula).toBe('J75−N75−P75')
   })
 })
 
-describe('tour fee and ground fee policy', () => {
+describe('ground fee policy', () => {
   /** Minimal cash path: J75=1000 via advance, N75=P75=0 */
   function cashOnlyInput(overrides: Partial<SettlementCalcInput['header']> = {}): SettlementCalcInput {
     return emptyInput({
@@ -448,31 +448,23 @@ describe('tour fee and ground fee policy', () => {
     })
   }
 
-  it('A: tour fee reduces Q75 by D79', () => {
-    const base = cashOnlyInput({ tour_fee_usd: 0 })
-    const withFee = cashOnlyInput({ tour_fee_usd: 300 })
+  it('A: ground fee does not change Q75', () => {
+    const base = cashOnlyInput({ ground_fee_usd: 0 })
+    const withFee = cashOnlyInput({ ground_fee_usd: 300 })
     const baseQ = calcSettlement(base).sections.cash.company_deposit_usd.value
     const feeQ = calcSettlement(withFee).sections.cash.company_deposit_usd.value
     expect(baseQ).toBe(1000)
-    expect(feeQ).toBe(700)
+    expect(feeQ).toBe(1000)
   })
 
-  it('B: tour fee increase does not increase R87', () => {
-    const base = calcSettlement(cashOnlyInput({ tour_fee_usd: 0, ground_fee_usd: 0 }))
-    const withFee = calcSettlement(cashOnlyInput({ tour_fee_usd: 500, ground_fee_usd: 0 }))
-    expect(withFee.summary.company_grand_total_usd.value).toBe(
-      base.summary.company_grand_total_usd.value,
-    )
-  })
-
-  it('C: ground fee increases R87', () => {
+  it('B: ground fee increases R87', () => {
     const base = calcSettlement(cashOnlyInput({ ground_fee_usd: 0 }))
     const withGround = calcSettlement(cashOnlyInput({ ground_fee_usd: 500 }))
     expect(withGround.summary.company_grand_total_usd.value -
       base.summary.company_grand_total_usd.value).toBeCloseTo(500, 2)
   })
 
-  it('D: vehicle/head/seoul fees reduce R87', () => {
+  it('C: vehicle/head/seoul fees reduce R87', () => {
     const base = calcSettlement(cashOnlyInput())
     const withExpenses = calcSettlement(
       cashOnlyInput({ vehicle_fee_usd: 10, head_tax_usd: 5, seoul_biz_fee_usd: 3 }),
@@ -486,17 +478,39 @@ describe('tour fee and ground fee policy', () => {
     ).toBeCloseTo(18, 2)
   })
 
-  it('E: tour fee and ground fee do not change P85', () => {
+  it('D: ground fee does not change P85', () => {
     const base = calcSettlement(policyTestInput(300, 200, 0, 50))
     const changed = calcSettlement({
       ...policyTestInput(300, 200, 0, 50),
       header: {
         ...policyTestInput(300, 200, 0, 50).header,
-        tour_fee_usd: 999,
         ground_fee_usd: 888,
       },
     })
     expect(changed.summary.guide_payout_usd.value).toBe(base.summary.guide_payout_usd.value)
+  })
+})
+
+describe('shopping KB policy', () => {
+  function kbInput(kbUsd: number): SettlementCalcInput {
+    return emptyInput({
+      shoppings: [{ sale_usd: 100, com_usd: 20, kb_usd: kbUsd }],
+    })
+  }
+
+  it('A: KB increase does not change guide_payout_usd or guide_settlement_usd', () => {
+    const base = calcSettlement(kbInput(0))
+    const withKb = calcSettlement(kbInput(50))
+    expect(withKb.summary.guide_payout_usd.value).toBe(base.summary.guide_payout_usd.value)
+    expect(withKb.summary.guide_settlement_usd.value).toBe(base.summary.guide_settlement_usd.value)
+  })
+
+  it('B: KB increase increases company_grand_total_usd (R87)', () => {
+    const base = calcSettlement(kbInput(0))
+    const withKb = calcSettlement(kbInput(50))
+    expect(
+      withKb.summary.company_grand_total_usd.value - base.summary.company_grand_total_usd.value,
+    ).toBeCloseTo(50, 2)
   })
 })
 
@@ -564,7 +578,7 @@ describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
     expect(result.summary.income_total_usd.value).toBe(300)
     expect(result.summary.balance_usd.value).toBe(277)
     expect(result.summary.guide_settlement_usd.value).toBe(168.5)
-    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-558.884615384, 4)
+    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-438.884615384, 4)
 
     const excelCheck = verifySettlementAgainstExcel(result, MOCK_SETTLEMENT_INPUT)
     expect(excelCheck.acceptable).toBe(true)

@@ -3,8 +3,9 @@ import { notFound, redirect } from 'next/navigation'
 import { requireGuide } from '@/lib/auth/session'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { calcSettlement } from '@/lib/settlement/calc'
-import { GUIDE_FOOTER_LABELS, GUIDE_PAYOUT_FLOOR_WARNING, Q75_NEGATIVE_WARNING, R87_EXCLUDES_D79_NOTE } from '@/lib/settlement/display-labels'
+import { GUIDE_FOOTER_LABELS, GUIDE_PAYOUT_FLOOR_WARNING, Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
+import { normalizeExternalReceivableForForm } from '@/lib/settlement/external-receivable'
 import { STATUS_META, canGuideEdit, canGuideConfirm } from '@/types'
 import { SubmitButton } from './SubmitButton'
 
@@ -30,6 +31,7 @@ export default async function SettlementDetailPage({
   const rate = s.exchange_rate
 
   const calc = calcSettlement(toCalcInput(stateFromSettlementFull(data, '')))
+  const receivable = normalizeExternalReceivableForForm(s)
   const companyDeposit = calc.sections.cash.company_deposit_usd.value
   const guidePayout = calc.summary.guide_payout_usd.value
   const payoutIsFloored = calc.summary.guide_settlement_usd.value < 0
@@ -109,10 +111,10 @@ export default async function SettlementDetailPage({
         <div className="space-y-1">
           {[
             ['전도금', fmtV(s.advance_vnd), `≈ ${fmt2(s.advance_vnd / rate)}`],
-            ['투어피 (회사 선지급 · Q75 차감)', fmt2(s.tour_fee_usd), ''],
             ['차밍쇼/기타', fmt2(s.charming_other_usd), ''],
             ['받은팁', fmt2(s.tip_received_usd), ''],
-            ['옵션외상/팁송금', fmt2(s.option_credit_usd), ''],
+            ['옵션외상', fmt2(receivable.option_receivable_usd), ''],
+            ['팁송금', fmt2(receivable.tip_transfer_usd), ''],
           ].map(([l, v, sub]) => (
             <div key={l as string} className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
               <span className="text-xs text-gray-600">{l}</span>

@@ -8,9 +8,6 @@ export const GUIDE_PAYOUT_FLOOR_WARNING =
 export const Q75_NEGATIVE_WARNING =
   '가이드 사용액이 회사 입금액보다 많습니다. 회사입금(Q75)이 마이너스입니다.'
 
-export const R87_EXCLUDES_D79_NOTE =
-  '회사수익(R87)에는 투어피(D79)가 포함되지 않습니다. D79는 Q75에서만 차감됩니다.'
-
 export const R77_REFERENCE_ONLY_NOTE =
   '정산비율(R77)은 참고 전용이며 P85 계산에 반영되지 않습니다.'
 

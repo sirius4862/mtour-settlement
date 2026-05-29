@@ -31,43 +31,38 @@ describe('validateSettlementForm', () => {
     expect(errors.some((e) => e.message.includes('환율'))).toBe(true)
   })
 
-  it('requires guide-owned line items on guide submit without tour fee', () => {
+  it('requires guide-owned line items on guide submit', () => {
     const state = {
       ...emptyFormState('테스트'),
       tourId: 't1',
       tour: { id: 't1' } as never,
       exchange_rate: 26000,
-      header: { ...emptyFormState('테스트').header, tour_fee_usd: 0 },
     }
     const errors = validationErrors(validateSettlementForm(state, 'submit', 'guide'))
-    expect(errors.some((e) => e.message.includes('투어피'))).toBe(false)
     expect(errors.some((e) => e.message.includes('가이드 입력'))).toBe(true)
   })
 
-  it('allows guide submit when tour fee is zero but line items exist', () => {
+  it('allows guide submit when line items exist', () => {
     const state = {
       ...emptyFormState('테스트'),
       tourId: 't1',
       tour: { id: 't1' } as never,
       exchange_rate: 26000,
-      header: { ...emptyFormState('테스트').header, tour_fee_usd: 0 },
       hotels: [{ ...emptyHotelRow(), clientId: '1', hotel_name: 'H', guide_amount_usd: 1, nights: 1 }],
     }
     const errors = validationErrors(validateSettlementForm(state, 'submit', 'guide'))
-    expect(errors.some((e) => e.message.includes('투어피'))).toBe(false)
     expect(errors.length).toBe(0)
   })
 
-  it('warns when tour fee missing on guide submit', () => {
+  it('warns that admin-only fields are filled after submit', () => {
     const state = {
       ...emptyFormState('테스트'),
       tourId: 't1',
       tour: { id: 't1' } as never,
       exchange_rate: 26000,
-      header: { ...emptyFormState('테스트').header, tour_fee_usd: 0 },
       hotels: [{ ...emptyHotelRow(), clientId: '1', hotel_name: 'H', guide_amount_usd: 1, nights: 1 }],
     }
     const issues = validateSettlementForm(state, 'submit', 'guide')
-    expect(issues.some((i) => i.message.includes('투어피(D79)'))).toBe(true)
+    expect(issues.some((i) => i.message.includes('투어피/지상비'))).toBe(true)
   })
 })

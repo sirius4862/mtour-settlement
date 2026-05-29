@@ -9,6 +9,7 @@ import {
   buildOtherDbRows,
   buildShoppingDbRows,
   mergeServerSync,
+  resolveGroundFeeUsd,
   stateFromSettlementFull,
   toCalcInput,
   toDraftPayload,
@@ -113,11 +114,13 @@ function mockSettlementFull(): SettlementFull {
     year_month: '2025-11',
     exchange_rate: input.exchange_rate,
     advance_vnd: input.header.advance_vnd,
-    tour_fee_usd: input.header.tour_fee_usd,
+    tour_fee_usd: 0,
     ground_fee_usd: input.header.ground_fee_usd,
     charming_other_usd: input.header.charming_other_usd,
     tip_received_usd: input.header.tip_received_usd,
-    option_credit_usd: input.header.option_credit_usd,
+    option_receivable_usd: input.header.option_receivable_usd,
+    tip_transfer_usd: input.header.tip_transfer_usd,
+    option_credit_usd: 0,
     vehicle_fee_usd: input.header.vehicle_fee_usd,
     head_tax_usd: input.header.head_tax_usd,
     seoul_biz_fee_usd: input.header.seoul_biz_fee_usd,
@@ -172,6 +175,16 @@ function mockSettlementFull(): SettlementFull {
     receipts: [],
   }
 }
+
+describe('resolveGroundFeeUsd', () => {
+  it('prefers ground_fee_usd when set', () => {
+    expect(resolveGroundFeeUsd({ ground_fee_usd: 50, tour_fee_usd: 120 })).toBe(50)
+  })
+
+  it('falls back to legacy tour_fee_usd when ground is zero', () => {
+    expect(resolveGroundFeeUsd({ ground_fee_usd: 0, tour_fee_usd: 120 })).toBe(120)
+  })
+})
 
 describe('DB round-trip mappers', () => {
   it('stateFromSettlementFull preserves is_tip as use_days_for_usd', () => {

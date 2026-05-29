@@ -53,11 +53,13 @@ export interface Settlement {
   branch_id: string; status: SettlementStatus; year_month: string
   exchange_rate: number        // 엑셀 Q2 환율
   advance_vnd: number          // 엑셀 A76 전도금 VND
-  tour_fee_usd: number         // 엑셀 D79 — company prepaid to guide
+  tour_fee_usd: number         // deprecated DB column — use ground_fee_usd; not used in calc
   ground_fee_usd: number       // 웹 전용 — company revenue (지상비)
   charming_other_usd: number   // 엑셀 D75
   tip_received_usd: number     // 엑셀 F75
-  option_credit_usd: number    // 엑셀 P75
+  option_receivable_usd: number // 옵션외상 — P75 component
+  tip_transfer_usd: number     // 팁송금 — P75 component
+  option_credit_usd: number    // 엑셀 P75 legacy total (= receivable + transfer)
   vehicle_fee_usd: number      // 엑셀 O79 — company expense
   head_tax_usd: number         // 엑셀 O80 — company expense
   seoul_biz_fee_usd: number    // 엑셀 O81 — company expense

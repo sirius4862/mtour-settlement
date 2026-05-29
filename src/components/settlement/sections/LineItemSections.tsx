@@ -303,7 +303,7 @@ export function ShoppingSection() {
             <ManualField label="COM (수익)" excelRef="F57" suffix="$" inputMode="decimal" value={row.com_usd || ''} disabled={adminReview}
               onChange={(e) => updateRow('shoppings', row.clientId, { com_usd: parseNum(e.target.value) })} />
             {isAdmin && (
-              <ManualField label="KB" excelRef="H57" suffix="$" inputMode="decimal" value={row.kb_usd || ''}
+              <ManualField label="KB (회사 전용 수익)" excelRef="H57" suffix="$" inputMode="decimal" value={row.kb_usd || ''}
                 onChange={(e) => updateRow('shoppings', row.clientId, { kb_usd: parseNum(e.target.value) })} />
             )}
           </div>

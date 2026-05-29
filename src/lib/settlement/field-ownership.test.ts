@@ -6,6 +6,7 @@ import {
   canEditHotelUnitPrices,
   COMPANY_REVIEW_HEADER_KEYS,
   hasMeaningfulAdminHotelCompanyData,
+  hasMeaningfulAdminHotelRow,
   mergeAdminHeaderForSave,
   mergeAdminHotelRowsForSave,
   mergeGuideHeaderForSave,
@@ -130,13 +131,16 @@ describe('mergeAdminHotelRowsForSave', () => {
     guide_amount_usd: 80,
   }
 
-  it('persists admin-added hotel row with company unit prices only', () => {
+  it('persists admin-added hotel row with full operational and company fields', () => {
     const incoming = [{
       ...emptyHotelRow(),
       clientId: 'admin-new',
-      hotel_name: 'Should not persist',
-      nights: 5,
-      sgl_count: 3,
+      hotel_name: 'Da Nang Plaza',
+      check_in_date: '2025-11-02',
+      nights: 3,
+      sgl_count: 2,
+      twn_count: 1,
+      trp_count: 0,
       guide_amount_usd: 999,
       unit_price_sgl_usd: 55,
       unit_price_trp_usd: 45,
@@ -145,34 +149,39 @@ describe('mergeAdminHotelRowsForSave', () => {
     const merged = mergeAdminHotelRowsForSave(incoming, [])
 
     expect(merged).toHaveLength(1)
+    expect(merged[0].hotel_name).toBe('Da Nang Plaza')
+    expect(merged[0].check_in_date).toBe('2025-11-02')
+    expect(merged[0].nights).toBe(3)
+    expect(merged[0].sgl_count).toBe(2)
+    expect(merged[0].twn_count).toBe(1)
+    expect(merged[0].trp_count).toBe(0)
     expect(merged[0].unit_price_sgl_usd).toBe(55)
     expect(merged[0].unit_price_trp_usd).toBe(45)
-    expect(merged[0].hotel_name).toBe('')
     expect(merged[0].guide_amount_usd).toBe(0)
-    expect(merged[0].nights).toBe(0)
   })
 
-  it('does not require guide-owned fields on admin-added rows', () => {
+  it('accepts admin-added rows with operational data before unit prices are set', () => {
     const incoming = [{
       ...emptyHotelRow(),
       clientId: 'admin-new',
-      unit_price_sgl_usd: 70,
-      unit_price_trp_usd: 0,
+      hotel_name: 'Pending rates',
+      nights: 2,
+      sgl_count: 1,
     }]
 
     const merged = mergeAdminHotelRowsForSave(incoming, [])
 
     expect(merged).toHaveLength(1)
-    expect(hasMeaningfulAdminHotelCompanyData(merged[0])).toBe(true)
-    expect(merged[0].sgl_count).toBe(0)
-    expect(merged[0].twn_count).toBe(0)
-    expect(merged[0].trp_count).toBe(0)
+    expect(hasMeaningfulAdminHotelRow(merged[0])).toBe(true)
+    expect(merged[0].hotel_name).toBe('Pending rates')
   })
 
-  it('preserves existing guide hotel fields while applying admin unit prices', () => {
+  it('preserves existing guide hotel fields while applying admin operational edits', () => {
     const incoming = [{
       ...guideHotel,
-      hotel_name: 'Tampered',
+      hotel_name: 'Updated by admin',
+      nights: 4,
+      sgl_count: 2,
       guide_amount_usd: 999,
       unit_price_sgl_usd: 75,
       unit_price_trp_usd: 60,
@@ -181,7 +190,9 @@ describe('mergeAdminHotelRowsForSave', () => {
     const merged = mergeAdminHotelRowsForSave(incoming, [guideHotel])
 
     expect(merged).toHaveLength(1)
-    expect(merged[0].hotel_name).toBe('Hotel A')
+    expect(merged[0].hotel_name).toBe('Updated by admin')
+    expect(merged[0].nights).toBe(4)
+    expect(merged[0].sgl_count).toBe(2)
     expect(merged[0].guide_amount_usd).toBe(80)
     expect(merged[0].unit_price_sgl_usd).toBe(75)
     expect(merged[0].unit_price_trp_usd).toBe(60)

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { calcSettlement } from './calc'
 import { MOCK_SETTLEMENT_INPUT } from './mock-data'
 import { buildSnapshotPayload, diffSnapshotPayloads } from './snapshot'
 import { buildHotelDbRows, sanitizeAdminDraftPayload, stateFromSettlementFull, toDraftPayload } from './mappers'
@@ -146,6 +147,12 @@ describe('sanitizeAdminDraftPayload', () => {
     state.hotels.push({
       ...emptyHotelRow(),
       clientId: 'admin-hotel-new',
+      hotel_name: 'Company Hotel',
+      check_in_date: '2025-11-03',
+      nights: 2,
+      sgl_count: 1,
+      twn_count: 1,
+      trp_count: 0,
       unit_price_sgl_usd: 62,
       unit_price_trp_usd: 48,
     })
@@ -153,15 +160,23 @@ describe('sanitizeAdminDraftPayload', () => {
     const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
 
     expect(sanitized.hotels).toHaveLength(1)
+    expect(sanitized.hotels[0].hotel_name).toBe('Company Hotel')
+    expect(sanitized.hotels[0].nights).toBe(2)
+    expect(sanitized.hotels[0].sgl_count).toBe(1)
+    expect(sanitized.hotels[0].twn_count).toBe(1)
     expect(sanitized.hotels[0].unit_price_sgl_usd).toBe(62)
     expect(sanitized.hotels[0].unit_price_trp_usd).toBe(48)
     expect(sanitized.hotels[0].guide_amount_usd).toBe(0)
 
     const dbRows = buildHotelDbRows(sanitized.hotels, existing.id)
     expect(dbRows).toHaveLength(1)
+    expect(dbRows[0].hotel_name).toBe('Company Hotel')
+    expect(dbRows[0].nights).toBe(2)
+    expect(dbRows[0].sgl_count).toBe(1)
+    expect(dbRows[0].twn_count).toBe(1)
     expect(dbRows[0].unit_price_sgl_usd).toBe(62)
     expect(dbRows[0].unit_price_trp_usd).toBe(48)
-    expect(dbRows[0].company_amount_usd).toBe(0)
+    expect(dbRows[0].company_amount_usd).toBe(248)
   })
 
   it('supports admin save scenarios: header only, hotel prices, kb, ground fee', () => {
@@ -254,5 +269,71 @@ describe('sanitizeAdminDraftPayload', () => {
     expect(changes.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.megugi_usd')).toBe(true)
     expect(changes.some((c) => c.field_path === 'header.guide_daily_fee_usd')).toBe(true)
+  })
+})
+
+describe('admin hotel company cost calc policy', () => {
+  it('company hotel amount uses occupancy formula and reduces R87 only', () => {
+    const baseline = calcSettlement({
+      ...MOCK_SETTLEMENT_INPUT,
+      hotels: [],
+    })
+    const withAdminHotel = calcSettlement({
+      ...MOCK_SETTLEMENT_INPUT,
+      hotels: [{
+        sgl_count: 2,
+        twn_count: 1,
+        trp_count: 0,
+        nights: 3,
+        unit_price_sgl_usd: 50,
+        unit_price_trp_usd: 40,
+        guide_amount_usd: 0,
+      }],
+    })
+
+    expect(withAdminHotel.sections.hotels.company_total_usd.value).toBe(450)
+    expect(withAdminHotel.summary.company_grand_total_usd.value).toBeLessThan(
+      baseline.summary.company_grand_total_usd.value,
+    )
+    expect(withAdminHotel.summary.guide_settlement_usd.value).toBe(
+      baseline.summary.guide_settlement_usd.value,
+    )
+    expect(withAdminHotel.sections.cash.company_deposit_usd.value).toBe(
+      baseline.sections.cash.company_deposit_usd.value,
+    )
+  })
+
+  it('guide hotel payment affects Q75 but not R85 when company hotel row is unchanged', () => {
+    const companyOnly = calcSettlement({
+      ...MOCK_SETTLEMENT_INPUT,
+      hotels: [{
+        sgl_count: 1,
+        twn_count: 0,
+        trp_count: 0,
+        nights: 2,
+        unit_price_sgl_usd: 100,
+        unit_price_trp_usd: 0,
+        guide_amount_usd: 0,
+      }],
+    })
+    const withGuidePay = calcSettlement({
+      ...MOCK_SETTLEMENT_INPUT,
+      hotels: [{
+        sgl_count: 1,
+        twn_count: 0,
+        trp_count: 0,
+        nights: 2,
+        unit_price_sgl_usd: 100,
+        unit_price_trp_usd: 0,
+        guide_amount_usd: 30,
+      }],
+    })
+
+    expect(withGuidePay.sections.cash.company_deposit_usd.value).toBeLessThan(
+      companyOnly.sections.cash.company_deposit_usd.value,
+    )
+    expect(withGuidePay.summary.guide_settlement_usd.value).toBe(
+      companyOnly.summary.guide_settlement_usd.value,
+    )
   })
 })

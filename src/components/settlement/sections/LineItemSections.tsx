@@ -29,7 +29,7 @@ export function HotelsSection() {
   const role = useSettlementFormRole()
   const adminReview = useAdminReviewEdit()
   const isAdmin = role === 'admin'
-  const guideFieldsLocked = adminReview
+  const lockGuideOwnedHotelFields = adminReview && !isAdmin
   const hotels = useSettlementFormStore((s) => s.hotels)
   const updateRow = useSettlementFormStore((s) => s.updateRow)
   const addRow = useSettlementFormStore((s) => s.addRow)
@@ -48,18 +48,18 @@ export function HotelsSection() {
         const calc = calcHotelRow(row)
         return (
           <>
-            <ManualField label="호텔명" value={row.hotel_name} disabled={guideFieldsLocked}
+            <ManualField label="호텔명" value={row.hotel_name} disabled={lockGuideOwnedHotelFields}
               onChange={(e) => updateRow('hotels', row.clientId, { hotel_name: e.target.value })} />
-            <ManualField label="체크인" type="date" value={row.check_in_date ?? ''} disabled={guideFieldsLocked}
+            <ManualField label="체크인" type="date" value={row.check_in_date ?? ''} disabled={lockGuideOwnedHotelFields}
               onChange={(e) => updateRow('hotels', row.clientId, { check_in_date: e.target.value || null })} />
             <div className="grid grid-cols-2 gap-2">
-              <ManualField label="박수" excelRef="E8" inputMode="decimal" value={row.nights || ''} disabled={guideFieldsLocked}
+              <ManualField label="박수" excelRef="E8" inputMode="decimal" value={row.nights || ''} disabled={lockGuideOwnedHotelFields}
                 onChange={(e) => updateRow('hotels', row.clientId, { nights: parseNum(e.target.value) })} />
-              <ManualField label="SGL" excelRef="F8" inputMode="decimal" value={row.sgl_count || ''} disabled={guideFieldsLocked}
+              <ManualField label="SGL" excelRef="F8" inputMode="decimal" value={row.sgl_count || ''} disabled={lockGuideOwnedHotelFields}
                 onChange={(e) => updateRow('hotels', row.clientId, { sgl_count: parseNum(e.target.value) })} />
-              <ManualField label="TWN" excelRef="H8" inputMode="decimal" value={row.twn_count || ''} disabled={guideFieldsLocked}
+              <ManualField label="TWN" excelRef="H8" inputMode="decimal" value={row.twn_count || ''} disabled={lockGuideOwnedHotelFields}
                 onChange={(e) => updateRow('hotels', row.clientId, { twn_count: parseNum(e.target.value) })} />
-              <ManualField label="TRP" excelRef="J8" inputMode="decimal" value={row.trp_count || ''} disabled={guideFieldsLocked}
+              <ManualField label="TRP" excelRef="J8" inputMode="decimal" value={row.trp_count || ''} disabled={lockGuideOwnedHotelFields}
                 onChange={(e) => updateRow('hotels', row.clientId, { trp_count: parseNum(e.target.value) })} />
             </div>
             {isAdmin && (
@@ -74,9 +74,9 @@ export function HotelsSection() {
             )}
             {isAdmin && <CalculatedField field={calc.company_amount_usd} compact />}
             <ManualField label="가이드결재" excelRef="R8" suffix="$" inputMode="decimal"
-              value={row.guide_amount_usd || ''} disabled={guideFieldsLocked}
+              value={row.guide_amount_usd || ''} disabled={adminReview}
               onChange={(e) => updateRow('hotels', row.clientId, { guide_amount_usd: parseNum(e.target.value) })} />
-            {!guideFieldsLocked && (
+            {!lockGuideOwnedHotelFields && (
             <RowActions
               onDuplicate={() => duplicateRow('hotels', row.clientId)}
               onDelete={() => softDeleteRow('hotels', row.clientId)}

@@ -101,6 +101,16 @@ export function hasMeaningfulAdminHotelCompanyData(
   return row.unit_price_sgl_usd > 0 || row.unit_price_trp_usd > 0
 }
 
+/** Admin-added hotel row — operational and/or company pricing present. */
+export function hasMeaningfulAdminHotelRow(row: DraftHotelRow): boolean {
+  return (
+    hasMeaningfulAdminHotelCompanyData(row) ||
+    row.hotel_name.trim().length > 0 ||
+    row.nights > 0 ||
+    row.sgl_count + row.twn_count + row.trp_count > 0
+  )
+}
+
 function adminOwnedHotelFields(
   incoming: Pick<DraftHotelRow, 'unit_price_sgl_usd' | 'unit_price_trp_usd'>,
 ): Pick<DraftHotelRow, 'unit_price_sgl_usd' | 'unit_price_trp_usd'> {
@@ -110,43 +120,72 @@ function adminOwnedHotelFields(
   }
 }
 
-function adminAddedHotelRow(incoming: DraftHotelRow): DraftHotelRow {
+function adminOperationalHotelFields(
+  incoming: DraftHotelRow,
+): Pick<
+  DraftHotelRow,
+  | 'hotel_name'
+  | 'check_in_date'
+  | 'nights'
+  | 'sgl_count'
+  | 'twn_count'
+  | 'trp_count'
+  | 'unit_price_sgl_usd'
+  | 'unit_price_trp_usd'
+> {
   return {
-    clientId: incoming.clientId,
-    hotel_name: '',
-    check_in_date: null,
-    nights: 0,
-    sgl_count: 0,
-    twn_count: 0,
-    trp_count: 0,
-    guide_amount_usd: 0,
+    hotel_name: incoming.hotel_name,
+    check_in_date: incoming.check_in_date,
+    nights: incoming.nights,
+    sgl_count: incoming.sgl_count,
+    twn_count: incoming.twn_count,
+    trp_count: incoming.trp_count,
     ...adminOwnedHotelFields(incoming),
   }
 }
 
-/** Preserve guide-owned hotel columns; apply admin unit prices; append admin-added rows. */
+function mergeAdminHotelRowFromIncoming(
+  existing: DraftHotelRow,
+  incoming: DraftHotelRow,
+): DraftHotelRow {
+  return {
+    ...existing,
+    ...adminOperationalHotelFields(incoming),
+    guide_amount_usd: existing.guide_amount_usd,
+  }
+}
+
+function normalizeAdminAddedHotelRow(incoming: DraftHotelRow): DraftHotelRow {
+  return {
+    ...incoming,
+    guide_amount_usd: 0,
+  }
+}
+
+/** Preserve guide guide_amount_usd; apply admin hotel operational + company pricing. */
 export function mergeAdminHotelRowsForSave(
   incoming: DraftHotelRow[],
   existing: DraftHotelRow[],
 ): DraftHotelRow[] {
-  const incomingActive = incoming.filter((r) => !r.deleted)
-  const incomingById = new Map(incomingActive.filter((r) => r.id).map((r) => [r.id!, r]))
+  const incomingById = new Map(incoming.filter((r) => r.id).map((r) => [r.id!, r]))
 
   const mergedExisting = existing
     .filter((r) => !r.deleted)
+    .filter((row) => {
+      if (!row.id) return true
+      const inc = incomingById.get(row.id)
+      return !inc?.deleted
+    })
     .map((row) => {
       const inc = row.id ? incomingById.get(row.id) : undefined
       if (!inc) return row
-      return {
-        ...row,
-        ...adminOwnedHotelFields(inc),
-      }
+      return mergeAdminHotelRowFromIncoming(row, inc)
     })
 
-  const adminAdded = incomingActive
-    .filter((row) => !row.id)
-    .filter((row) => hasMeaningfulAdminHotelCompanyData(row))
-    .map(adminAddedHotelRow)
+  const adminAdded = incoming
+    .filter((row) => !row.deleted && !row.id)
+    .filter(hasMeaningfulAdminHotelRow)
+    .map(normalizeAdminAddedHotelRow)
 
   return [...mergedExisting, ...adminAdded]
 }

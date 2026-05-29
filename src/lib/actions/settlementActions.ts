@@ -371,24 +371,61 @@ export async function upsertSettlement(payload: {
     year_month: tour.start_date.slice(0, 7),
   }
 
-  if (payload.id) {
-    // 기존 draft 업데이트
-    const { error } = await supabase
-      .from('settlements').update(base)
-      .eq('id', payload.id).eq('guide_id', profile.id)
-      .in('status', ['draft', 'rejected', 'edit_requested'])
-    if (error) return { ok: false, error: error.message }
-    revalidatePath('/guide/settlements')
-    return { ok: true, id: payload.id }
-  } else {
+  type WriteResult = { error: { message: string } | null; id?: string }
+
+  const writeSettlement = async (row: typeof base): Promise<WriteResult> => {
+    if (payload.id) {
+      const { error } = await supabase
+        .from('settlements')
+        .update(row)
+        .eq('id', payload.id)
+        .eq('guide_id', profile.id)
+        .in('status', ['draft', 'rejected', 'edit_requested'])
+      if (
+        error &&
+        (error.message.includes('option_receivable_usd') ||
+          error.message.includes('tip_transfer_usd'))
+      ) {
+        const { option_receivable_usd: _or, tip_transfer_usd: _tt, ...legacyRow } = row
+        const { error: legacyError } = await supabase
+          .from('settlements')
+          .update(legacyRow)
+          .eq('id', payload.id)
+          .eq('guide_id', profile.id)
+          .in('status', ['draft', 'rejected', 'edit_requested'])
+        return { error: legacyError }
+      }
+      return { error }
+    }
+
     const { data, error } = await supabase
       .from('settlements')
-      .insert({ ...base, status: 'draft' })
-      .select('id').single()
-    if (error) return { ok: false, error: error.message }
-    revalidatePath('/guide/settlements')
-    return { ok: true, id: data.id }
+      .insert({ ...row, status: 'draft' })
+      .select('id')
+      .single()
+    if (
+      error &&
+      (error.message.includes('option_receivable_usd') ||
+        error.message.includes('tip_transfer_usd'))
+    ) {
+      const { option_receivable_usd: _or, tip_transfer_usd: _tt, ...legacyRow } = row
+      const legacy = await supabase
+        .from('settlements')
+        .insert({ ...legacyRow, status: 'draft' })
+        .select('id')
+        .single()
+      return { error: legacy.error, id: legacy.data?.id }
+    }
+    return { error, id: data?.id }
   }
+
+  const writeResult = await writeSettlement(base)
+  if (writeResult.error) return { ok: false, error: writeResult.error.message }
+  const settlementId = payload.id ?? writeResult.id
+  if (!settlementId) return { ok: false, error: '정산서 ID를 확인할 수 없습니다.' }
+
+  revalidatePath('/guide/settlements')
+  return { ok: true, id: settlementId }
 }
 
 // ── 제출 ──────────────────────────────────────────────────────

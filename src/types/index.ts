@@ -53,13 +53,14 @@ export interface Settlement {
   branch_id: string; status: SettlementStatus; year_month: string
   exchange_rate: number        // 엑셀 Q2 환율
   advance_vnd: number          // 엑셀 A76 전도금 VND
-  tour_fee_usd: number         // 엑셀 D79
+  tour_fee_usd: number         // 엑셀 D79 — company prepaid to guide
+  ground_fee_usd: number       // 웹 전용 — company revenue (지상비)
   charming_other_usd: number   // 엑셀 D75
   tip_received_usd: number     // 엑셀 F75
   option_credit_usd: number    // 엑셀 P75
-  vehicle_fee_usd: number      // 엑셀 M79
-  head_tax_usd: number         // 엑셀 M80
-  seoul_biz_fee_usd: number    // 엑셀 M81
+  vehicle_fee_usd: number      // 엑셀 O79 — company expense
+  head_tax_usd: number         // 엑셀 O80 — company expense
+  seoul_biz_fee_usd: number    // 엑셀 O81 — company expense
   tc_guide_usd: number         // 엑셀 H83
   tc_company_usd: number       // 엑셀 J83
   megugi_usd: number           // 엑셀 R80

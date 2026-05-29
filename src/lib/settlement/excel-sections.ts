@@ -37,8 +37,8 @@ export const EXCEL_SECTIONS = {
     hint: 'T/C 정산 가이드분(H83)·회사분(J83).',
   },
   adjustments: {
-    rows: 'O79–81, R77, R80, R82',
-    hint: '차량비·인두세·서울영업비(O), 정산비율(R77), 메꾸기(R80), 가이드일비(R82).',
+    rows: 'O79–81, R77, R80, R82, ground_fee',
+    hint: '지상비(회사 수익), 차량비·인두세·서울영업비(회사 지출), 정산비율(R77), 메꾸기(R80), 가이드일비(R82).',
   },
   summary: {
     rows: 'R77–R87',

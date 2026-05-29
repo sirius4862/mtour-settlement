@@ -36,6 +36,7 @@ export interface FieldChangeDraft {
 }
 
 const HEADER_LABELS: Record<string, { label: string; excelRef: string; owner: SettlementFieldOwner }> = {
+  ground_fee_usd: { label: '지상비 (회사 수익)', excelRef: '—', owner: 'admin' },
   vehicle_fee_usd: { label: '차량비', excelRef: 'O79', owner: 'admin' },
   head_tax_usd: { label: '인두세', excelRef: 'O80', owner: 'admin' },
   seoul_biz_fee_usd: { label: '서울영업비', excelRef: 'O81', owner: 'admin' },
@@ -43,7 +44,7 @@ const HEADER_LABELS: Record<string, { label: string; excelRef: string; owner: Se
   megugi_usd: { label: '메꾸기', excelRef: 'R80', owner: 'guide' },
   guide_daily_fee_usd: { label: '가이드 일비', excelRef: 'R82', owner: 'guide' },
   settlement_ratio: { label: '정산비율', excelRef: 'R77', owner: 'admin' },
-  tour_fee_usd: { label: '투어피', excelRef: 'D79', owner: 'admin' },
+  tour_fee_usd: { label: '투어피 (회사 선지급)', excelRef: 'D79', owner: 'guide' },
   advance_vnd: { label: '전도금', excelRef: 'A76', owner: 'guide' },
   tc_guide_usd: { label: 'T/C 가이드분', excelRef: 'H83', owner: 'guide' },
 }
@@ -105,6 +106,7 @@ export function buildSnapshotPayload(full: SettlementFull): SnapshotPayload {
     header: {
       advance_vnd: full.advance_vnd,
       tour_fee_usd: full.tour_fee_usd,
+      ground_fee_usd: full.ground_fee_usd ?? 0,
       charming_other_usd: full.charming_other_usd,
       tip_received_usd: full.tip_received_usd,
       option_credit_usd: full.option_credit_usd,

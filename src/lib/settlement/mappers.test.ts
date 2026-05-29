@@ -114,6 +114,7 @@ function mockSettlementFull(): SettlementFull {
     exchange_rate: input.exchange_rate,
     advance_vnd: input.header.advance_vnd,
     tour_fee_usd: input.header.tour_fee_usd,
+    ground_fee_usd: input.header.ground_fee_usd,
     charming_other_usd: input.header.charming_other_usd,
     tip_received_usd: input.header.tip_received_usd,
     option_credit_usd: input.header.option_credit_usd,

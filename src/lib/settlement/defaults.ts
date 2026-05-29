@@ -20,6 +20,7 @@ export function defaultHeader(): SettlementFormHeader {
     tip_received_usd: 0,
     option_credit_usd: 0,
     tour_fee_usd: 0,
+    ground_fee_usd: 0,
     vehicle_fee_usd: 0,
     head_tax_usd: 0,
     seoul_biz_fee_usd: 0,

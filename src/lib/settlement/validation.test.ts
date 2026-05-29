@@ -58,13 +58,13 @@ describe('validateSettlementForm', () => {
     expect(errors.length).toBe(0)
   })
 
-  it('warns that admin-owned fields include D79 on guide submit', () => {
+  it('warns when tour fee missing on guide submit', () => {
     const state = {
       ...emptyFormState('테스트'),
       tourId: 't1',
       tour: { id: 't1' } as never,
       exchange_rate: 26000,
-      header: { ...emptyFormState('테스트').header, tour_fee_usd: 120 },
+      header: { ...emptyFormState('테스트').header, tour_fee_usd: 0 },
       hotels: [{ ...emptyHotelRow(), clientId: '1', hotel_name: 'H', guide_amount_usd: 1, nights: 1 }],
     }
     const issues = validateSettlementForm(state, 'submit', 'guide')

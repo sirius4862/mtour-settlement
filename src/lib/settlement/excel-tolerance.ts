@@ -14,7 +14,10 @@ import {
   calcShoppingActualProfitUsd,
   calcShoppingSubtotals,
   computeSettlementMatrixValues,
+  ADMIN_COMPANY_INCOME_FORMULA,
+  ADMIN_COMPANY_PROFIT_FORMULA,
   GUIDE_SETTLEMENT_FORMULA,
+  Q75_FORMULA,
   SETTLEMENT_PROFIT_INCOME_FORMULA,
   SETTLEMENT_SHOPPING_PROFIT_FORMULA,
 } from './calc'
@@ -79,9 +82,11 @@ export const EXCEL_FORMULA_CONTRACT: Record<string, string> = {
   R79: SETTLEMENT_PROFIT_INCOME_FORMULA,
   R84: 'R79−R80−R81',
   R85: GUIDE_SETTLEMENT_FORMULA,
-  Q75: 'J75−N75−P75',
+  Q75: Q75_FORMULA,
   H85: 'H84+J84+M84+O84',
+  R86: ADMIN_COMPANY_PROFIT_FORMULA,
   R87: 'R86+H72+S75',
+  F86: 'admin_income−admin_expense',
 }
 
 const STEP_EPSILON_USD = 0.001
@@ -227,8 +232,23 @@ export function verifyExcelFormulaFlow(
     push(
       'D84',
       'D84',
-      `${EXCEL_FORMULA_CONTRACT.D84} (= ${expectedD84})`,
+      `${SETTLEMENT_PROFIT_INCOME_FORMULA} (= ${expectedD84})`,
       String(result.summary.income_total_usd.value),
+    )
+  }
+
+  const expectedAdminIncome =
+    expectedD80 +
+    options.com_usd.value +
+    h.tip_received_usd +
+    h.charming_other_usd +
+    (h.ground_fee_usd ?? 0)
+  if (!nearlyEqual(result.summary.admin_income_usd.value, expectedAdminIncome)) {
+    push(
+      'admin_income',
+      '—',
+      `${ADMIN_COMPANY_INCOME_FORMULA} (= ${expectedAdminIncome})`,
+      String(result.summary.admin_income_usd.value),
     )
   }
 
@@ -258,10 +278,25 @@ export function verifyExcelFormulaFlow(
     )
   }
 
+  const expectedR86 =
+    expectedAdminIncome -
+    result.summary.expense_total_usd.value -
+    result.summary.guide_payout_usd.value
+  if (!nearlyEqual(result.summary.company_profit_usd.value, expectedR86)) {
+    push(
+      'R86',
+      'R86',
+      `${ADMIN_COMPANY_PROFIT_FORMULA} (= ${expectedR86})`,
+      String(result.summary.company_profit_usd.value),
+    )
+  }
+
   const formulaChecks: Array<[string, string | undefined, string]> = [
     ['Q75', result.sections.cash.company_deposit_usd.formula, EXCEL_FORMULA_CONTRACT.Q75],
     ['R85', result.summary.guide_settlement_usd.formula, EXCEL_FORMULA_CONTRACT.R85],
     ['R87', result.summary.company_grand_total_usd.formula, EXCEL_FORMULA_CONTRACT.R87],
+    ['R86', result.summary.company_profit_usd.formula, EXCEL_FORMULA_CONTRACT.R86],
+    ['F86', result.summary.company_gross_usd.formula, EXCEL_FORMULA_CONTRACT.F86],
     ['H85', result.summary.expense_total_usd.formula, EXCEL_FORMULA_CONTRACT.H85],
     ['R79', result.matrix.find((r) => r.key === 'r79')?.settlement?.formula, EXCEL_FORMULA_CONTRACT.R79],
     ['R84', result.summary.balance_usd.formula, EXCEL_FORMULA_CONTRACT.R84],

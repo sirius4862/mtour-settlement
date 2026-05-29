@@ -18,6 +18,7 @@ function minimalSettlementFull(overrides: Partial<SettlementFull> = {}): Settlem
     exchange_rate: MOCK_SETTLEMENT_INPUT.exchange_rate,
     advance_vnd: MOCK_SETTLEMENT_INPUT.header.advance_vnd,
     tour_fee_usd: MOCK_SETTLEMENT_INPUT.header.tour_fee_usd,
+    ground_fee_usd: MOCK_SETTLEMENT_INPUT.header.ground_fee_usd,
     charming_other_usd: MOCK_SETTLEMENT_INPUT.header.charming_other_usd,
     tip_received_usd: MOCK_SETTLEMENT_INPUT.header.tip_received_usd,
     option_credit_usd: MOCK_SETTLEMENT_INPUT.header.option_credit_usd,

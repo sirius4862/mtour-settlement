@@ -45,7 +45,7 @@ interface Props {
   guideName: string
   mode: SettlementFormMode
   initialFull?: SettlementFull
-  /** Who may edit admin-owned (지상비) fields. Defaults to guide. */
+  /** Who may edit admin-owned fields. Defaults to guide. */
   formRole?: SettlementFormRole
   /** Admin review edit — save admin fields only, no submit. */
   adminEdit?: {

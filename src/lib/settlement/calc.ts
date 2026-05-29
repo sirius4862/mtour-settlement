@@ -247,6 +247,8 @@ export interface SettlementMatrixValues {
   r84: number
   r85: number
   guidePayout: number
+  adminIncome: number
+  adminExpense: number
   f86: number
   r86: number
   r87: number
@@ -262,6 +264,15 @@ export const SETTLEMENT_SHOPPING_PROFIT_FORMULA = 'SUM(F72)'
 
 /** Operational D84 / R79 — shopping COM + option COM only (excludes tour fee, tips, SALE). */
 export const SETTLEMENT_PROFIT_INCOME_FORMULA = 'D80+D81'
+
+/** Admin company revenue — excludes D79 tour fee and shopping SALE. */
+export const ADMIN_COMPANY_INCOME_FORMULA = 'F72+D81+F75+D75+ground_fee'
+
+/** Admin company profit before KB/extra vehicle. */
+export const ADMIN_COMPANY_PROFIT_FORMULA = 'admin_income−admin_expense−P85'
+
+/** Cash reconciliation — tour fee is company prepaid to guide. */
+export const Q75_FORMULA = 'J75−N75−P75−D79'
 
 /** Shopping profit for guide settlement — COM (F72) only, not D80 (SALE+COM). */
 export function calcShoppingActualProfitUsd(comUsd: number): number {
@@ -339,8 +350,11 @@ export function computeSettlementMatrixValues(
     h.guide_daily_fee_usd,
   )
 
-  const f86 = d84 - h85
-  const r86 = f86 - r85
+  const adminIncome =
+    d80 + d81 + d82 + d83 + (h.ground_fee_usd ?? 0)
+  const adminExpense = h85
+  const f86 = adminIncome - adminExpense
+  const r86 = adminIncome - adminExpense - guidePayout
   const r87 = r86 + sections.shopping.kb_usd.value + sections.options.extra_vehicle_usd.value
 
   return {
@@ -371,6 +385,8 @@ export function computeSettlementMatrixValues(
     r84,
     r85,
     guidePayout,
+    adminIncome,
+    adminExpense,
     f86,
     r86,
     r87,
@@ -403,7 +419,8 @@ export function calcCashSubtotals(
     othersCombined.value +
     header.tc_guide_usd
 
-  const companyDeposit = incomeTotal - guideDeposit - header.option_credit_usd
+  const companyDeposit =
+    incomeTotal - guideDeposit - header.option_credit_usd - header.tour_fee_usd
 
   return {
     advance_usd: annotate(advanceUsd, '전도금(USD)', 'A75', 'A76/Q2'),
@@ -420,7 +437,7 @@ export function calcCashSubtotals(
       companyDeposit,
       '회사입금액',
       'Q75',
-      'J75−N75−P75',
+      Q75_FORMULA,
     ),
   }
 }
@@ -482,6 +499,8 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     r84,
     r85,
     guidePayout,
+    adminIncome,
+    adminExpense,
     f86,
     r86,
     r87,
@@ -491,7 +510,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     {
       key: 'r79',
       incomeLabel: '투어피',
-      income: annotate(d79, '투어피', 'D79', '수동 입력'),
+      income: annotate(d79, '투어피(선지급)', 'D79', '가이드 입력 · Q75 차감'),
       expenseLabel: '호텔비',
       guideExpense: annotate(h79, '호텔비(가이드)', 'H79', 'R11'),
       companyExpense: annotate(j79, '호텔비(회사)', 'J79', 'P11'),
@@ -546,7 +565,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
       expenseLabel: '합계',
       guideExpense: annotate(h84, '가이드지출 합', 'H84', 'SUM(H79:I83)'),
       companyExpense: annotate(j84, '회사지출 합', 'J84', 'SUM(J79:L83)'),
-      included: annotate(o84, '기타포함 합', 'O84', 'SUM(O79:O83)'),
+      included: annotate(o84, '회사지출 합', 'O84', 'SUM(O79:O83)'),
       settlementLabel: '차액(밸런스)',
       settlement: annotate(r84, '차액(밸런스)', 'R84', 'R79−R80−R81'),
       isSubtotal: true,
@@ -562,16 +581,18 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     },
     {
       key: 'r86',
-      incomeLabel: '회사총수익(수익−지출)',
-      income: annotate(f86, '회사총수익', 'F86', 'D84−H85'),
-      settlementLabel: '회사수익',
-      settlement: annotate(r86, '회사수익', 'R86', 'F86−R85'),
+      incomeLabel: '회사수익합계',
+      income: annotate(adminIncome, '회사 수익', '—', ADMIN_COMPANY_INCOME_FORMULA),
+      expenseLabel: '회사지출합계',
+      guideExpense: annotate(adminExpense, '회사 지출', 'H85', 'H84+J84+O84'),
+      settlementLabel: '회사수익(R86)',
+      settlement: annotate(r86, '회사수익', 'R86', ADMIN_COMPANY_PROFIT_FORMULA),
       isSubtotal: true,
     },
     {
       key: 'r87',
-      settlementLabel: '회사총수익',
-      settlement: annotate(r87, '최종 회사총수익', 'R87', 'R86+H72+S75'),
+      settlementLabel: '회사수익',
+      settlement: annotate(r87, '회사수익', 'R87', 'R86+H72+S75'),
       isSubtotal: true,
       isHighlight: true,
     },
@@ -581,14 +602,15 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     sections: { hotels, meals, entrances, others, shopping, options, cash },
     matrix,
     summary: {
-      income_total_usd: annotate(d84, '정산 수익합계', 'D84', SETTLEMENT_PROFIT_INCOME_FORMULA),
-      expense_total_usd: annotate(h85, '지출 총액', 'H85', 'H84+J84+M84+O84'),
-      company_gross_usd: annotate(f86, '회사총수익', 'F86', 'D84−H85'),
+      income_total_usd: annotate(d84, '가이드 수익풀', 'D84', SETTLEMENT_PROFIT_INCOME_FORMULA),
+      admin_income_usd: annotate(adminIncome, '회사 수익 합계', '—', ADMIN_COMPANY_INCOME_FORMULA),
+      expense_total_usd: annotate(adminExpense, '회사 지출 총액', 'H85', 'H84+J84+M84+O84'),
+      company_gross_usd: annotate(f86, '수익−지출', 'F86', 'admin_income−admin_expense'),
       balance_usd: annotate(r84, '차액(밸런스)', 'R84', 'R79−R80−R81'),
       guide_settlement_usd: annotate(r85, '가이드정산', 'R85', GUIDE_SETTLEMENT_FORMULA),
       guide_payout_usd: annotate(guidePayout, '실제 지급액', 'P85', 'MAX(R85,0)'),
-      company_profit_usd: annotate(r86, '회사수익', 'R86', 'F86−R85'),
-      company_grand_total_usd: annotate(r87, '최종 회사총수익', 'R87', 'R86+H72+S75'),
+      company_profit_usd: annotate(r86, '회사수익(R86)', 'R86', ADMIN_COMPANY_PROFIT_FORMULA),
+      company_grand_total_usd: annotate(r87, '회사수익', 'R87', 'R86+H72+S75'),
     },
   }
 }

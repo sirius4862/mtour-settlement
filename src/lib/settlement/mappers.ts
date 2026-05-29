@@ -54,6 +54,7 @@ export function stateFromSettlementFull(
       tip_received_usd: full.tip_received_usd,
       option_credit_usd: full.option_credit_usd,
       tour_fee_usd: full.tour_fee_usd,
+      ground_fee_usd: full.ground_fee_usd ?? 0,
       vehicle_fee_usd: full.vehicle_fee_usd,
       head_tax_usd: full.head_tax_usd,
       seoul_biz_fee_usd: full.seoul_biz_fee_usd,

@@ -61,9 +61,11 @@ export interface SettlementHeaderCalc {
   tip_received_usd: number
   /** P75 — option credit / tip remittance */
   option_credit_usd: number
-  /** D79 — tour fee */
+  /** D79 — tour fee (company prepaid to guide; Q75 deduction, not company revenue) */
   tour_fee_usd: number
-  /** O79 — vehicle fee (included) */
+  /** Web-only — ground fee (company revenue; admin only) */
+  ground_fee_usd: number
+  /** O79 — vehicle fee (company expense) */
   vehicle_fee_usd: number
   /** O80 — head tax */
   head_tax_usd: number
@@ -166,7 +168,10 @@ export interface SettlementCalcResult {
   sections: SectionSubtotals
   matrix: SettlementMatrixRow[]
   summary: {
+    /** Guide profit pool D80+D81 */
     income_total_usd: AnnotatedNumber
+    /** Admin company revenue (excludes D79 tour fee) */
+    admin_income_usd: AnnotatedNumber
     expense_total_usd: AnnotatedNumber
     company_gross_usd: AnnotatedNumber
     balance_usd: AnnotatedNumber

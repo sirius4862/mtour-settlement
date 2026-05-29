@@ -22,6 +22,7 @@ function emptyInput(overrides: Partial<SettlementCalcInput> = {}): SettlementCal
       tip_received_usd: 0,
       option_credit_usd: 0,
       tour_fee_usd: 0,
+      ground_fee_usd: 0,
       vehicle_fee_usd: 0,
       head_tax_usd: 0,
       seoul_biz_fee_usd: 0,
@@ -104,8 +105,8 @@ describe('verifySettlementAgainstExcel — MOCK golden', () => {
   it('reference finals match known Excel expectations for mock', () => {
     const ref = computeExcelReferenceFinals(MOCK_SETTLEMENT_INPUT)
     expect(ref.guide_settlement_usd).toBe(168.5)
-    expect(ref.company_deposit_usd).toBeCloseTo(79.615384615, 4)
-    expect(ref.company_grand_total_usd).toBeCloseTo(-633.884615384, 4)
+    expect(ref.company_deposit_usd).toBeCloseTo(-40.384615385, 4)
+    expect(ref.company_grand_total_usd).toBeCloseTo(-558.884615384, 4)
   })
 })
 

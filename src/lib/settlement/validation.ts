@@ -60,9 +60,17 @@ export function validateSettlementForm(
       })
     }
 
+    if (state.header.tour_fee_usd <= 0) {
+      issues.push({
+        sectionId: 'basic',
+        message: '투어피(D79)가 입력되지 않았습니다. 제출 후 관리자가 확인합니다.',
+        severity: 'warning',
+      })
+    }
+
     issues.push({
-      sectionId: 'basic',
-      message: '투어피(D79), 지상비(O79–O81), 정산비율(R77)은 제출 후 관리자가 입력합니다.',
+      sectionId: 'adjustments',
+      message: '차량비·인두세·서울영업비·지상비·정산비율(R77)은 제출 후 관리자가 입력합니다.',
       severity: 'warning',
     })
   }

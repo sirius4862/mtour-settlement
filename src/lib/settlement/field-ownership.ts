@@ -11,17 +11,21 @@ import type { SettlementStatus } from '@/types'
 export type SettlementFormRole = 'guide' | 'admin' | 'readOnly'
 
 /**
- * 지상비 + settlement ratio — admin/staff only on guide save.
- * Guides must not edit; preserved from DB on guide save.
+ * Admin-only header fields — preserved from DB on guide save.
  */
 export const ADMIN_STRICT_HEADER_KEYS = [
-  'tour_fee_usd',
+  'ground_fee_usd',
   'vehicle_fee_usd',
   'head_tax_usd',
   'seoul_biz_fee_usd',
   'tc_company_usd',
   'settlement_ratio',
 ] as const satisfies readonly (keyof SettlementHeaderCalc)[]
+
+/**
+ * Guide enters tour fee; admin verifies on review.
+ */
+export const GUIDE_TOUR_FEE_HEADER_KEYS = ['tour_fee_usd'] as const satisfies readonly (keyof SettlementHeaderCalc)[]
 
 /**
  * Guide enters in draft; company reviews after submit.
@@ -36,6 +40,7 @@ export const COMPANY_REVIEW_HEADER_KEYS = [
 /** All header fields admin may change during post-submit review save. */
 export const ADMIN_OWNED_HEADER_KEYS = [
   ...ADMIN_STRICT_HEADER_KEYS,
+  ...GUIDE_TOUR_FEE_HEADER_KEYS,
   ...COMPANY_REVIEW_HEADER_KEYS,
 ] as const satisfies readonly (keyof SettlementHeaderCalc)[]
 
@@ -149,9 +154,10 @@ export function mergeGuideHeaderForSave(
 
 export function pickAdminHeaderFields(
   row: Partial<SettlementHeaderCalc>,
-): Pick<SettlementHeaderCalc, AdminOwnedHeaderKey> & { tour_fee_usd: number } {
+): Pick<SettlementHeaderCalc, AdminOwnedHeaderKey> {
   return {
     tour_fee_usd: row.tour_fee_usd ?? 0,
+    ground_fee_usd: row.ground_fee_usd ?? 0,
     vehicle_fee_usd: row.vehicle_fee_usd ?? 0,
     head_tax_usd: row.head_tax_usd ?? 0,
     seoul_biz_fee_usd: row.seoul_biz_fee_usd ?? 0,

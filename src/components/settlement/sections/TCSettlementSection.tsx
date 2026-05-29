@@ -146,8 +146,20 @@ export function FinalAdjustmentsSection() {
     <div className="space-y-3">
       <SectionHint excelRows={EXCEL_SECTIONS.adjustments.rows} hint={EXCEL_SECTIONS.adjustments.hint} />
       <SectionCard>
+        <p className="text-xs font-semibold text-emerald-800 mb-2">회사 수익 (admin)</p>
         <ManualField
-          label="차량비 (포함)"
+          label="지상비 (회사 수익)"
+          excelRef="—"
+          suffix="$"
+          inputMode="decimal"
+          value={header.ground_fee_usd || ''}
+          onChange={(e) =>
+            patchHeader({ ground_fee_usd: parseFloat(e.target.value) || 0 })
+          }
+        />
+        <p className="text-xs font-semibold text-red-800 mt-4 mb-2">회사 지출 (admin)</p>
+        <ManualField
+          label="차량비"
           excelRef="O79"
           suffix="$"
           inputMode="decimal"

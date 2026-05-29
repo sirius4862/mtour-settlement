@@ -13,10 +13,10 @@ describe('canEditHeaderField', () => {
     for (const key of ADMIN_STRICT_HEADER_KEYS) {
       expect(canEditHeaderField('guide', key)).toBe(false)
     }
-    expect(canEditHeaderField('guide', 'tour_fee_usd')).toBe(false)
+    expect(canEditHeaderField('guide', 'tour_fee_usd')).toBe(true)
   })
 
-  it('allows guide to edit company review fields', () => {
+  it('allows guide to edit tour fee and company review fields', () => {
     for (const key of COMPANY_REVIEW_HEADER_KEYS) {
       expect(canEditHeaderField('guide', key)).toBe(true)
     }
@@ -38,6 +38,7 @@ describe('mergeGuideHeaderForSave', () => {
         tip_received_usd: 3,
         option_credit_usd: 4,
         tour_fee_usd: 120,
+        ground_fee_usd: 50,
         vehicle_fee_usd: 99,
         head_tax_usd: 99,
         seoul_biz_fee_usd: 99,
@@ -50,6 +51,7 @@ describe('mergeGuideHeaderForSave', () => {
       },
       pickAdminHeaderFields({
         tour_fee_usd: 75,
+        ground_fee_usd: 50,
         vehicle_fee_usd: 25,
         head_tax_usd: 8,
         seoul_biz_fee_usd: 5,
@@ -60,7 +62,8 @@ describe('mergeGuideHeaderForSave', () => {
       }),
     )
     expect(merged.vehicle_fee_usd).toBe(25)
-    expect(merged.tour_fee_usd).toBe(75)
+    expect(merged.ground_fee_usd).toBe(50)
+    expect(merged.tour_fee_usd).toBe(120)
     expect(merged.settlement_ratio).toBe(0.5)
     expect(merged.megugi_usd).toBe(12)
     expect(merged.guide_daily_fee_usd).toBe(18)
@@ -76,6 +79,7 @@ describe('mergeAdminHeaderForSave', () => {
         tip_received_usd: 3,
         option_credit_usd: 4,
         tour_fee_usd: 999,
+        ground_fee_usd: 200,
         vehicle_fee_usd: 30,
         head_tax_usd: 10,
         seoul_biz_fee_usd: 5,
@@ -92,6 +96,7 @@ describe('mergeAdminHeaderForSave', () => {
         tip_received_usd: 3,
         option_credit_usd: 4,
         tour_fee_usd: 500,
+        ground_fee_usd: 0,
         vehicle_fee_usd: 10,
         head_tax_usd: 5,
         seoul_biz_fee_usd: 3,

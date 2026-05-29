@@ -47,6 +47,7 @@ describe('company review header fields (megugi / guide daily fee)', () => {
         tip_received_usd: 3,
         option_credit_usd: 4,
         tour_fee_usd: 120,
+        ground_fee_usd: 0,
         vehicle_fee_usd: 99,
         head_tax_usd: 99,
         seoul_biz_fee_usd: 99,
@@ -58,6 +59,7 @@ describe('company review header fields (megugi / guide daily fee)', () => {
         guide_note: null,
       },
       pickAdminHeaderFields({
+        ground_fee_usd: 0,
         vehicle_fee_usd: 25,
         head_tax_usd: 8,
         seoul_biz_fee_usd: 5,
@@ -83,6 +85,7 @@ describe('company review header fields (megugi / guide daily fee)', () => {
       exchange_rate: 26000,
       advance_vnd: 0,
       tour_fee_usd: 500,
+      ground_fee_usd: 0,
       charming_other_usd: 0,
       tip_received_usd: 0,
       option_credit_usd: 0,

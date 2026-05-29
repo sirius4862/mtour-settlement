@@ -17,6 +17,7 @@ function mockSubmittedSettlement(): SettlementFull {
     exchange_rate: input.exchange_rate,
     advance_vnd: input.header.advance_vnd,
     tour_fee_usd: 500,
+    ground_fee_usd: 0,
     charming_other_usd: input.header.charming_other_usd,
     tip_received_usd: input.header.tip_received_usd,
     option_credit_usd: input.header.option_credit_usd,

@@ -33,6 +33,7 @@ function emptyInput(overrides: Partial<SettlementCalcInput> = {}): SettlementCal
       tip_received_usd: 0,
       option_credit_usd: 0,
       tour_fee_usd: 0,
+      ground_fee_usd: 0,
       vehicle_fee_usd: 0,
       head_tax_usd: 0,
       seoul_biz_fee_usd: 0,
@@ -236,6 +237,7 @@ describe('settlement matrix', () => {
           tip_received_usd: 5,
           option_credit_usd: 0,
           tour_fee_usd: 100,
+          ground_fee_usd: 0,
           vehicle_fee_usd: 20,
           head_tax_usd: 5,
           seoul_biz_fee_usd: 3,
@@ -293,7 +295,7 @@ describe('settlement matrix', () => {
     const result = calcSettlement(emptyInput())
     for (const field of Object.values(result.summary)) {
       expect(field.label).toBeTruthy()
-      expect(field.excelRef).toMatch(/^[A-Z]+\d+$/)
+      expect(field.excelRef).toMatch(/^([A-Z]+\d+|—)$/)
       expect(field.formula).toBeTruthy()
     }
   })
@@ -430,7 +432,71 @@ describe('guide settlement policy — calcSettlement integration', () => {
     expect(highMegugi.sections.cash.company_deposit_usd.value).toBe(
       lowMegugi.sections.cash.company_deposit_usd.value,
     )
-    expect(highMegugi.sections.cash.company_deposit_usd.formula).toBe('J75−N75−P75')
+    expect(highMegugi.sections.cash.company_deposit_usd.formula).toBe('J75−N75−P75−D79')
+  })
+})
+
+describe('tour fee and ground fee policy', () => {
+  /** Minimal cash path: J75=1000 via advance, N75=P75=0 */
+  function cashOnlyInput(overrides: Partial<SettlementCalcInput['header']> = {}): SettlementCalcInput {
+    return emptyInput({
+      header: {
+        ...emptyInput().header,
+        advance_vnd: 26_000_000,
+        ...overrides,
+      },
+    })
+  }
+
+  it('A: tour fee reduces Q75 by D79', () => {
+    const base = cashOnlyInput({ tour_fee_usd: 0 })
+    const withFee = cashOnlyInput({ tour_fee_usd: 300 })
+    const baseQ = calcSettlement(base).sections.cash.company_deposit_usd.value
+    const feeQ = calcSettlement(withFee).sections.cash.company_deposit_usd.value
+    expect(baseQ).toBe(1000)
+    expect(feeQ).toBe(700)
+  })
+
+  it('B: tour fee increase does not increase R87', () => {
+    const base = calcSettlement(cashOnlyInput({ tour_fee_usd: 0, ground_fee_usd: 0 }))
+    const withFee = calcSettlement(cashOnlyInput({ tour_fee_usd: 500, ground_fee_usd: 0 }))
+    expect(withFee.summary.company_grand_total_usd.value).toBe(
+      base.summary.company_grand_total_usd.value,
+    )
+  })
+
+  it('C: ground fee increases R87', () => {
+    const base = calcSettlement(cashOnlyInput({ ground_fee_usd: 0 }))
+    const withGround = calcSettlement(cashOnlyInput({ ground_fee_usd: 500 }))
+    expect(withGround.summary.company_grand_total_usd.value -
+      base.summary.company_grand_total_usd.value).toBeCloseTo(500, 2)
+  })
+
+  it('D: vehicle/head/seoul fees reduce R87', () => {
+    const base = calcSettlement(cashOnlyInput())
+    const withExpenses = calcSettlement(
+      cashOnlyInput({ vehicle_fee_usd: 10, head_tax_usd: 5, seoul_biz_fee_usd: 3 }),
+    )
+    expect(withExpenses.summary.company_grand_total_usd.value).toBeLessThan(
+      base.summary.company_grand_total_usd.value,
+    )
+    expect(
+      base.summary.company_grand_total_usd.value -
+        withExpenses.summary.company_grand_total_usd.value,
+    ).toBeCloseTo(18, 2)
+  })
+
+  it('E: tour fee and ground fee do not change P85', () => {
+    const base = calcSettlement(policyTestInput(300, 200, 0, 50))
+    const changed = calcSettlement({
+      ...policyTestInput(300, 200, 0, 50),
+      header: {
+        ...policyTestInput(300, 200, 0, 50).header,
+        tour_fee_usd: 999,
+        ground_fee_usd: 888,
+      },
+    })
+    expect(changed.summary.guide_payout_usd.value).toBe(base.summary.guide_payout_usd.value)
   })
 })
 
@@ -498,7 +564,7 @@ describe('MOCK_SETTLEMENT_INPUT golden totals', () => {
     expect(result.summary.income_total_usd.value).toBe(300)
     expect(result.summary.balance_usd.value).toBe(277)
     expect(result.summary.guide_settlement_usd.value).toBe(168.5)
-    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-633.884615384, 4)
+    expect(result.summary.company_grand_total_usd.value).toBeCloseTo(-558.884615384, 4)
 
     const excelCheck = verifySettlementAgainstExcel(result, MOCK_SETTLEMENT_INPUT)
     expect(excelCheck.acceptable).toBe(true)

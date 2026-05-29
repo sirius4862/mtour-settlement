@@ -333,6 +333,7 @@ export async function upsertSettlement(payload: {
   exchange_rate: number
   advance_vnd: number
   tour_fee_usd: number
+  ground_fee_usd: number
   charming_other_usd: number
   tip_received_usd: number
   option_credit_usd: number
@@ -561,6 +562,7 @@ export async function saveSettlementDraft(
     exchange_rate: payloadToSave.exchange_rate,
     advance_vnd: payloadToSave.header.advance_vnd,
     tour_fee_usd: payloadToSave.header.tour_fee_usd,
+    ground_fee_usd: payloadToSave.header.ground_fee_usd ?? 0,
     charming_other_usd: payloadToSave.header.charming_other_usd,
     tip_received_usd: payloadToSave.header.tip_received_usd,
     option_credit_usd: payloadToSave.header.option_credit_usd,
@@ -636,6 +638,8 @@ export async function saveAdminSettlementEdits(
   const { error: headerErr } = await supabase
     .from('settlements')
     .update({
+      tour_fee_usd: sanitized.header.tour_fee_usd,
+      ground_fee_usd: sanitized.header.ground_fee_usd ?? 0,
       vehicle_fee_usd: sanitized.header.vehicle_fee_usd,
       head_tax_usd: sanitized.header.head_tax_usd,
       seoul_biz_fee_usd: sanitized.header.seoul_biz_fee_usd,

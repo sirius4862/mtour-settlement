@@ -85,10 +85,13 @@ export default async function AdminSettlementDetailPage({
               회사입금 (Q75): <span className="font-mono">{fmt2(companyDeposit)}</span>
             </p>
             <p className="text-gray-600">
-              수익풀 (D84): <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
+              가이드 수익풀 (D84): <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
             </p>
             <p className="text-gray-600">
-              지출 (H85): <span className="font-mono">{fmt2(summary.expense_total_usd.value)}</span>
+              회사 수익 합계: <span className="font-mono">{fmt2(summary.admin_income_usd.value)}</span>
+            </p>
+            <p className="text-gray-600">
+              회사 지출 (H85): <span className="font-mono">{fmt2(summary.expense_total_usd.value)}</span>
             </p>
             <p className={`font-semibold ${payoutIsFloored ? 'text-red-700' : 'text-amber-700'}`}>
               계산상 가이드정산 (R85): <span className="font-mono">{fmt2(guideSettlement)}</span>
@@ -113,21 +116,25 @@ export default async function AdminSettlementDetailPage({
         <p className="text-xs font-semibold text-gray-500 mb-3">상세 계산 (엑셀 R77-R87)</p>
         <div className="space-y-1.5 text-xs">
           {[
-            ['투어피 참고 (D79)', fmt2(m('r79')?.income?.value ?? 0)],
+            ['투어피 — 회사 선지급 / 가이드 입력 (D79)', fmt2(m('r79')?.income?.value ?? 0)],
             ['쇼핑수익 COM (D80)', fmt2(m('r80')?.income?.value ?? 0)],
             ['쇼핑 SALE 참고 (D72)', fmt2(sections.shopping.sale_usd.value)],
             ['옵션수익 COM (D81)', fmt2(m('r81')?.income?.value ?? 0)],
-            ['받은팁 참고 (D82)', fmt2(m('r82')?.income?.value ?? 0)],
-            ['추가수익 참고 (D83)', fmt2(m('r83')?.income?.value ?? 0)],
-            ['─ 정산 수익합계 D80+D81 (D84)', fmt2(summary.income_total_usd.value), true],
+            ['받은팁 (F75→수익)', fmt2(m('r82')?.income?.value ?? 0)],
+            ['차밍/기타 (D75→수익)', fmt2(m('r83')?.income?.value ?? 0)],
+            ['지상비 — 회사 수익', fmt2(data.ground_fee_usd ?? 0)],
+            ['─ 회사 수익 합계', fmt2(summary.admin_income_usd.value), true],
+            ['─ 가이드 수익풀 D80+D81 (D84)', fmt2(summary.income_total_usd.value), true],
             ['호텔 가이드 (H79)', fmt2(m('r79')?.guideExpense?.value ?? 0)],
             ['식사비 환산 (H80)', fmt2(m('r80')?.guideExpense?.value ?? 0)],
             ['입장료 환산 (H81)', fmt2(m('r81')?.guideExpense?.value ?? 0)],
             ['기타지출 (H82)', fmt2(m('r82')?.guideExpense?.value ?? 0)],
             ['T/C 가이드 (H83)', fmt2(m('r83')?.guideExpense?.value ?? 0)],
             ['T/C 회사 (J83)', fmt2(m('r83')?.companyExpense?.value ?? 0)],
-            ['기타포함 SUM(O79:O83) (O84)', fmt2(m('r84')?.included?.value ?? 0)],
-            ['─ 지출합계 H84+J84+M84+O84 (H85)', fmt2(summary.expense_total_usd.value), true],
+            ['차량비 — 회사 지출 (O79)', fmt2(m('r79')?.included?.value ?? 0)],
+            ['인두세 — 회사 지출 (O80)', fmt2(m('r82')?.included?.value ?? 0)],
+            ['서울영업비 — 회사 지출 (O81)', fmt2(m('r81')?.included?.value ?? 0)],
+            ['─ 회사 지출 합 O84 (H85)', fmt2(summary.expense_total_usd.value), true],
             ['─ 수익−지출 (F86)', fmt2(summary.company_gross_usd.value), true],
             ['정산 수익풀 D80+D81 (R79)', fmt2(m('r79')?.settlement?.value ?? 0)],
             ['메꾸기 (R80)', `- ${fmt2(m('r80')?.settlement?.value ?? 0)}`],
@@ -142,7 +149,7 @@ export default async function AdminSettlementDetailPage({
             ['KB합계 (H72)', fmt2(sections.shopping.kb_usd.value)],
             ['추가차량비 (S75)', fmt2(sections.options.extra_vehicle_usd.value)],
             ['─ 회사수익 R86+H72+S75 (R87)', fmt2(companyProfit), true],
-            ['회사입금 J75−N75−P75 (Q75)', fmt2(companyDeposit)],
+            ['회사입금 J75−N75−P75−D79 (Q75)', fmt2(companyDeposit)],
           ].map(([l, v, bold, accent]) => (
             <div key={l as string} className={`flex justify-between py-1 ${bold ? 'border-t border-gray-100 mt-1 pt-1.5' : ''}`}>
               <span className={`${accent ? 'text-amber-700 font-semibold' : bold ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
@@ -189,7 +196,7 @@ export default async function AdminSettlementDetailPage({
           className="block bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 hover:border-blue-200"
         >
           <p className="text-sm font-semibold text-blue-800">회사 전용 필드 수정</p>
-          <p className="text-xs text-blue-600 mt-0.5">지상비·호텔 단가·KB·추가차량 등 admin 필드 저장 →</p>
+          <p className="text-xs text-blue-600 mt-0.5">지상비·호텔 단가·KB·추가차량·회사 지출 등 admin 필드 저장 →</p>
         </Link>
       )}
 

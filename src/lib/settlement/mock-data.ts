@@ -24,6 +24,7 @@ export const MOCK_SETTLEMENT_INPUT: SettlementCalcInput = {
     tip_received_usd: 45,
     option_credit_usd: 0,
     tour_fee_usd: 120,
+    ground_fee_usd: 0,
     vehicle_fee_usd: 25,
     head_tax_usd: 8,
     seoul_biz_fee_usd: 5,

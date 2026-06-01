@@ -53,10 +53,19 @@ async function main() {
     join(process.cwd(), 'supabase', 'settlement_rls_line_items_guide_write_fix.sql'),
     'utf8',
   )
+  const submitFixSql = readFileSync(
+    join(process.cwd(), 'supabase', 'settlement_rls_guide_submit_fix.sql'),
+    'utf8',
+  )
   for (const table of LINE_ITEM_TABLES) {
     if (!lineItemFixSql.includes(`'public.${table}'::regclass`)) {
       fail(`line items fix SQL missing ${table}`)
     }
+  }
+  if (!submitFixSql.includes('settlements_guide_update')) {
+    fail('settlement_rls_guide_submit_fix.sql missing settlements_guide_update')
+  } else {
+    pass('guide submit fix SQL contains settlements_guide_update')
   }
   if (/CREATE POLICY \w+_guide_select/i.test(lineItemFixSql)) {
     fail('line items fix SQL must not add guide base SELECT (redaction)')
@@ -91,9 +100,18 @@ async function main() {
   }
 
   const persistFnMatch = actionsSource.match(
+    /export async function submitSettlement[\s\S]*?\n\}/,
+  )
+  if (!persistFnMatch || !persistFnMatch[0].includes("verified?.status !== 'submitted'")) {
+    fail('submitSettlement missing post-update status verification')
+  } else {
+    pass('submitSettlement verifies submitted status after update')
+  }
+
+  const persistLineItemsMatch = actionsSource.match(
     /async function persistSettlementLineItems[\s\S]*?\n\}/,
   )
-  if (!persistFnMatch || persistFnMatch[0].includes('.upsert(')) {
+  if (!persistLineItemsMatch || persistLineItemsMatch[0].includes('.upsert(')) {
     fail('persistSettlementLineItems still uses upsert on line-item tables')
   } else {
     pass('persistSettlementLineItems avoids upsert/RETURNING on line-item tables')

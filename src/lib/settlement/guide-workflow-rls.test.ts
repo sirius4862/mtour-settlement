@@ -148,6 +148,33 @@ describe('guide workflow RLS regression', () => {
     expect(calls.some((c) => c.startsWith('update:meal_items'))).toBe(true)
   })
 
+  it('submitSettlement verifies status after settlements update', () => {
+    const source = readRepoFile('src/lib/actions/settlementActions.ts')
+    const fnMatch = source.match(/export async function submitSettlement[\s\S]*?\n\}/)
+    expect(fnMatch).toBeTruthy()
+    const fnBody = fnMatch![0]
+    expect(fnBody).toContain("verified?.status !== 'submitted'")
+    expect(fnBody).toContain('[submitSettlement] post-update verify failed')
+    expect(fnBody).not.toMatch(/if \(error\) return \{ ok: false, error: error\.message \}/)
+  })
+
+  it('guide submit SQL fix strengthens settlements update and audit policies', () => {
+    const sql = readRepoFile('supabase/settlement_rls_guide_submit_fix.sql')
+    expect(sql).toContain('settlements_guide_update')
+    expect(sql).toContain('settlement_allows_guide_workflow_mutation')
+    expect(sql).toContain('settlement_status_logs_guide_insert')
+    expect(sql).toContain('settlement_audit_events_guide_insert')
+    expect(sql).toContain('settlement_snapshots_guide_insert')
+    expect(sql).toContain("'submitted'")
+  })
+
+  it('SubmitButton surfaces submit errors to the user', () => {
+    const source = readRepoFile('src/app/guide/settlements/[id]/SubmitButton.tsx')
+    expect(source).toContain('role="alert"')
+    expect(source).toContain('catch')
+    expect(source).toContain("res?.error?.trim() || '제출에 실패했습니다.'")
+  })
+
   it('documents submit path including snapshot INSERT without base SELECT', () => {
     const submitSteps = GUIDE_WORKFLOW_WRITE_PATH.filter((s) => s.flow === 'submit')
     const snapInsert = submitSteps.find(

@@ -114,8 +114,8 @@ async function insertAuditEvent(
     toStatus: SettlementStatus | null
     note?: string | null
   },
-) {
-  await supabase.from('settlement_audit_events').insert({
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.from('settlement_audit_events').insert({
     settlement_id: params.settlementId,
     actor_id: params.actorId,
     actor_role: params.actorRole,
@@ -124,6 +124,10 @@ async function insertAuditEvent(
     to_status: params.toStatus,
     note: params.note ?? null,
   })
+  if (error) {
+    return { ok: false, error: error.message || '감사 로그 저장 실패' }
+  }
+  return { ok: true }
 }
 
 function revalidateSettlementPaths(id: string) {
@@ -505,65 +509,104 @@ export async function upsertSettlement(payload: {
 // ── 제출 ──────────────────────────────────────────────────────
 
 export async function submitSettlement(id: string): Promise<{ ok: boolean; error?: string }> {
-  const profile = await getProfile()
-  if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
-  if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
+  try {
+    const profile = await getProfile()
+    if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
+    if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
 
-  const supabase = await createClient()
+    const supabase = await createClient()
 
-  const { data: current } = await supabase
-    .from(GUIDE_READ.settlements)
-    .select('id, status')
-    .eq('id', id)
-    .eq('guide_id', profile.id)
-    .in('status', ['draft', 'rejected', 'edit_requested'])
-    .maybeSingle()
+    const { data: current } = await supabase
+      .from(GUIDE_READ.settlements)
+      .select('id, status')
+      .eq('id', id)
+      .eq('guide_id', profile.id)
+      .in('status', ['draft', 'rejected', 'edit_requested'])
+      .maybeSingle()
 
-  if (!current) return { ok: false, error: '제출할 수 없는 정산서입니다.' }
+    if (!current) return { ok: false, error: '제출할 수 없는 정산서입니다.' }
 
-  const full = await getSettlementFull(id, { audience: 'guide' })
-  if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+    const full = await getSettlementFull(id, { audience: 'guide' })
+    if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
 
-  const payload = buildSnapshotPayload(full)
-  const snap = await insertSnapshot(supabase, {
-    settlementId: id,
-    kind: 'guide_submit',
-    payload,
-    createdBy: profile.id,
-  })
-  if (!snap.ok) return { ok: false, error: snap.error }
-
-  const now = new Date().toISOString()
-  const fromStatus = current.status as SettlementStatus
-
-  const { error } = await supabase
-    .from('settlements')
-    .update({
-      status: 'submitted',
-      submitted_at: now,
-      guide_submit_snapshot_id: snap.id,
-      active_confirmation_id: null,
-      clarification_requested_at: null,
-      clarification_message: null,
-      calc_summary_json: payload.calc_summary,
+    const payload = buildSnapshotPayload(full)
+    const snap = await insertSnapshot(supabase, {
+      settlementId: id,
+      kind: 'guide_submit',
+      payload,
+      createdBy: profile.id,
     })
-    .eq('id', id)
-    .eq('guide_id', profile.id)
-    .eq('status', fromStatus)
+    if (!snap.ok) return { ok: false, error: snap.error }
 
-  if (error) return { ok: false, error: error.message }
+    const now = new Date().toISOString()
+    const fromStatus = current.status as SettlementStatus
 
-  await insertAuditEvent(supabase, {
-    settlementId: id,
-    actorId: profile.id,
-    actorRole: profile.role,
-    action: 'guide_submit',
-    fromStatus,
-    toStatus: 'submitted',
-  })
+    const { error: updateError } = await supabase
+      .from('settlements')
+      .update({
+        status: 'submitted',
+        submitted_at: now,
+        guide_submit_snapshot_id: snap.id,
+        active_confirmation_id: null,
+        clarification_requested_at: null,
+        clarification_message: null,
+        calc_summary_json: payload.calc_summary,
+      })
+      .eq('id', id)
+      .eq('guide_id', profile.id)
+      .eq('status', fromStatus)
 
-  revalidateSettlementPaths(id)
-  return { ok: true }
+    if (updateError) {
+      console.error('[submitSettlement] settlements update:', updateError.message, updateError)
+      return {
+        ok: false,
+        error: updateError.message || '정산서 상태 변경에 실패했습니다.',
+      }
+    }
+
+    const { data: verified, error: verifyError } = await supabase
+      .from(GUIDE_READ.settlements)
+      .select('status')
+      .eq('id', id)
+      .eq('guide_id', profile.id)
+      .maybeSingle()
+
+    if (verifyError || verified?.status !== 'submitted') {
+      console.error('[submitSettlement] post-update verify failed', {
+        settlementId: id,
+        fromStatus,
+        verifyError: verifyError?.message,
+        actualStatus: verified?.status,
+      })
+      await supabase.from('settlement_snapshots').delete().eq('id', snap.id)
+      return {
+        ok: false,
+        error:
+          verifyError?.message ||
+          '제출 상태 변경에 실패했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.',
+      }
+    }
+
+    const audit = await insertAuditEvent(supabase, {
+      settlementId: id,
+      actorId: profile.id,
+      actorRole: profile.role,
+      action: 'guide_submit',
+      fromStatus,
+      toStatus: 'submitted',
+    })
+    if (!audit.ok) {
+      console.error('[submitSettlement] audit insert:', audit.error)
+      return { ok: false, error: audit.error ?? '감사 로그 저장 실패' }
+    }
+
+    revalidateSettlementPaths(id)
+    return { ok: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '제출 중 오류가 발생했습니다.'
+    console.error('[submitSettlement] unexpected error:', err)
+    return { ok: false, error: message || '제출 중 오류가 발생했습니다.' }
+  }
 }
 
 // ── 라인 아이템 저장 ───────────────────────────────────────────

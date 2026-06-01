@@ -154,7 +154,7 @@ describe('guide workflow RLS regression', () => {
     expect(fnMatch).toBeTruthy()
     const fnBody = fnMatch![0]
     expect(fnBody).toContain("verified?.status !== 'submitted'")
-    expect(fnBody).toContain('[submitSettlement] post-update verify failed')
+    expect(fnBody).toContain("logStep('verify_failed'")
     expect(fnBody).not.toMatch(/if \(error\) return \{ ok: false, error: error\.message \}/)
   })
 
@@ -168,11 +168,14 @@ describe('guide workflow RLS regression', () => {
     expect(sql).toContain("'submitted'")
   })
 
-  it('SubmitButton surfaces submit errors to the user', () => {
+  it('SubmitButton avoids useTransition refresh hang and has submit timeout', () => {
     const source = readRepoFile('src/app/guide/settlements/[id]/SubmitButton.tsx')
+    expect(source).not.toContain('useTransition')
+    expect(source).not.toContain('router.refresh()')
+    expect(source).toContain('router.push(')
+    expect(source).toContain('SUBMIT_TIMEOUT_MS')
     expect(source).toContain('role="alert"')
-    expect(source).toContain('catch')
-    expect(source).toContain("res?.error?.trim() || '제출에 실패했습니다.'")
+    expect(source).toContain('finally')
   })
 
   it('documents submit path including snapshot INSERT without base SELECT', () => {

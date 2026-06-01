@@ -509,7 +509,12 @@ export async function upsertSettlement(payload: {
 // ── 제출 ──────────────────────────────────────────────────────
 
 export async function submitSettlement(id: string): Promise<{ ok: boolean; error?: string }> {
+  const logStep = (step: string, extra?: Record<string, unknown>) => {
+    console.error('[submitSettlement]', step, { settlementId: id, ...extra })
+  }
+
   try {
+    logStep('start')
     const profile = await getProfile()
     if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
     if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
@@ -525,9 +530,11 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       .maybeSingle()
 
     if (!current) return { ok: false, error: '제출할 수 없는 정산서입니다.' }
+    logStep('precheck_ok', { status: current.status })
 
     const full = await getSettlementFull(id, { audience: 'guide' })
     if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+    logStep('load_ok')
 
     const payload = buildSnapshotPayload(full)
     const snap = await insertSnapshot(supabase, {
@@ -536,7 +543,11 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       payload,
       createdBy: profile.id,
     })
-    if (!snap.ok) return { ok: false, error: snap.error }
+    if (!snap.ok) {
+      logStep('snapshot_failed', { error: snap.error })
+      return { ok: false, error: snap.error }
+    }
+    logStep('snapshot_ok', { snapshotId: snap.id })
 
     const now = new Date().toISOString()
     const fromStatus = current.status as SettlementStatus
@@ -557,12 +568,13 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       .eq('status', fromStatus)
 
     if (updateError) {
-      console.error('[submitSettlement] settlements update:', updateError.message, updateError)
+      logStep('settlements_update_failed', { error: updateError.message })
       return {
         ok: false,
         error: updateError.message || '정산서 상태 변경에 실패했습니다.',
       }
     }
+    logStep('settlements_update_ok')
 
     const { data: verified, error: verifyError } = await supabase
       .from(GUIDE_READ.settlements)
@@ -572,13 +584,11 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       .maybeSingle()
 
     if (verifyError || verified?.status !== 'submitted') {
-      console.error('[submitSettlement] post-update verify failed', {
-        settlementId: id,
+      logStep('verify_failed', {
         fromStatus,
         verifyError: verifyError?.message,
         actualStatus: verified?.status,
       })
-      await supabase.from('settlement_snapshots').delete().eq('id', snap.id)
       return {
         ok: false,
         error:
@@ -586,6 +596,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
           '제출 상태 변경에 실패했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.',
       }
     }
+    logStep('verify_ok')
 
     const audit = await insertAuditEvent(supabase, {
       settlementId: id,
@@ -596,15 +607,17 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       toStatus: 'submitted',
     })
     if (!audit.ok) {
-      console.error('[submitSettlement] audit insert:', audit.error)
+      logStep('audit_failed', { error: audit.error })
       return { ok: false, error: audit.error ?? '감사 로그 저장 실패' }
     }
+    logStep('audit_ok')
 
     revalidateSettlementPaths(id)
+    logStep('complete')
     return { ok: true }
   } catch (err) {
     const message = err instanceof Error ? err.message : '제출 중 오류가 발생했습니다.'
-    console.error('[submitSettlement] unexpected error:', err)
+    logStep('unexpected_error', { message })
     return { ok: false, error: message || '제출 중 오류가 발생했습니다.' }
   }
 }

@@ -551,30 +551,44 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
 
     const now = new Date().toISOString()
     const fromStatus = current.status as SettlementStatus
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser()
 
-    const { error: updateError } = await supabase
-      .from('settlements')
-      .update({
-        status: 'submitted',
-        submitted_at: now,
-        guide_submit_snapshot_id: snap.id,
-        active_confirmation_id: null,
-        clarification_requested_at: null,
-        clarification_message: null,
-        calc_summary_json: payload.calc_summary,
-      })
+    const { data: beforeUpdate } = await supabase
+      .from(GUIDE_READ.settlements)
+      .select('status')
       .eq('id', id)
       .eq('guide_id', profile.id)
-      .eq('status', fromStatus)
+      .maybeSingle()
 
-    if (updateError) {
-      logStep('settlements_update_failed', { error: updateError.message })
+    logStep('before_update', {
+      fromStatus,
+      beforeStatus: beforeUpdate?.status,
+      guideId: profile.id,
+      authUid: authUser?.id,
+      guideIdMatch: profile.id === authUser?.id,
+    })
+
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('guide_submit_settlement', {
+      p_settlement_id: id,
+      p_snapshot_id: snap.id,
+      p_submitted_at: now,
+      p_calc_summary: payload.calc_summary,
+    })
+
+    if (rpcError) {
+      logStep('settlements_update_failed', {
+        via: 'rpc',
+        error: rpcError.message,
+        code: rpcError.code,
+      })
       return {
         ok: false,
-        error: updateError.message || '정산서 상태 변경에 실패했습니다.',
+        error: rpcError.message || '정산서 상태 변경에 실패했습니다.',
       }
     }
-    logStep('settlements_update_ok')
+    logStep('settlements_update_ok', { via: 'rpc', rpcResult })
 
     const { data: verified, error: verifyError } = await supabase
       .from(GUIDE_READ.settlements)
@@ -583,9 +597,18 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       .eq('guide_id', profile.id)
       .maybeSingle()
 
+    logStep('after_update', {
+      via: 'rpc',
+      verifyError: verifyError?.message ?? null,
+      actualStatus: verified?.status ?? null,
+      rowsAffectedHint: verified?.status === 'submitted' ? 1 : 0,
+    })
+
     if (verifyError || verified?.status !== 'submitted') {
       logStep('verify_failed', {
+        via: 'rpc',
         fromStatus,
+        beforeStatus: beforeUpdate?.status,
         verifyError: verifyError?.message,
         actualStatus: verified?.status,
       })
@@ -1230,13 +1253,40 @@ async function queuePendingGuideConfirmation(
     settlementUpdate.guide_confirmed_by = null
   }
 
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser()
+
+  console.error('[sendForConfirmation] before_settlements_update', {
+    settlementId: params.settlementId,
+    fromStatus: params.fromStatus,
+    toStatus: 'pending_guide_confirmation',
+    actorId: params.actorId,
+    actorRole: params.actorRole,
+    authUid: authUser?.id,
+  })
+
   const { error: updErr } = await supabase
     .from('settlements')
     .update(settlementUpdate)
     .eq('id', params.settlementId)
     .eq('status', params.fromStatus)
 
-  if (updErr) return { ok: false, error: updErr.message }
+  if (updErr) {
+    console.error('[sendForConfirmation] settlements_update_failed', {
+      settlementId: params.settlementId,
+      fromStatus: params.fromStatus,
+      error: updErr.message,
+      code: updErr.code,
+      isStatusLogsRls: /settlement_status_logs/i.test(updErr.message ?? ''),
+    })
+    return { ok: false, error: updErr.message }
+  }
+
+  console.error('[sendForConfirmation] settlements_update_ok', {
+    settlementId: params.settlementId,
+    fromStatus: params.fromStatus,
+  })
 
   await insertAuditEvent(supabase, {
     settlementId: params.settlementId,

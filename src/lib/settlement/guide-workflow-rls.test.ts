@@ -155,7 +155,35 @@ describe('guide workflow RLS regression', () => {
     const fnBody = fnMatch![0]
     expect(fnBody).toContain("verified?.status !== 'submitted'")
     expect(fnBody).toContain("logStep('verify_failed'")
-    expect(fnBody).not.toMatch(/if \(error\) return \{ ok: false, error: error\.message \}/)
+    expect(fnBody).toContain("logStep('before_update'")
+    expect(fnBody).toContain("logStep('after_update'")
+    expect(fnBody).toContain("guide_submit_settlement")
+    expect(fnBody).not.toContain('rpc_missing_fallback_direct_update')
+    expect(fnBody).not.toContain(".from('settlements')")
+  })
+
+  it('guide submit transition fix SQL adds RPC only (status logs fixed separately)', () => {
+    const sql = readRepoFile('supabase/settlement_rls_guide_submit_transition_fix.sql')
+    expect(sql).toContain('guide_submit_settlement')
+    expect(sql).toContain('GET DIAGNOSTICS v_rows = ROW_COUNT')
+    expect(sql).not.toContain('trg_log_settlement_status_change')
+  })
+
+  it('admin status logs fix SQL covers trigger and admin tier policies', () => {
+    const sql = readRepoFile('supabase/settlement_rls_admin_status_logs_fix.sql')
+    expect(sql).toContain('trg_log_settlement_status_change')
+    expect(sql).toContain('settlement_status_logs_admin_all')
+    expect(sql).toContain('settlement_status_logs_admin_insert')
+    expect(sql).toContain('settlement_status_logs_guide_insert')
+    expect(sql).toContain('auth_user_is_admin_tier()')
+  })
+
+  it('sendForConfirmation logs settlements update errors including status_logs RLS', () => {
+    const source = readRepoFile('src/lib/actions/settlementActions.ts')
+    const fnMatch = source.match(/async function queuePendingGuideConfirmation[\s\S]*?\n\}/)
+    expect(fnMatch).toBeTruthy()
+    expect(fnMatch![0]).toContain('[sendForConfirmation] before_settlements_update')
+    expect(fnMatch![0]).toContain('isStatusLogsRls')
   })
 
   it('guide submit SQL fix strengthens settlements update and audit policies', () => {

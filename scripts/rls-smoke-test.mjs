@@ -23,6 +23,16 @@ const email = process.env.RLS_SMOKE_GUIDE_EMAIL?.trim()
 const password = process.env.RLS_SMOKE_GUIDE_PASSWORD
 const settlementId = process.env.RLS_SMOKE_SETTLEMENT_ID?.trim()
 
+const LINE_ITEM_TABLES = [
+  'hotel_items',
+  'meal_items',
+  'entrance_items',
+  'other_expense_items',
+  'shopping_items',
+  'option_items',
+  'receipts',
+]
+
 function fail(msg) {
   console.error(`FAIL: ${msg}`)
   process.exitCode = 1
@@ -39,7 +49,21 @@ function skip(msg) {
 async function main() {
   console.log('=== RLS smoke test (guide workflow) ===\n')
 
-  // Static SQL checks (no credentials required)
+  const lineItemFixSql = readFileSync(
+    join(process.cwd(), 'supabase', 'settlement_rls_line_items_guide_write_fix.sql'),
+    'utf8',
+  )
+  for (const table of LINE_ITEM_TABLES) {
+    if (!lineItemFixSql.includes(`'public.${table}'::regclass`)) {
+      fail(`line items fix SQL missing ${table}`)
+    }
+  }
+  if (/CREATE POLICY \w+_guide_select/i.test(lineItemFixSql)) {
+    fail('line items fix SQL must not add guide base SELECT (redaction)')
+  } else {
+    pass('line items fix SQL covers all 7 tables without guide base SELECT')
+  }
+
   const fixSql = readFileSync(
     join(process.cwd(), 'supabase', 'settlement_rls_guide_workflow_fix.sql'),
     'utf8',
@@ -59,11 +83,30 @@ async function main() {
     join(process.cwd(), 'src', 'lib', 'actions', 'settlementActions.ts'),
     'utf8',
   )
-  const fnMatch = actionsSource.match(/async function insertSnapshot[\s\S]*?\n\}/)
-  if (!fnMatch || fnMatch[0].includes('.select(')) {
+  const snapFnMatch = actionsSource.match(/async function insertSnapshot[\s\S]*?\n\}/)
+  if (!snapFnMatch || snapFnMatch[0].includes('.select(')) {
     fail('settlementActions insertSnapshot still uses INSERT…RETURNING on settlement_snapshots')
   } else {
     pass('settlementActions avoids INSERT…RETURNING on settlement_snapshots')
+  }
+
+  const persistFnMatch = actionsSource.match(
+    /async function persistSettlementLineItems[\s\S]*?\n\}/,
+  )
+  if (!persistFnMatch || persistFnMatch[0].includes('.upsert(')) {
+    fail('persistSettlementLineItems still uses upsert on line-item tables')
+  } else {
+    pass('persistSettlementLineItems avoids upsert/RETURNING on line-item tables')
+  }
+
+  const persistHelper = readFileSync(
+    join(process.cwd(), 'src', 'lib', 'settlement', 'guide-line-item-persist.ts'),
+    'utf8',
+  )
+  if (persistHelper.includes('.upsert(') || persistHelper.includes('.select(')) {
+    fail('guide-line-item-persist still uses upsert or RETURNING')
+  } else {
+    pass('guide-line-item-persist uses insert + per-row update only')
   }
 
   if (!url || !anonKey) {
@@ -83,7 +126,6 @@ async function main() {
   }
   pass(`guide signed in: ${auth.user.id}`)
 
-  // Forbidden: base settlements SELECT
   const { data: baseSettlements, error: baseSelErr } = await supabase
     .from('settlements')
     .select('id, ground_fee_usd')
@@ -95,7 +137,6 @@ async function main() {
     fail('guide can read sensitive columns from base settlements')
   }
 
-  // Allowed: redacted view SELECT
   const { error: viewErr } = await supabase
     .from('settlements_guide_read')
     .select('id, ground_fee_usd')
@@ -108,7 +149,9 @@ async function main() {
   }
 
   if (!settlementId) {
-    skip('RLS_SMOKE_SETTLEMENT_ID not set — snapshot insert test skipped')
+    skip('RLS_SMOKE_SETTLEMENT_ID not set — live write checks skipped')
+    await supabase.auth.signOut()
+    console.log('\nDone.')
     return
   }
 
@@ -127,7 +170,6 @@ async function main() {
     pass('guide snapshot INSERT succeeded (client id, no RETURNING)')
   }
 
-  // Forbidden: base snapshot SELECT (redaction)
   const { data: snapRows, error: snapReadErr } = await supabase
     .from('settlement_snapshots')
     .select('payload_json')
@@ -139,8 +181,48 @@ async function main() {
     pass('guide cannot SELECT base settlement_snapshots')
   }
 
-  // Cleanup test row if service role not available — best effort delete may fail under RLS (OK)
   await supabase.from('settlement_snapshots').delete().eq('id', snapId)
+
+  const mealId = randomUUID()
+  const { error: mealInsErr } = await supabase.from('meal_items').insert({
+    id: mealId,
+    settlement_id: settlementId,
+    meal_date: '2025-01-01',
+    restaurant_name: 'RLS smoke test',
+    pax: 1,
+    unit_price_vnd: 1000,
+    amount_vnd: 1000,
+    sort_order: 9999,
+  })
+  if (mealInsErr) {
+    fail(`guide meal_items INSERT failed (apply line-items SQL fix): ${mealInsErr.message}`)
+  } else {
+    pass('guide meal_items INSERT succeeded (no RETURNING)')
+  }
+
+  const { error: mealUpdErr } = await supabase
+    .from('meal_items')
+    .update({ restaurant_name: 'RLS smoke updated' })
+    .eq('id', mealId)
+    .eq('settlement_id', settlementId)
+  if (mealUpdErr) {
+    fail(`guide meal_items UPDATE failed: ${mealUpdErr.message}`)
+  } else {
+    pass('guide meal_items UPDATE succeeded')
+  }
+
+  const { data: mealRead, error: mealReadErr } = await supabase
+    .from('meal_items')
+    .select('id')
+    .eq('id', mealId)
+    .maybeSingle()
+  if (!mealReadErr && mealRead) {
+    fail('guide can SELECT base meal_items (should use meal_items_guide_read)')
+  } else {
+    pass('guide cannot SELECT base meal_items')
+  }
+
+  await supabase.from('meal_items').delete().eq('id', mealId)
 
   await supabase.auth.signOut()
   console.log('\nDone.')

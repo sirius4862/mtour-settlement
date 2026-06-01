@@ -1,6 +1,9 @@
 import { randomUUID } from 'crypto'
 import type { SettlementStatus } from '@/types'
 import type { SnapshotPayload } from './snapshot'
+import { GUIDE_LINE_ITEM_TABLES } from './guide-line-item-persist'
+
+export { GUIDE_LINE_ITEM_TABLES }
 
 /** DB tables touched by guide save/submit/confirm flows (base tables, not views). */
 export const GUIDE_WORKFLOW_TABLES = [
@@ -63,27 +66,31 @@ export const GUIDE_WORKFLOW_WRITE_PATH: GuideWorkflowWriteStep[] = [
     statuses: ['draft', 'rejected', 'edit_requested'],
     rlsPolicyHint: 'settlements_guide_update',
   },
-  {
-    flow: 'save_draft',
-    table: 'hotel_items',
-    operation: 'INSERT',
-    statuses: ['draft', 'rejected', 'edit_requested'],
-    rlsPolicyHint: 'hotel_items_guide_insert',
-  },
-  {
-    flow: 'save_draft',
-    table: 'hotel_items',
-    operation: 'UPDATE',
-    statuses: ['draft', 'rejected', 'edit_requested'],
-    rlsPolicyHint: 'hotel_items_guide_update',
-  },
-  {
-    flow: 'save_draft',
-    table: 'hotel_items',
-    operation: 'DELETE',
-    statuses: ['draft', 'rejected', 'edit_requested'],
-    rlsPolicyHint: 'hotel_items_guide_delete',
-  },
+  ...GUIDE_LINE_ITEM_TABLES.flatMap((table) => [
+    {
+      flow: 'save_draft' as const,
+      table,
+      operation: 'INSERT' as const,
+      statuses: ['draft', 'rejected', 'edit_requested'] as SettlementStatus[],
+      rlsPolicyHint: `${table}_guide_insert`,
+      notes: 'No upsert/RETURNING — persistGuideLineItemTable',
+    },
+    {
+      flow: 'save_draft' as const,
+      table,
+      operation: 'UPDATE' as const,
+      statuses: ['draft', 'rejected', 'edit_requested'] as SettlementStatus[],
+      rlsPolicyHint: `${table}_guide_update`,
+      notes: 'Per-row update, no upsert/RETURNING',
+    },
+    {
+      flow: 'save_draft' as const,
+      table,
+      operation: 'DELETE' as const,
+      statuses: ['draft', 'rejected', 'edit_requested'] as SettlementStatus[],
+      rlsPolicyHint: `${table}_guide_delete`,
+    },
+  ]),
   {
     flow: 'save_draft',
     table: 'settlements',

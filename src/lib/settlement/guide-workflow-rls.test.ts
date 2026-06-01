@@ -11,8 +11,10 @@ import {
 import {
   buildSnapshotInsertRow,
   GUIDE_FORBIDDEN_BASE_SELECTS,
+  GUIDE_LINE_ITEM_TABLES,
   GUIDE_WORKFLOW_WRITE_PATH,
 } from './guide-workflow-writes'
+import { persistGuideLineItemTable } from './guide-line-item-persist'
 import {
   filterGuideConfirmationChanges,
   sanitizeSettlementFullForGuide,
@@ -32,8 +34,118 @@ describe('guide workflow RLS regression', () => {
     const saveSteps = GUIDE_WORKFLOW_WRITE_PATH.filter((s) => s.flow === 'save_draft')
     const tables = new Set(saveSteps.map((s) => s.table))
     expect(tables.has('settlements')).toBe(true)
-    expect(tables.has('hotel_items')).toBe(true)
+    for (const table of GUIDE_LINE_ITEM_TABLES) {
+      expect(tables.has(table)).toBe(true)
+    }
     expect(saveSteps.some((s) => s.table === 'settlement_snapshots')).toBe(false)
+  })
+
+  it('documents line-item save path for every guide-editable table', () => {
+    const editableStatuses = ['draft', 'rejected', 'edit_requested'] as const
+    for (const table of GUIDE_LINE_ITEM_TABLES) {
+      for (const operation of ['INSERT', 'UPDATE', 'DELETE'] as const) {
+        const step = GUIDE_WORKFLOW_WRITE_PATH.find(
+          (s) =>
+            s.flow === 'save_draft' &&
+            s.table === table &&
+            s.operation === operation,
+        )
+        expect(step, `${table} ${operation}`).toBeDefined()
+        expect(step?.statuses).toEqual([...editableStatuses])
+        expect(step?.rlsPolicyHint).toBe(`${table}_guide_${operation.toLowerCase()}`)
+      }
+    }
+  })
+
+  it('persistSettlementLineItems does not use upsert on line-item tables', () => {
+    const source = readRepoFile('src/lib/actions/settlementActions.ts')
+    const fnMatch = source.match(
+      /async function persistSettlementLineItems[\s\S]*?\n\}/,
+    )
+    expect(fnMatch).toBeTruthy()
+    const fnBody = fnMatch![0]
+    expect(fnBody).toContain('persistGuideLineItemTable')
+    expect(fnBody).not.toContain('.upsert(')
+    expect(fnBody).not.toContain('.select(')
+  })
+
+  it('persistGuideLineItemTable uses insert + update without upsert', () => {
+    const source = readRepoFile('src/lib/settlement/guide-line-item-persist.ts')
+    expect(source).toContain('.insert(toInsert)')
+    expect(source).toContain(".update(patch)")
+    expect(source).not.toContain('.upsert(')
+    expect(source).not.toContain('.select(')
+  })
+
+  it('line-item SQL fix covers all guide-editable tables without guide base SELECT', () => {
+    const sql = readRepoFile('supabase/settlement_rls_line_items_guide_write_fix.sql')
+    for (const table of [...GUIDE_LINE_ITEM_TABLES, 'receipts']) {
+      expect(sql).toContain(`'public.${table}'::regclass`)
+    }
+    expect(sql).toContain("v_short_name || '_guide_insert'")
+    expect(sql).toContain('settlement_allows_guide_content_mutation')
+    expect(sql).toContain('settlement_guide_owns')
+    expect(sql).not.toMatch(/CREATE POLICY \w+_guide_select/i)
+  })
+
+  it('guide content mutation allows only draft, rejected, edit_requested', () => {
+    const sql = readRepoFile('supabase/settlement_rls_line_items_guide_write_fix.sql')
+    expect(sql).toContain("'draft', 'rejected', 'edit_requested'")
+    expect(sql).not.toContain("'submitted'")
+    expect(sql).not.toContain("'pending_guide_confirmation'")
+    expect(sql).not.toContain("'clarification_requested'")
+  })
+
+  it('persistGuideLineItemTable performs delete, insert, and per-row update', async () => {
+    const calls: string[] = []
+    const supabase = {
+      from(table: string) {
+        return {
+          delete() {
+            calls.push(`delete:${table}`)
+            return {
+              eq() {
+                return {
+                  not() {
+                    return Promise.resolve({ error: null })
+                  },
+                }
+              },
+            }
+          },
+          insert(rows: unknown[]) {
+            calls.push(`insert:${table}:${(rows as unknown[]).length}`)
+            return Promise.resolve({ error: null })
+          },
+          update(patch: Record<string, unknown>) {
+            calls.push(`update:${table}:${Object.keys(patch).join(',')}`)
+            return {
+              eq() {
+                return {
+                  eq() {
+                    return Promise.resolve({ error: null })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await persistGuideLineItemTable(
+      supabase as never,
+      'meal_items',
+      '00000000-0000-4000-8000-000000000001',
+      [
+        { id: '00000000-0000-4000-8000-000000000002', settlement_id: '00000000-0000-4000-8000-000000000001', meal_date: '2025-01-01' },
+        { settlement_id: '00000000-0000-4000-8000-000000000001', meal_date: '2025-01-02' },
+      ],
+    )
+    expect(result.ok).toBe(true)
+    expect(calls.some((c) => c.startsWith('delete:meal_items'))).toBe(true)
+    expect(calls.some((c) => c.startsWith('insert:meal_items:1'))).toBe(true)
+    expect(calls.some((c) => c.startsWith('update:meal_items'))).toBe(true)
   })
 
   it('documents submit path including snapshot INSERT without base SELECT', () => {

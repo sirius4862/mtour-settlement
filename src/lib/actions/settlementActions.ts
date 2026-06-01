@@ -2,6 +2,10 @@
 
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import {
+  GUIDE_LINE_ITEM_TABLES,
+  persistGuideLineItemTable,
+} from '@/lib/settlement/guide-line-item-persist'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
 import { createClient } from '@/lib/supabase/server'
 import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
@@ -25,8 +29,8 @@ import {
   type SettlementSyncPayload,
   sanitizeGuideDraftPayload,
   sanitizeAdminDraftPayload,
-  splitDbRowsForPersist,
   isMissingDbColumnError,
+  splitDbRowsForPersist,
   buildAdminSettlementHeaderPatch,
 } from '@/lib/settlement/mappers'
 import type { DraftCompanyExpenseRow } from '@/lib/settlement/form-types'
@@ -590,7 +594,7 @@ async function persistSettlementLineItems(
 ): Promise<{ ok: boolean; error?: string }> {
   const rate = payload.exchange_rate
 
-  const itemTables: { table: string; rows: Record<string, unknown>[] }[] = [
+  const itemTables: { table: (typeof GUIDE_LINE_ITEM_TABLES)[number]; rows: Record<string, unknown>[] }[] = [
     { table: 'hotel_items', rows: buildHotelDbRows(payload.hotels, settlementId) },
     { table: 'meal_items', rows: buildMealDbRows(payload.meals, settlementId) },
     { table: 'entrance_items', rows: buildEntranceDbRows(payload.entrances, settlementId) },
@@ -600,24 +604,8 @@ async function persistSettlementLineItems(
   ]
 
   for (const { table, rows } of itemTables) {
-    const { keepIds, toInsert, toUpdate } = splitDbRowsForPersist(rows)
-
-    let deleteQuery = supabase.from(table).delete().eq('settlement_id', settlementId)
-    if (keepIds.length > 0) {
-      deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.map((id) => `"${id}"`).join(',')})`)
-    }
-    const { error: delErr } = await deleteQuery
-    if (delErr) return { ok: false, error: delErr.message }
-
-    if (toInsert.length > 0) {
-      const { error: insErr } = await supabase.from(table).insert(toInsert)
-      if (insErr) return { ok: false, error: insErr.message }
-    }
-
-    if (toUpdate.length > 0) {
-      const { error: upsertErr } = await supabase.from(table).upsert(toUpdate, { onConflict: 'id' })
-      if (upsertErr) return { ok: false, error: upsertErr.message }
-    }
+    const result = await persistGuideLineItemTable(supabase, table, settlementId, rows)
+    if (!result.ok) return result
   }
 
   return { ok: true }

@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
 import { createClient } from '@/lib/supabase/server'
 import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
 import type {
@@ -85,20 +86,17 @@ async function insertSnapshot(
     createdBy: string
   },
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const { data, error } = await supabase
-    .from('settlement_snapshots')
-    .insert({
-      settlement_id: params.settlementId,
-      kind: params.kind,
-      payload_json: params.payload,
-      calc_summary_json: params.payload.calc_summary,
-      created_by: params.createdBy,
-    })
-    .select('id')
-    .single()
+  const { id, row } = buildSnapshotInsertRow({
+    settlementId: params.settlementId,
+    kind: params.kind,
+    payload: params.payload,
+    createdBy: params.createdBy,
+  })
 
-  if (error || !data) return { ok: false, error: error?.message ?? '스냅샷 저장 실패' }
-  return { ok: true, id: data.id as string }
+  const { error } = await supabase.from('settlement_snapshots').insert(row)
+
+  if (error) return { ok: false, error: error.message ?? '스냅샷 저장 실패' }
+  return { ok: true, id }
 }
 
 async function insertAuditEvent(

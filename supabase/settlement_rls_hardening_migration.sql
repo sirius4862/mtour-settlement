@@ -908,8 +908,16 @@ CREATE POLICY settlement_snapshots_admin_all
 CREATE POLICY settlement_snapshots_guide_insert
   ON public.settlement_snapshots FOR INSERT TO authenticated
   WITH CHECK (
-    public.auth_user_can_access_settlement(settlement_id)
+    public.settlement_guide_owns(settlement_id)
     AND created_by = auth.uid()
+  );
+
+CREATE POLICY settlement_confirmations_guide_select
+  ON public.settlement_confirmations FOR SELECT TO authenticated
+  USING (
+    public.settlement_guide_owns(settlement_id)
+    AND public.auth_user_is_guide()
+    AND NOT public.auth_user_is_admin_tier()
   );
 
 CREATE POLICY settlement_confirmations_admin_select

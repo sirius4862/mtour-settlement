@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:rls-smoke": "node scripts/rls-smoke-test.mjs",
     "db:migrate:external-receivable": "node scripts/apply-external-receivable-migration.mjs"
   },
   "dependencies": {

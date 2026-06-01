@@ -4,6 +4,12 @@ import { SettlementAuditMatrix } from '@/components/settlement/sections/Settleme
 import { SettlementBusinessSummary } from '@/components/settlement/sections/SettlementBusinessSummary'
 import { Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
+import {
+  canMasterApproveFromPending,
+  canMasterReopenPaid,
+  isPostApprovalReadOnlyForAdmin,
+  isAdmin,
+} from '@/lib/auth/permissions'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { createClient } from '@/lib/supabase/server'
 import { formatGuideDisplayName } from '@/lib/guide/display-name'
@@ -49,10 +55,13 @@ export default async function AdminSettlementDetailPage({
   const payoutIsFloored = guideSettlement < 0
   const settlementRatio = s.settlement_ratio ?? 0.5
 
-  const canSendForConfirmation = canAdminSendForConfirmation(s.status)
+  const isReadOnlyAdmin = isAdmin(session.role) && isPostApprovalReadOnlyForAdmin(s.status)
+  const canSendForConfirmation = canAdminSendForConfirmation(s.status, session.role)
   const canAdminEdit = canAdminOrMasterAdminEditSettlement(s.status, session.role)
-  const canReqEdit = canAdminRequestEdit(s.status)
-  const canReject  = canAdminReject(s.status)
+  const canReqEdit = canAdminRequestEdit(s.status, session.role)
+  const canReject  = canAdminReject(s.status, session.role)
+  const canApprove = canMasterApproveFromPending(s.status, session.role)
+  const canReopen  = canMasterReopenPaid(s.status, session.role)
   const canPay     = canMarkSettlementPaidForRole(session.role, s)
 
   return (
@@ -163,6 +172,15 @@ export default async function AdminSettlementDetailPage({
         </div>
       )}
 
+      {isReadOnlyAdmin && (
+        <div className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-700">
+          <p className="font-semibold">조회 전용</p>
+          <p className="text-xs text-gray-500 mt-1">
+            최종확인 완료 또는 지급 완료된 정산서는 조회만 가능합니다. 승인·지급·수정은 마스터 관리자만 할 수 있습니다.
+          </p>
+        </div>
+      )}
+
       {/* 관리자 검토 수정 */}
       {canAdminEdit && (
         <Link
@@ -179,12 +197,14 @@ export default async function AdminSettlementDetailPage({
       )}
 
       {/* 관리자 액션 패널 */}
-      {(canSendForConfirmation || canReject || canReqEdit || canPay) && (
+      {(canSendForConfirmation || canReject || canReqEdit || canPay || canApprove || canReopen) && (
         <ReviewPanel
           settlementId={s.id}
           canSendForConfirmation={canSendForConfirmation}
           canReject={canReject}
           canRequestEdit={canReqEdit}
+          canApprove={canApprove}
+          canReopen={canReopen}
           canPay={canPay}
           currentAdminNote={s.admin_note ?? ''}
         />

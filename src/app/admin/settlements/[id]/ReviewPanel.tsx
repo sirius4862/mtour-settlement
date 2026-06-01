@@ -9,6 +9,8 @@ interface Props {
   canSendForConfirmation: boolean
   canReject: boolean
   canRequestEdit: boolean
+  canApprove: boolean
+  canReopen: boolean
   canPay: boolean
   currentAdminNote: string
 }
@@ -18,6 +20,8 @@ export function ReviewPanel({
   canSendForConfirmation,
   canReject,
   canRequestEdit,
+  canApprove,
+  canReopen,
   canPay,
   currentAdminNote,
 }: Props) {
@@ -28,7 +32,7 @@ export function ReviewPanel({
   const [showReject, setShowReject] = useState(false)
   const [error, setError] = useState('')
 
-  const handleReview = (action: 'reject' | 'request_edit' | 'pay') => {
+  const handleReview = (action: 'approve' | 'reject' | 'request_edit' | 'pay' | 'reopen') => {
     setError('')
     start(async () => {
       const res = await reviewSettlement({
@@ -57,7 +61,8 @@ export function ReviewPanel({
     })
   }
 
-  const showActions = canSendForConfirmation || canReject || canRequestEdit || canPay
+  const showActions =
+    canSendForConfirmation || canReject || canRequestEdit || canApprove || canReopen || canPay
   if (!showActions) return null
 
   return (
@@ -111,10 +116,24 @@ export function ReviewPanel({
           </button>
         )}
 
+        {canApprove && !showReject && (
+          <button onClick={() => handleReview('approve')} disabled={pending}
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-40">
+            {pending ? '처리 중…' : '최종 승인'}
+          </button>
+        )}
+
         {canPay && !showReject && (
           <button onClick={() => handleReview('pay')} disabled={pending}
             className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 disabled:opacity-40">
             {pending ? '처리 중…' : '지급 완료'}
+          </button>
+        )}
+
+        {canReopen && !showReject && (
+          <button onClick={() => handleReview('reopen')} disabled={pending}
+            className="flex-1 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 disabled:opacity-40">
+            {pending ? '처리 중…' : '지급 재오픈'}
           </button>
         )}
       </div>

@@ -44,7 +44,11 @@ import {
   assertAdminSendForConfirmation,
   assertGuideConfirmAction,
 } from '@/lib/settlement/status-guards'
-import { isAdminTier, settlementRequiresReconfirmAfterMasterAdminEdit } from '@/lib/auth/permissions'
+import {
+  isAdmin,
+  isAdminTier,
+  settlementRequiresReconfirmAfterMasterAdminEdit,
+} from '@/lib/auth/permissions'
 import {
   ADMIN_SETTLEMENT_PAGE_SIZE,
   ADMIN_SETTLEMENT_SELECT,
@@ -845,7 +849,7 @@ export async function saveAdminSettlementEdits(
 
 export async function reviewSettlement(params: {
   id: string
-  action: 'approve' | 'reject' | 'request_edit' | 'pay'
+  action: 'approve' | 'reject' | 'request_edit' | 'pay' | 'reopen'
   rejectReason?: string
   adminNote?: string
 }): Promise<{ ok: boolean; error?: string }> {
@@ -858,7 +862,7 @@ export async function reviewSettlement(params: {
 
   const { data: current } = await supabase
     .from('settlements')
-    .select('id, status, guide_confirmed_at, guide_submit_snapshot_id')
+    .select('id, status, guide_confirmed_at, guide_submit_snapshot_id, active_confirmation_id')
     .eq('id', params.id)
     .single()
 
@@ -879,6 +883,93 @@ export async function reviewSettlement(params: {
 
   const now = new Date().toISOString()
 
+  if (params.action === 'approve') {
+    if (!current.active_confirmation_id) {
+      return { ok: false, error: '활성 확인 요청이 없습니다.' }
+    }
+
+    const full = await getSettlementFull(params.id)
+    if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+
+    const payload = buildSnapshotPayload(full)
+    const snap = await insertSnapshot(supabase, {
+      settlementId: params.id,
+      kind: 'guide_confirmed',
+      payload,
+      createdBy: profile.id,
+    })
+    if (!snap.ok) return { ok: false, error: snap.error }
+
+    const { error: confErr } = await supabase
+      .from('settlement_confirmations')
+      .update({
+        status: 'confirmed',
+        confirmed_by: profile.id,
+        confirmed_at: now,
+      })
+      .eq('id', current.active_confirmation_id)
+      .eq('status', 'pending')
+
+    if (confErr) return { ok: false, error: confErr.message }
+
+    const { error: updErr } = await supabase
+      .from('settlements')
+      .update({
+        status: 'approved',
+        guide_confirmed_at: now,
+        guide_confirmed_by: profile.id,
+        reviewed_at: now,
+        reviewed_by: profile.id,
+        reject_reason: null,
+        admin_note: params.adminNote?.trim() || full.admin_note,
+      })
+      .eq('id', params.id)
+      .eq('status', 'pending_guide_confirmation')
+
+    if (updErr) return { ok: false, error: updErr.message }
+
+    await insertAuditEvent(supabase, {
+      settlementId: params.id,
+      actorId: profile.id,
+      actorRole: profile.role,
+      action: 'status_change',
+      fromStatus: 'pending_guide_confirmation',
+      toStatus: 'approved',
+      note: params.adminNote?.trim() || 'master_approve',
+    })
+
+    revalidateSettlementPaths(params.id)
+    return { ok: true }
+  }
+
+  if (params.action === 'reopen') {
+    const { error } = await supabase
+      .from('settlements')
+      .update({
+        status: 'approved',
+        paid_at: null,
+        reviewed_by: profile.id,
+        admin_note: params.adminNote?.trim() || null,
+      })
+      .eq('id', params.id)
+      .eq('status', 'paid')
+
+    if (error) return { ok: false, error: error.message }
+
+    await insertAuditEvent(supabase, {
+      settlementId: params.id,
+      actorId: profile.id,
+      actorRole: profile.role,
+      action: 'status_change',
+      fromStatus: 'paid',
+      toStatus: 'approved',
+      note: params.adminNote?.trim() || 'master_reopen_paid',
+    })
+
+    revalidateSettlementPaths(params.id)
+    return { ok: true }
+  }
+
   const updates: Record<string, unknown> = {
     reviewed_by: profile.id,
     admin_note: params.adminNote ?? null,
@@ -888,13 +979,6 @@ export async function reviewSettlement(params: {
   let auditAction: import('@/types').SettlementAuditAction = 'status_change'
 
   switch (params.action) {
-    case 'approve':
-      updates.status = 'approved'
-      updates.reviewed_at = now
-      updates.reject_reason = null
-      toStatus = 'approved'
-      auditAction = 'status_change'
-      break
     case 'reject':
       if (!params.rejectReason?.trim()) return { ok: false, error: '반려 사유를 입력해주세요.' }
       updates.status = 'rejected'
@@ -1108,8 +1192,8 @@ export async function sendForConfirmation(
   adminNote?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const profile = await getProfile()
-  if (!profile || !isAdminTier(profile.role)) {
-    return { ok: false, error: '관리자 권한이 필요합니다.' }
+  if (!profile || !isAdmin(profile.role)) {
+    return { ok: false, error: '운영 검토 작업은 관리자만 할 수 있습니다.' }
   }
 
   const supabase = await createClient()

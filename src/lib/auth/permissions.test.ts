@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assertAdminReadOnlyAfterApproval,
   assertRoleCanMarkPaid,
   assertRoleCanSaveAdminSettlement,
   canAccessAdminRoutes,
   canAccessGuideRoutes,
   canMarkSettlementPaid,
+  canMasterApproveFromPending,
+  canMasterReopenPaid,
+  canOperationalAdminReview,
   canSaveAdminSettlementEdits,
   homePathForRole,
+  isPostApprovalReadOnlyForAdmin,
   settlementRequiresReconfirmAfterMasterAdminEdit,
 } from './permissions'
 
@@ -45,5 +50,24 @@ describe('permissions', () => {
     expect(settlementRequiresReconfirmAfterMasterAdminEdit('approved', 'master_admin')).toBe(true)
     expect(settlementRequiresReconfirmAfterMasterAdminEdit('submitted', 'master_admin')).toBe(false)
     expect(settlementRequiresReconfirmAfterMasterAdminEdit('approved', 'admin')).toBe(false)
+  })
+
+  it('locks admin after approved or paid', () => {
+    expect(isPostApprovalReadOnlyForAdmin('approved')).toBe(true)
+    expect(isPostApprovalReadOnlyForAdmin('paid')).toBe(true)
+    expect(isPostApprovalReadOnlyForAdmin('submitted')).toBe(false)
+    expect(assertAdminReadOnlyAfterApproval('admin', 'approved').ok).toBe(false)
+    expect(assertAdminReadOnlyAfterApproval('admin', 'paid').ok).toBe(false)
+    expect(assertAdminReadOnlyAfterApproval('master_admin', 'approved').ok).toBe(true)
+    expect(assertRoleCanSaveAdminSettlement('admin', 'approved').ok).toBe(false)
+  })
+
+  it('restricts operational review to admin role only', () => {
+    expect(canOperationalAdminReview('admin')).toBe(true)
+    expect(canOperationalAdminReview('master_admin')).toBe(false)
+    expect(canMasterApproveFromPending('pending_guide_confirmation', 'master_admin')).toBe(true)
+    expect(canMasterApproveFromPending('pending_guide_confirmation', 'admin')).toBe(false)
+    expect(canMasterReopenPaid('paid', 'master_admin')).toBe(true)
+    expect(canMasterReopenPaid('approved', 'master_admin')).toBe(false)
   })
 })

@@ -244,6 +244,13 @@ export const STATUS_META: Record<SettlementStatus, { label: string; bg: string; 
 }
 
 export {
+  isPostApprovalReadOnlyForAdmin,
+  canOperationalAdminReview,
+  canMasterApproveFromPending,
+  canMasterReopenPaid,
+} from '@/lib/auth/permissions'
+
+export {
   GUIDE_EDITABLE,
   GUIDE_CONFIRM_ONLY,
   ADMIN_EDITABLE,

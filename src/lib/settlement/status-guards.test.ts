@@ -165,8 +165,31 @@ describe('assertAdminReviewAction', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('allows reject from submitted', () => {
+  it('allows master approve from pending_guide_confirmation', () => {
+    expect(
+      assertAdminReviewAction(
+        { ...base, status: 'pending_guide_confirmation' },
+        'approve',
+        'master_admin',
+      ).ok,
+    ).toBe(true)
+  })
+
+  it('allows reject from submitted for admin only', () => {
     expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'admin').ok).toBe(true)
+    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'master_admin').ok).toBe(
+      false,
+    )
+  })
+
+  it('blocks admin mutations after approval', () => {
+    expect(assertAdminReviewAction({ ...base, status: 'approved' }, 'reject', 'admin').ok).toBe(false)
+    expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'request_edit', 'admin').ok).toBe(false)
+  })
+
+  it('allows master reopen from paid', () => {
+    expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'reopen', 'master_admin').ok).toBe(true)
+    expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'reopen', 'admin').ok).toBe(false)
   })
 
   it('blocks pay before guide confirmation when snapshot exists', () => {
@@ -180,5 +203,12 @@ describe('assertAdminReviewAction', () => {
       'master_admin',
     )
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('role-scoped operational actions', () => {
+  it('allows admin but not master_admin for send/reject/edit gates', () => {
+    expect(canAdminSendForConfirmation('submitted', 'admin')).toBe(true)
+    expect(canAdminSendForConfirmation('submitted', 'master_admin')).toBe(false)
   })
 })

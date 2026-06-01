@@ -1,8 +1,12 @@
 import {
+  assertAdminReadOnlyAfterApproval,
   assertRoleCanMarkPaid,
   assertRoleCanSaveAdminSettlement,
   canMarkSettlementPaid,
   canMasterAdminEditApprovedSettlement,
+  canMasterApproveFromPending,
+  canMasterReopenPaid,
+  canOperationalAdminReview,
   canSaveAdminSettlementEdits,
   isAdminTier,
   type SettlementPayGuardInput,
@@ -77,16 +81,19 @@ export function canAdminDirectApprove(_status: SettlementStatus): boolean {
   return false
 }
 
-export function canAdminReject(status: SettlementStatus): boolean {
+export function canAdminReject(status: SettlementStatus, role?: UserRole): boolean {
+  if (role !== undefined && !canOperationalAdminReview(role)) return false
   return ADMIN_PRE_CONFIRM_REVIEW.includes(status)
 }
 
-export function canAdminRequestEdit(status: SettlementStatus): boolean {
+export function canAdminRequestEdit(status: SettlementStatus, role?: UserRole): boolean {
+  if (role !== undefined && !canOperationalAdminReview(role)) return false
   return ADMIN_PRE_CONFIRM_REVIEW.includes(status)
 }
 
 /** Admin sends guide the confirmation packet after review/edit. */
-export function canAdminSendForConfirmation(status: SettlementStatus): boolean {
+export function canAdminSendForConfirmation(status: SettlementStatus, role?: UserRole): boolean {
+  if (role !== undefined && !canOperationalAdminReview(role)) return false
   return status === 'submitted' || status === 'clarification_requested'
 }
 
@@ -142,28 +149,41 @@ export function canMarkSettlementPaidForRole(
   return canMarkSettlementPaid(role) && canAdminPaySettlement(s)
 }
 
-export type AdminReviewAction = 'approve' | 'reject' | 'request_edit' | 'pay'
+export type AdminReviewAction = 'approve' | 'reject' | 'request_edit' | 'pay' | 'reopen'
 
 export function assertAdminReviewAction(
   s: SettlementPayGuardInput,
   action: AdminReviewAction,
   role: UserRole,
 ): { ok: true } | { ok: false; error: string } {
+  const readOnly = assertAdminReadOnlyAfterApproval(role, s.status)
+  if (!readOnly.ok && action !== 'reopen') {
+    return readOnly
+  }
+
   switch (action) {
     case 'approve':
-      if (!canAdminDirectApprove(s.status)) {
-        return {
-          ok: false,
-          error: '관리자 직접 승인은 사용할 수 없습니다. 가이드 최종 확인 워크플로(Phase B)를 사용하세요.',
-        }
+      if (!canMasterApproveFromPending(s.status, role)) {
+        return { ok: false, error: '최종 승인은 마스터 관리자만 할 수 있습니다.' }
+      }
+      return { ok: true }
+    case 'reopen':
+      if (!canMasterReopenPaid(s.status, role)) {
+        return { ok: false, error: '지급 완료 정산서 재오픈은 마스터 관리자만 할 수 있습니다.' }
       }
       return { ok: true }
     case 'reject':
+      if (!canOperationalAdminReview(role)) {
+        return { ok: false, error: '운영 검토 작업은 관리자만 할 수 있습니다.' }
+      }
       if (!canAdminReject(s.status)) {
         return { ok: false, error: '현재 상태에서는 반려할 수 없습니다.' }
       }
       return { ok: true }
     case 'request_edit':
+      if (!canOperationalAdminReview(role)) {
+        return { ok: false, error: '운영 검토 작업은 관리자만 할 수 있습니다.' }
+      }
       if (!canAdminRequestEdit(s.status)) {
         return { ok: false, error: '현재 상태에서는 수정 요청을 할 수 없습니다.' }
       }

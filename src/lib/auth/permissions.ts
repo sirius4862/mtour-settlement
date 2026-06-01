@@ -7,6 +7,7 @@ export function isGuide(role: UserRole): role is 'guide' {
   return role === 'guide'
 }
 
+/** Plain `admin` role — use only to distinguish staff admin from master_admin (e.g. post-approval read-only). */
 export function isAdmin(role: UserRole): role is 'admin' {
   return role === 'admin'
 }
@@ -45,9 +46,9 @@ export function isPostApprovalReadOnlyForAdmin(status: SettlementStatus): boolea
   return status === 'approved' || status === 'paid'
 }
 
-/** Pre-payment operational review — admin role only (not master_admin). */
+/** Pre-payment operational review — admin tier (admin + master_admin). */
 export function canOperationalAdminReview(role: UserRole): boolean {
-  return isAdmin(role)
+  return isAdminTier(role)
 }
 
 export function canMasterAdminEditApprovedSettlement(

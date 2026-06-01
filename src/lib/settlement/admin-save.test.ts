@@ -18,7 +18,10 @@ describe('assertAdminSaveSettlement', () => {
     expect(assertAdminSaveSettlement('admin', 'clarification_requested').ok).toBe(true)
   })
 
-  it('allows master_admin on approved only', () => {
+  it('allows admin tier pre-confirm edits and master_admin approved edits only', () => {
+    expect(assertAdminSaveSettlement('admin', 'submitted').ok).toBe(true)
+    expect(assertAdminSaveSettlement('master_admin', 'submitted').ok).toBe(true)
+    expect(assertAdminSaveSettlement('master_admin', 'clarification_requested').ok).toBe(true)
     expect(assertAdminSaveSettlement('master_admin', 'approved').ok).toBe(true)
     expect(assertAdminSaveSettlement('admin', 'approved').ok).toBe(false)
   })
@@ -38,8 +41,9 @@ describe('canMasterAdminEditSettlement', () => {
 })
 
 describe('canAdminOrMasterAdminEditSettlement', () => {
-  it('combines pre-confirm admin and post-confirm master_admin access', () => {
+  it('combines pre-confirm admin tier and post-confirm master_admin access', () => {
     expect(canAdminOrMasterAdminEditSettlement('submitted', 'admin')).toBe(true)
+    expect(canAdminOrMasterAdminEditSettlement('submitted', 'master_admin')).toBe(true)
     expect(canAdminOrMasterAdminEditSettlement('approved', 'admin')).toBe(false)
     expect(canAdminOrMasterAdminEditSettlement('approved', 'master_admin')).toBe(true)
   })

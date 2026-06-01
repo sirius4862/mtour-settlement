@@ -5,6 +5,8 @@ import {
   assertRoleCanSaveAdminSettlement,
   canAccessAdminRoutes,
   canAccessGuideRoutes,
+  canAdminReviewActions,
+  canAdminReviewEditSettlement,
   canMarkSettlementPaid,
   canMasterApproveFromPending,
   canMasterReopenPaid,
@@ -62,12 +64,24 @@ describe('permissions', () => {
     expect(assertRoleCanSaveAdminSettlement('admin', 'approved').ok).toBe(false)
   })
 
-  it('restricts operational review to admin role only', () => {
-    expect(canOperationalAdminReview('admin')).toBe(true)
-    expect(canOperationalAdminReview('master_admin')).toBe(false)
+  it('master_admin inherits every admin operational permission', () => {
+    expect(canOperationalAdminReview('master_admin')).toBe(true)
+    expect(canAdminReviewActions('master_admin')).toBe(true)
+    expect(canAdminReviewEditSettlement('submitted', 'master_admin')).toBe(true)
+    expect(canAdminReviewEditSettlement('clarification_requested', 'master_admin')).toBe(true)
+    expect(assertAdminReadOnlyAfterApproval('master_admin', 'approved').ok).toBe(true)
+    expect(assertAdminReadOnlyAfterApproval('master_admin', 'paid').ok).toBe(true)
+    expect(canMarkSettlementPaid('master_admin')).toBe(true)
     expect(canMasterApproveFromPending('pending_guide_confirmation', 'master_admin')).toBe(true)
-    expect(canMasterApproveFromPending('pending_guide_confirmation', 'admin')).toBe(false)
     expect(canMasterReopenPaid('paid', 'master_admin')).toBe(true)
-    expect(canMasterReopenPaid('approved', 'master_admin')).toBe(false)
+  })
+
+  it('keeps final authority master_admin-only', () => {
+    expect(canOperationalAdminReview('admin')).toBe(true)
+    expect(canOperationalAdminReview('guide')).toBe(false)
+    expect(canMasterApproveFromPending('pending_guide_confirmation', 'admin')).toBe(false)
+    expect(canMarkSettlementPaid('admin')).toBe(false)
+    expect(canMasterReopenPaid('paid', 'admin')).toBe(false)
+    expect(canSaveAdminSettlementEdits('approved', 'admin')).toBe(false)
   })
 })

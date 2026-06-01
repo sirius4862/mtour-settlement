@@ -175,11 +175,12 @@ describe('assertAdminReviewAction', () => {
     ).toBe(true)
   })
 
-  it('allows reject from submitted for admin only', () => {
+  it('allows reject from submitted for admin tier', () => {
     expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'admin').ok).toBe(true)
     expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'master_admin').ok).toBe(
-      false,
+      true,
     )
+    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'guide').ok).toBe(false)
   })
 
   it('blocks admin mutations after approval', () => {
@@ -207,8 +208,9 @@ describe('assertAdminReviewAction', () => {
 })
 
 describe('role-scoped operational actions', () => {
-  it('allows admin but not master_admin for send/reject/edit gates', () => {
+  it('allows admin tier for send/reject/edit gates', () => {
     expect(canAdminSendForConfirmation('submitted', 'admin')).toBe(true)
-    expect(canAdminSendForConfirmation('submitted', 'master_admin')).toBe(false)
+    expect(canAdminSendForConfirmation('submitted', 'master_admin')).toBe(true)
+    expect(canAdminSendForConfirmation('submitted', 'guide')).toBe(false)
   })
 })

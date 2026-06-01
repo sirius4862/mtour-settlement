@@ -45,7 +45,7 @@ import {
   assertGuideConfirmAction,
 } from '@/lib/settlement/status-guards'
 import {
-  isAdmin,
+  canOperationalAdminReview,
   isAdminTier,
   settlementRequiresReconfirmAfterMasterAdminEdit,
 } from '@/lib/auth/permissions'
@@ -1192,8 +1192,8 @@ export async function sendForConfirmation(
   adminNote?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const profile = await getProfile()
-  if (!profile || !isAdmin(profile.role)) {
-    return { ok: false, error: '운영 검토 작업은 관리자만 할 수 있습니다.' }
+  if (!profile || !canOperationalAdminReview(profile.role)) {
+    return { ok: false, error: '관리자 권한이 필요합니다.' }
   }
 
   const supabase = await createClient()

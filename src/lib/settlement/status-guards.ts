@@ -174,7 +174,7 @@ export function assertAdminReviewAction(
       return { ok: true }
     case 'reject':
       if (!canOperationalAdminReview(role)) {
-        return { ok: false, error: '운영 검토 작업은 관리자만 할 수 있습니다.' }
+        return { ok: false, error: '관리자 권한이 필요합니다.' }
       }
       if (!canAdminReject(s.status)) {
         return { ok: false, error: '현재 상태에서는 반려할 수 없습니다.' }
@@ -182,7 +182,7 @@ export function assertAdminReviewAction(
       return { ok: true }
     case 'request_edit':
       if (!canOperationalAdminReview(role)) {
-        return { ok: false, error: '운영 검토 작업은 관리자만 할 수 있습니다.' }
+        return { ok: false, error: '관리자 권한이 필요합니다.' }
       }
       if (!canAdminRequestEdit(s.status)) {
         return { ok: false, error: '현재 상태에서는 수정 요청을 할 수 없습니다.' }

@@ -1,7 +1,9 @@
 'use server'
 
+import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
 import type {
   SettlementWithTour,
   SettlementFull,
@@ -53,6 +55,7 @@ import {
   ADMIN_SETTLEMENT_PAGE_SIZE,
   ADMIN_SETTLEMENT_SELECT,
   ACTION_NEEDED_STATUSES,
+  aggregateSettlementStatusCounts,
   escapeIlikePattern,
   sortActionNeededSettlements,
   type AdminSettlementListFilters,
@@ -166,13 +169,36 @@ export async function getAvailableTours(): Promise<Tour[]> {
   if (!tours?.length) return []
 
   const { data: used } = await supabase
-    .from('settlements').select('tour_id').eq('guide_id', user.id)
+    .from(GUIDE_READ.settlements).select('tour_id').eq('guide_id', user.id)
 
   const usedSet = new Set((used ?? []).map((r: { tour_id: string }) => r.tour_id))
   return (tours as Tour[]).filter((t) => !usedSet.has(t.id))
 }
 
-// ── 정산서 조회 ────────────────────────────────────────────────
+const LINE_ITEM_TABLES = [
+  'hotel_items',
+  'meal_items',
+  'entrance_items',
+  'other_expense_items',
+  'shopping_items',
+  'option_items',
+  'receipts',
+] as const
+
+type LineItemTable = (typeof LINE_ITEM_TABLES)[number]
+
+function tableForAudience(base: 'settlements' | LineItemTable, useGuideRead: boolean): string {
+  if (!useGuideRead) return base
+  if (base === 'settlements') return GUIDE_READ.settlements
+  return GUIDE_READ[base]
+}
+
+async function shouldUseGuideReadTables(force?: 'guide' | 'admin'): Promise<boolean> {
+  if (force === 'admin') return false
+  if (force === 'guide') return true
+  const profile = await getProfile()
+  return profile?.role === 'guide'
+}
 
 /** 가이드 본인 정산서 목록 */
 export async function getMySettlements(): Promise<SettlementWithTour[]> {
@@ -180,8 +206,10 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return []
 
+  const useGuideRead = await shouldUseGuideReadTables('guide')
+
   const { data } = await supabase
-    .from('settlements')
+    .from(tableForAudience('settlements', useGuideRead))
     .select('*, tour:tours(*)')
     .eq('guide_id', user.id)
     .order('created_at', { ascending: false })
@@ -191,19 +219,26 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
   ) as SettlementWithTour[]
 }
 
-/** Guide-facing settlement load — admin-only fields redacted. */
+/** Guide-facing settlement load — DB-redacted view + app-layer sanitize. */
 export async function getSettlementFullForGuide(id: string): Promise<SettlementFull | null> {
-  const full = await getSettlementFull(id)
+  const full = await getSettlementFull(id, { audience: 'guide' })
   if (!full) return null
   return sanitizeSettlementFullForGuide(full)
 }
 
 /** 정산서 상세 + 모든 항목 */
-export async function getSettlementFull(id: string): Promise<SettlementFull | null> {
+export async function getSettlementFull(
+  id: string,
+  options?: { audience?: 'guide' | 'admin' },
+): Promise<SettlementFull | null> {
   const supabase = await createClient()
+  const useGuideRead = await shouldUseGuideReadTables(options?.audience)
 
   const { data: s, error: settlementError } = await supabase
-    .from('settlements').select('*, tour:tours(*)').eq('id', id).single()
+    .from(tableForAudience('settlements', useGuideRead))
+    .select('*, tour:tours(*)')
+    .eq('id', id)
+    .single()
   if (settlementError || !s) {
     if (settlementError) {
       console.error('[getSettlementFull] settlements:', settlementError.message)
@@ -212,12 +247,12 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
   }
 
   const fetchRows = async (
-    table: string,
+    table: LineItemTable,
     orderColumn: string,
     ascending = true,
   ) => {
     const { data, error } = await supabase
-      .from(table)
+      .from(tableForAudience(table, useGuideRead))
       .select('*')
       .eq('settlement_id', id)
       .order(orderColumn, { ascending })
@@ -229,7 +264,7 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
   }
 
   const [
-    hotels, meals, entrances, others, shoppings, options, companyExpenses, receipts,
+    hotels, meals, entrances, others, shoppings, optionItems, receipts,
   ] = await Promise.all([
     fetchRows('hotel_items', 'sort_order'),
     fetchRows('meal_items', 'sort_order'),
@@ -237,9 +272,22 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
     fetchRows('other_expense_items', 'sort_order'),
     fetchRows('shopping_items', 'sort_order'),
     fetchRows('option_items', 'sort_order'),
-    fetchRows('company_expense_items', 'sort_order'),
     fetchRows('receipts', 'created_at'),
   ])
+
+  let companyExpenses: SettlementFull['company_expenses'] = []
+  if (!useGuideRead) {
+    const { data, error } = await supabase
+      .from('company_expense_items')
+      .select('*')
+      .eq('settlement_id', id)
+      .order('sort_order', { ascending: true })
+    if (error) {
+      console.error('[getSettlementFull] company_expense_items:', error.message)
+    } else {
+      companyExpenses = data ?? []
+    }
+  }
 
   return {
     ...s,
@@ -248,7 +296,7 @@ export async function getSettlementFull(id: string): Promise<SettlementFull | nu
     entrances,
     others,
     shoppings,
-    options,
+    options: optionItems,
     company_expenses: companyExpenses,
     receipts,
   } as SettlementFull
@@ -337,37 +385,20 @@ export async function getAdminActionQueue(limit = 10): Promise<AdminSettlementLi
   return sortActionNeededSettlements((data ?? []) as unknown as AdminSettlementListItem[]).slice(0, limit)
 }
 
-/** 대시보드 월별 상태 집계 */
-export async function getAdminDashboardStats(
-  yearMonth: string,
-): Promise<{ status: SettlementStatus; count: number }[]> {
+/** 대시보드 상태 집계 (global — same scope as action queue) */
+export async function getAdminDashboardStats(): Promise<
+  { status: SettlementStatus; count: number }[]
+> {
   const supabase = await createClient()
-  const statuses: SettlementStatus[] = [
-    'draft',
-    'submitted',
-    'pending_guide_confirmation',
-    'clarification_requested',
-    'approved',
-    'rejected',
-    'edit_requested',
-    'paid',
-  ]
 
-  const { data, error } = await supabase
-    .from('settlements')
-    .select('status')
-    .eq('year_month', yearMonth)
+  const { data, error } = await supabase.from('settlements').select('status')
 
   if (error) {
     console.error('getAdminDashboardStats:', error.message)
-    return statuses.map((status) => ({ status, count: 0 }))
+    return aggregateSettlementStatusCounts([])
   }
 
-  const rows = data ?? []
-  return statuses.map((status) => ({
-    status,
-    count: rows.filter((r) => r.status === status).length,
-  }))
+  return aggregateSettlementStatusCounts(data ?? [])
 }
 
 // ── 정산서 생성 / 임시저장 ─────────────────────────────────────
@@ -441,25 +472,23 @@ export async function upsertSettlement(payload: {
       return { error }
     }
 
-    const { data, error } = await supabase
+    const newId = randomUUID()
+    const { error } = await supabase
       .from('settlements')
-      .insert({ ...row, status: 'draft' })
-      .select('id')
-      .single()
+      .insert({ ...row, status: 'draft', id: newId })
     if (
       error &&
       (error.message.includes('option_receivable_usd') ||
         error.message.includes('tip_transfer_usd'))
     ) {
       const { option_receivable_usd: _or, tip_transfer_usd: _tt, ...legacyRow } = row
-      const legacy = await supabase
+      const legacyId = randomUUID()
+      const { error: legacyError } = await supabase
         .from('settlements')
-        .insert({ ...legacyRow, status: 'draft' })
-        .select('id')
-        .single()
-      return { error: legacy.error, id: legacy.data?.id }
+        .insert({ ...legacyRow, status: 'draft', id: legacyId })
+      return { error: legacyError, id: legacyError ? undefined : legacyId }
     }
-    return { error, id: data?.id }
+    return { error, id: error ? undefined : newId }
   }
 
   const writeResult = await writeSettlement(base)
@@ -481,7 +510,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
   const supabase = await createClient()
 
   const { data: current } = await supabase
-    .from('settlements')
+    .from(GUIDE_READ.settlements)
     .select('id, status')
     .eq('id', id)
     .eq('guide_id', profile.id)
@@ -490,7 +519,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
 
   if (!current) return { ok: false, error: '제출할 수 없는 정산서입니다.' }
 
-  const full = await getSettlementFull(id)
+  const full = await getSettlementFull(id, { audience: 'guide' })
   if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
 
   const payload = buildSnapshotPayload(full)
@@ -543,7 +572,7 @@ async function assertEditableSettlement(
   guideId: string,
 ) {
   const { data } = await supabase
-    .from('settlements')
+    .from(GUIDE_READ.settlements)
     .select('id, status')
     .eq('id', settlementId)
     .eq('guide_id', guideId)
@@ -667,8 +696,14 @@ export async function saveSettlementDraft(
 }> {
   let payloadToSave = payload
   let preservedTourFeeUsd = 0
+  const profile = await getProfile()
+  if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
+  const useGuideRead = profile.role === 'guide'
+
   if (payload.settlementId) {
-    const existing = await getSettlementFull(payload.settlementId)
+    const existing = await getSettlementFull(payload.settlementId, {
+      audience: useGuideRead ? 'guide' : 'admin',
+    })
     if (!existing) {
       return { ok: false, error: '정산서를 불러올 수 없습니다. 저장을 중단했습니다.' }
     }
@@ -708,7 +743,7 @@ export async function saveSettlementDraft(
     return { ok: false, id: headerResult.id, error: itemsResult.error }
   }
 
-  const full = await getSettlementFull(headerResult.id)
+  const full = await getSettlementFull(headerResult.id, { audience: 'guide' })
   if (!full) {
     return { ok: true, id: headerResult.id }
   }
@@ -1241,7 +1276,7 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
   const supabase = await createClient()
 
   const { data: current } = await supabase
-    .from('settlements')
+    .from(GUIDE_READ.settlements)
     .select('id, status, guide_id, active_confirmation_id')
     .eq('id', id)
     .single()
@@ -1259,7 +1294,7 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
     return { ok: false, error: '활성 확인 요청이 없습니다.' }
   }
 
-  const full = await getSettlementFull(id)
+  const full = await getSettlementFull(id, { audience: 'guide' })
   if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
 
   const payload = buildSnapshotPayload(full)
@@ -1327,7 +1362,7 @@ export async function guideRequestClarification(
   const supabase = await createClient()
 
   const { data: current } = await supabase
-    .from('settlements')
+    .from(GUIDE_READ.settlements)
     .select('id, status, guide_id')
     .eq('id', id)
     .single()
@@ -1377,14 +1412,14 @@ export async function getGuideConfirmationPacket(
   const profile = await getProfile()
   if (!profile || profile.role !== 'guide') return null
 
-  const full = await getSettlementFull(id)
+  const full = await getSettlementFull(id, { audience: 'guide' })
   if (!full || full.guide_id !== profile.id) return null
   if (full.status !== 'pending_guide_confirmation' || !full.active_confirmation_id) return null
 
   const supabase = await createClient()
 
   const { data: confirmation } = await supabase
-    .from('settlement_confirmations')
+    .from(GUIDE_READ.settlement_confirmations)
     .select('snapshot_before_id, snapshot_after_id')
     .eq('id', full.active_confirmation_id)
     .eq('status', 'pending')
@@ -1394,12 +1429,12 @@ export async function getGuideConfirmationPacket(
 
   const [{ data: beforeRow }, { data: afterRow }] = await Promise.all([
     supabase
-      .from('settlement_snapshots')
+      .from(GUIDE_READ.settlement_snapshots)
       .select('payload_json')
       .eq('id', confirmation.snapshot_before_id)
       .maybeSingle(),
     supabase
-      .from('settlement_snapshots')
+      .from(GUIDE_READ.settlement_snapshots)
       .select('payload_json')
       .eq('id', confirmation.snapshot_after_id)
       .maybeSingle(),
@@ -1409,7 +1444,7 @@ export async function getGuideConfirmationPacket(
   const afterPayload = parseSnapshotPayload(afterRow?.payload_json)
 
   const { data: changes } = await supabase
-    .from('settlement_field_changes')
+    .from(GUIDE_READ.settlement_field_changes)
     .select('*')
     .eq('confirmation_id', full.active_confirmation_id)
     .order('created_at', { ascending: true })

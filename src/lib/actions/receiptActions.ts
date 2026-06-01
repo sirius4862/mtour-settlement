@@ -1,9 +1,11 @@
 'use server'
 
+import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { isAdminTier } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
-import type { Receipt, SettlementStatus } from '@/types'
+import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
+import type { Receipt, SettlementStatus, UserRole } from '@/types'
 import { GUIDE_EDITABLE } from '@/types'
 import { buildReceiptStoragePath } from '@/lib/receipt/paths'
 import { receiptTargetToColumns } from '@/lib/receipt/targets'
@@ -19,19 +21,38 @@ async function getProfile() {
     .select('id,role')
     .eq('id', user.id)
     .single()
-  return data as { id: string; role: string } | null
+  return data as { id: string; role: UserRole } | null
 }
 
-async function assertReceiptEditable(settlementId: string, guideId: string) {
+function lineItemTableForGuide(base: string): string {
+  if (base in GUIDE_READ) {
+    return GUIDE_READ[base as keyof typeof GUIDE_READ]
+  }
+  return base
+}
+
+async function assertReceiptEditable(
+  settlementId: string,
+  userId: string,
+  role: UserRole,
+) {
   const supabase = await createClient()
+  const isGuide = role === 'guide'
+  const settlementTable = isGuide ? GUIDE_READ.settlements : 'settlements'
   const { data } = await supabase
-    .from('settlements')
+    .from(settlementTable)
     .select('id, status, guide_id')
     .eq('id', settlementId)
     .maybeSingle()
 
-  if (!data || data.guide_id !== guideId) {
+  if (!data) {
     return { ok: false as const, error: '정산서를 찾을 수 없습니다.' }
+  }
+  if (isGuide && data.guide_id !== userId) {
+    return { ok: false as const, error: '정산서를 찾을 수 없습니다.' }
+  }
+  if (!isGuide && !isAdminTier(role)) {
+    return { ok: false as const, error: '권한이 없습니다.' }
   }
   if (!GUIDE_EDITABLE.includes(data.status as SettlementStatus)) {
     return { ok: false as const, error: '제출된 정산서는 영수증을 수정할 수 없습니다.' }
@@ -55,7 +76,7 @@ export async function createReceiptUploadUrl(params: {
 }): Promise<{ ok: boolean; signedUrl?: string; path?: string; error?: string }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
-  if (profile.role !== 'guide' && !isAdminTier(profile.role as import('@/types').UserRole)) {
+  if (profile.role !== 'guide' && !isAdminTier(profile.role)) {
     return { ok: false, error: '권한이 없습니다.' }
   }
 
@@ -65,7 +86,7 @@ export async function createReceiptUploadUrl(params: {
   const mimeErr = validateMime(params.mimeType)
   if (mimeErr) return { ok: false, error: mimeErr }
 
-  const editable = await assertReceiptEditable(params.settlementId, profile.id)
+  const editable = await assertReceiptEditable(params.settlementId, profile.id, profile.role)
   if (!editable.ok) return { ok: false, error: editable.error }
 
   const storagePath = buildReceiptStoragePath(params.settlementId, params.fileName)
@@ -94,7 +115,7 @@ export async function registerReceiptMetadata(params: {
   const mimeErr = validateMime(params.mimeType)
   if (mimeErr) return { ok: false, error: mimeErr }
 
-  const editable = await assertReceiptEditable(params.settlementId, profile.id)
+  const editable = await assertReceiptEditable(params.settlementId, profile.id, profile.role)
   if (!editable.ok) return { ok: false, error: editable.error }
 
   if (params.target.kind !== 'settlement' && !params.target.rowId) {
@@ -103,6 +124,7 @@ export async function registerReceiptMetadata(params: {
 
   const supabase = await createClient()
   const fk = receiptTargetToColumns(params.target)
+  const isGuide = profile.role === 'guide'
 
   if (params.target.rowId) {
     const tableMap = {
@@ -115,8 +137,9 @@ export async function registerReceiptMetadata(params: {
     } as const
     const table = tableMap[params.target.kind as keyof typeof tableMap]
     if (table) {
+      const readTable = isGuide ? lineItemTableForGuide(table) : table
       const { data: row } = await supabase
-        .from(table)
+        .from(readTable)
         .select('id')
         .eq('id', params.target.rowId)
         .eq('settlement_id', params.settlementId)
@@ -125,25 +148,36 @@ export async function registerReceiptMetadata(params: {
     }
   }
 
-  const { data, error } = await supabase
-    .from('receipts')
-    .insert({
-      settlement_id: params.settlementId,
-      ...fk,
-      storage_path: params.storagePath,
-      file_name: params.fileName,
-      file_size: params.fileSize,
-      mime_type: params.mimeType,
-      uploaded_by: profile.id,
-    })
-    .select('*')
-    .single()
+  const receiptId = randomUUID()
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('receipts').insert({
+    id: receiptId,
+    settlement_id: params.settlementId,
+    ...fk,
+    storage_path: params.storagePath,
+    file_name: params.fileName,
+    file_size: params.fileSize,
+    mime_type: params.mimeType,
+    uploaded_by: profile.id,
+  })
 
-  if (error || !data) return { ok: false, error: error?.message ?? '메타 저장 실패' }
+  if (error) return { ok: false, error: error.message ?? '메타 저장 실패' }
+
+  const receipt: Receipt = {
+    id: receiptId,
+    settlement_id: params.settlementId,
+    ...fk,
+    storage_path: params.storagePath,
+    file_name: params.fileName,
+    file_size: params.fileSize,
+    mime_type: params.mimeType,
+    uploaded_by: profile.id,
+    created_at: now,
+  }
 
   revalidatePath(`/guide/settlements/${params.settlementId}`)
   revalidatePath(`/guide/settlements/${params.settlementId}/edit`)
-  return { ok: true, receipt: data as Receipt }
+  return { ok: true, receipt }
 }
 
 export async function deleteReceipt(receiptId: string): Promise<{ ok: boolean; error?: string }> {
@@ -151,15 +185,16 @@ export async function deleteReceipt(receiptId: string): Promise<{ ok: boolean; e
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
 
   const supabase = await createClient()
+  const receiptTable = profile.role === 'guide' ? GUIDE_READ.receipts : 'receipts'
   const { data: receipt } = await supabase
-    .from('receipts')
+    .from(receiptTable)
     .select('*')
     .eq('id', receiptId)
     .maybeSingle()
 
   if (!receipt) return { ok: false, error: '영수증을 찾을 수 없습니다.' }
 
-  const editable = await assertReceiptEditable(receipt.settlement_id, profile.id)
+  const editable = await assertReceiptEditable(receipt.settlement_id, profile.id, profile.role)
   if (!editable.ok) return { ok: false, error: editable.error }
 
   if (profile.role === 'guide' && receipt.uploaded_by !== profile.id) {
@@ -188,8 +223,9 @@ export async function getReceiptSignedUrls(
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
 
   const supabase = await createClient()
+  const receiptTable = profile.role === 'guide' ? GUIDE_READ.receipts : 'receipts'
   const { data: receipts } = await supabase
-    .from('receipts')
+    .from(receiptTable)
     .select('id, storage_path, settlement_id')
     .in('id', receiptIds)
 
@@ -213,22 +249,23 @@ export async function listSettlementReceipts(
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
 
   const supabase = await createClient()
+  const isGuide = profile.role === 'guide'
+  const settlementTable = isGuide ? GUIDE_READ.settlements : 'settlements'
+  const receiptTable = isGuide ? GUIDE_READ.receipts : 'receipts'
+
   const { data: settlement } = await supabase
-    .from('settlements')
+    .from(settlementTable)
     .select('guide_id')
     .eq('id', settlementId)
     .maybeSingle()
 
   if (!settlement) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
-  if (
-    profile.role === 'guide' &&
-    settlement.guide_id !== profile.id
-  ) {
+  if (isGuide && settlement.guide_id !== profile.id) {
     return { ok: false, error: '권한이 없습니다.' }
   }
 
   const { data, error } = await supabase
-    .from('receipts')
+    .from(receiptTable)
     .select('*')
     .eq('settlement_id', settlementId)
     .order('created_at', { ascending: false })

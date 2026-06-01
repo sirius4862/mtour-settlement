@@ -19,8 +19,10 @@ function resolveDatabaseUrl(): string | null {
   )
 }
 
+import { resolveMigrationAuthKey as resolveDedicatedMigrationKey } from '@/lib/internal/migration-auth'
+
 export function resolveMigrationAuthKey(): string | null {
-  return process.env.MIGRATION_RUN_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? null
+  return resolveDedicatedMigrationKey()
 }
 
 export async function applyExternalReceivableMigration(): Promise<{

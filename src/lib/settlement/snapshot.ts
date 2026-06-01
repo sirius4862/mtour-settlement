@@ -129,6 +129,7 @@ export const GUIDE_REDACTED_HEADER_KEYS = [
   'vehicle_fee_usd',
   'head_tax_usd',
   'seoul_biz_fee_usd',
+  'tc_company_usd',
 ] as const
 
 /** Remove company profit from denormalized calc summary for guides. */
@@ -165,6 +166,7 @@ export function sanitizeSettlementFullForGuide(full: SettlementFull): Settlement
     vehicle_fee_usd: 0,
     head_tax_usd: 0,
     seoul_biz_fee_usd: 0,
+    tc_company_usd: 0,
     hotels: redactHotelsForGuide(full.hotels),
     shoppings: redactShoppingsForGuide(full.shoppings),
     company_expenses: [],
@@ -182,6 +184,7 @@ export function sanitizeSettlementForGuide<T extends Settlement>(
     vehicle_fee_usd: 0,
     head_tax_usd: 0,
     seoul_biz_fee_usd: 0,
+    tc_company_usd: 0,
     calc_summary_json: redactCalcSummaryJsonForGuide(settlement.calc_summary_json),
   }
 }

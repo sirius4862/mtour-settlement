@@ -5,12 +5,22 @@ import { createMiddlewareClient } from '@/lib/supabase/middleware'
 const PUBLIC_PREFIXES = [
   '/login',
   '/auth/callback',
+]
+
+/** Migration routes — key-gated in route handler; no login bypass for other app routes */
+const MIGRATION_API_PREFIXES = [
   '/api/internal/apply-external-receivable-migration',
   '/api/internal/apply-settlement-schema-migrations',
 ]
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  )
+}
+
+function isMigrationApiPath(pathname: string): boolean {
+  return MIGRATION_API_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   )
 }
@@ -51,6 +61,11 @@ export async function middleware(request: NextRequest) {
 
   // 공개 경로
   if (isPublicPath(pathname)) {
+    return sessionResponse
+  }
+
+  // Internal migration APIs — auth via MIGRATION_RUN_KEY in route handler (404 when unset)
+  if (isMigrationApiPath(pathname)) {
     return sessionResponse
   }
 

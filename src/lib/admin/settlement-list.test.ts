@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   ACTION_NEEDED_STATUSES,
   actionNeededStatusPriority,
+  aggregateSettlementStatusCounts,
+  countActionNeededFromRows,
+  countActionNeededFromStats,
   sortActionNeededSettlements,
 } from './settlement-list'
 
@@ -29,13 +32,48 @@ describe('sortActionNeededSettlements', () => {
     const sorted = sortActionNeededSettlements(rows)
     expect(sorted.map((r) => r.id)).toEqual(['2', '3', '1'])
   })
+})
 
-  it('does not filter by year_month (global queue)', () => {
+describe('aggregateSettlementStatusCounts', () => {
+  it('counts all statuses globally without year_month filter', () => {
     const rows = [
-      { id: 'a', status: 'submitted', updated_at: '2026-05-01T00:00:00Z' },
-      { id: 'b', status: 'submitted', updated_at: '2026-04-01T00:00:00Z' },
+      { status: 'submitted' },
+      { status: 'submitted' },
+      { status: 'submitted' },
+      { status: 'submitted' },
+      { status: 'pending_guide_confirmation' },
+      { status: 'approved' },
     ]
-    expect(sortActionNeededSettlements(rows)).toHaveLength(2)
+    const stats = aggregateSettlementStatusCounts(rows)
+    expect(stats.find((s) => s.status === 'submitted')?.count).toBe(4)
+    expect(stats.find((s) => s.status === 'pending_guide_confirmation')?.count).toBe(1)
+    expect(stats.find((s) => s.status === 'approved')?.count).toBe(1)
+    expect(stats.find((s) => s.status === 'draft')?.count).toBe(0)
+  })
+
+  it('matches action-needed totals between stats and queue rows', () => {
+    const rows = [
+      { status: 'submitted' },
+      { status: 'submitted' },
+      { status: 'clarification_requested' },
+      { status: 'pending_guide_confirmation' },
+      { status: 'approved' },
+    ]
+    const stats = aggregateSettlementStatusCounts(rows)
+    expect(countActionNeededFromStats(stats)).toBe(countActionNeededFromRows(rows))
+    expect(countActionNeededFromStats(stats)).toBe(4)
+  })
+
+  it('action-needed card counts align with queue scope (cross-month submitted)', () => {
+    const rows = [
+      { status: 'submitted', year_month: '2025-11' },
+      { status: 'submitted', year_month: '2025-11' },
+      { status: 'submitted', year_month: '2026-05' },
+      { status: 'submitted', year_month: '2026-05' },
+    ]
+    const stats = aggregateSettlementStatusCounts(rows)
+    expect(stats.find((s) => s.status === 'submitted')?.count).toBe(4)
+    expect(countActionNeededFromStats(stats)).toBe(4)
     expect(actionNeededStatusPriority('submitted')).toBe(2)
   })
 })

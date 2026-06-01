@@ -9,11 +9,8 @@ export const dynamic = 'force-dynamic'
 export default async function AdminPage() {
   await requireAdmin()
 
-  const now = new Date()
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-
   const [stats, actionQueue] = await Promise.all([
-    getAdminDashboardStats(ym),
+    getAdminDashboardStats(),
     getAdminActionQueue(10),
   ])
 
@@ -21,7 +18,7 @@ export default async function AdminPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">관리자 대시보드</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{ym} 기준</p>
+        <p className="text-sm text-gray-500 mt-0.5">전체 정산 기준</p>
         <Link href="/admin/tours/new" className="text-sm text-blue-600 mt-2 inline-block">
           + 투어 등록 (가이드 정산 테스트용)
         </Link>

@@ -218,6 +218,27 @@ describe('company expense guide visibility', () => {
     expect(sanitized.company_expenses).toEqual([])
   })
 
+  it('sanitizeSettlementFullForGuide zeros admin-only header fields', () => {
+    const full = settlementWithCompanyExpenses([])
+    full.ground_fee_usd = 400
+    full.vehicle_fee_usd = 80
+    full.head_tax_usd = 20
+    full.seoul_biz_fee_usd = 10
+    full.calc_summary_json = {
+      company_deposit_usd: 500,
+      guide_settlement_usd: 300,
+      guide_payout_usd: 300,
+      company_grand_total_usd: -150,
+    }
+
+    const sanitized = sanitizeSettlementFullForGuide(full)
+    expect(sanitized.ground_fee_usd).toBe(0)
+    expect(sanitized.vehicle_fee_usd).toBe(0)
+    expect(sanitized.head_tax_usd).toBe(0)
+    expect(sanitized.seoul_biz_fee_usd).toBe(0)
+    expect(sanitized.calc_summary_json).not.toHaveProperty('company_grand_total_usd')
+  })
+
   it('stripCompanyExpensesFromGuideSnapshotPayload clears rows', () => {
     const full = settlementWithCompanyExpenses([{ description: 'Hidden', amount_usd: 10, amount_vnd: 0 }])
     const payload = buildSnapshotPayload(full)

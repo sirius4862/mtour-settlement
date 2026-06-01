@@ -228,9 +228,9 @@ export function FinalAdjustmentsSection() {
     <div className="space-y-3">
       <SectionHint excelRows={EXCEL_SECTIONS.adjustments.rows} hint={EXCEL_SECTIONS.adjustments.hint} />
       <SectionCard>
-        <p className="text-xs font-semibold text-emerald-800 mb-2">회사 수익 (admin)</p>
+        <p className="text-xs font-semibold text-emerald-800 mb-2">지상비 (admin)</p>
         <ManualField
-          label="투어피/지상비 (회사 수익)"
+          label="지상비"
           excelRef="—"
           suffix="$"
           inputMode="decimal"

@@ -6,6 +6,10 @@ import {
   filterGuideConfirmationChanges,
   isGuideHiddenConfirmChange,
   parseSnapshotPayload,
+  redactCalcSummaryJsonForGuide,
+  sanitizeSettlementForGuide,
+  sanitizeSettlementFullForGuide,
+  sanitizeSettlementSyncForGuide,
   stripKbFromGuideSnapshotPayload,
 } from './snapshot'
 import type { SettlementFull } from '@/types'
@@ -193,6 +197,169 @@ describe('stripKbFromGuideSnapshotPayload', () => {
     const stripped = stripKbFromGuideSnapshotPayload(payload)
     expect(stripped.shoppings[0]).not.toHaveProperty('kb_usd')
     expect(stripped.shoppings[0]).toMatchObject({ sale_usd: 100, com_usd: 20 })
+  })
+})
+
+describe('guide payload redaction', () => {
+  it('sanitizeSettlementFullForGuide zeros admin header fields and strips KB', () => {
+    const full = minimalSettlementFull({
+      ground_fee_usd: 500,
+      vehicle_fee_usd: 120,
+      head_tax_usd: 30,
+      seoul_biz_fee_usd: 40,
+      calc_summary_json: {
+        company_deposit_usd: 1000,
+        guide_settlement_usd: 800,
+        guide_payout_usd: 800,
+        company_grand_total_usd: -200,
+      },
+      hotels: [{
+        id: 'hotel-1',
+        settlement_id: 'settlement-1',
+        hotel_name: 'Hotel A',
+        check_in_date: null,
+        nights: 2,
+        sgl_count: 1,
+        twn_count: 0,
+        trp_count: 0,
+        unit_price_sgl_usd: 55,
+        unit_price_trp_usd: 45,
+        company_amount_usd: 110,
+        guide_amount_usd: 80,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      }],
+      shoppings: [{
+        id: 'shop-1',
+        settlement_id: 'settlement-1',
+        visit_date: null,
+        shop_name: 'Shop A',
+        sale_usd: 100,
+        com_usd: 20,
+        kb_usd: 15,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      }],
+      company_expenses: [{
+        id: 'ce-1',
+        settlement_id: 'settlement-1',
+        description: 'Hidden',
+        amount_usd: 99,
+        amount_vnd: 0,
+        note: null,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      }],
+    })
+
+    const sanitized = sanitizeSettlementFullForGuide(full)
+    expect(sanitized.ground_fee_usd).toBe(0)
+    expect(sanitized.vehicle_fee_usd).toBe(0)
+    expect(sanitized.head_tax_usd).toBe(0)
+    expect(sanitized.seoul_biz_fee_usd).toBe(0)
+    expect(sanitized.hotels[0].unit_price_sgl_usd).toBe(0)
+    expect(sanitized.hotels[0].unit_price_trp_usd).toBe(0)
+    expect(sanitized.hotels[0].company_amount_usd).toBe(0)
+    expect(sanitized.hotels[0].guide_amount_usd).toBe(80)
+    expect(sanitized.shoppings[0].kb_usd).toBe(0)
+    expect(sanitized.company_expenses).toEqual([])
+    expect(sanitized.calc_summary_json).not.toHaveProperty('company_grand_total_usd')
+    expect(sanitized.calc_summary_json).toMatchObject({
+      company_deposit_usd: 1000,
+      guide_settlement_usd: 800,
+      guide_payout_usd: 800,
+    })
+  })
+
+  it('sanitizeSettlementForGuide redacts list-row admin fields', () => {
+    const row = minimalSettlementFull({
+      ground_fee_usd: 300,
+      vehicle_fee_usd: 50,
+      calc_summary_json: { company_grand_total_usd: -100, guide_payout_usd: 400 },
+    })
+    const sanitized = sanitizeSettlementForGuide(row)
+    expect(sanitized.ground_fee_usd).toBe(0)
+    expect(sanitized.vehicle_fee_usd).toBe(0)
+    expect(sanitized.calc_summary_json).not.toHaveProperty('company_grand_total_usd')
+  })
+
+  it('redactCalcSummaryJsonForGuide preserves guide-visible summary keys', () => {
+    const redacted = redactCalcSummaryJsonForGuide({
+      company_deposit_usd: 1,
+      guide_settlement_usd: 2,
+      guide_payout_usd: 3,
+      company_grand_total_usd: 4,
+    })
+    expect(redacted).toEqual({
+      company_deposit_usd: 1,
+      guide_settlement_usd: 2,
+      guide_payout_usd: 3,
+    })
+  })
+
+  it('sanitizeSettlementSyncForGuide strips admin-only sync fields', () => {
+    const sync = {
+      status: 'draft' as const,
+      receipts: [],
+      hotels: [{
+        id: 'hotel-1',
+        settlement_id: 'settlement-1',
+        hotel_name: 'Hotel A',
+        check_in_date: null,
+        nights: 2,
+        sgl_count: 1,
+        twn_count: 0,
+        trp_count: 0,
+        unit_price_sgl_usd: 55,
+        unit_price_trp_usd: 45,
+        company_amount_usd: 110,
+        guide_amount_usd: 80,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      }],
+      meals: [],
+      entrances: [],
+      others: [],
+      company_expenses: [{
+        id: 'ce-1',
+        settlement_id: 'settlement-1',
+        description: 'Hidden',
+        amount_usd: 99,
+        amount_vnd: 0,
+        note: null,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      }],
+      shoppings: [{
+        id: 'shop-1',
+        settlement_id: 'settlement-1',
+        visit_date: null,
+        shop_name: 'Shop A',
+        sale_usd: 100,
+        com_usd: 20,
+        kb_usd: 15,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      }],
+      options: [],
+    }
+
+    const redacted = sanitizeSettlementSyncForGuide(sync)
+
+    expect(redacted.company_expenses).toEqual([])
+    expect(redacted.shoppings[0].kb_usd).toBe(0)
+    expect(redacted.hotels[0].unit_price_sgl_usd).toBe(0)
+    expect(redacted.hotels[0].unit_price_trp_usd).toBe(0)
+    expect(redacted.hotels[0].company_amount_usd).toBe(0)
+    expect(redacted.hotels[0].guide_amount_usd).toBe(80)
+    expect(redacted).not.toHaveProperty('company_grand_total_usd')
+    expect(redacted).not.toHaveProperty('calc_summary_json')
   })
 })
 

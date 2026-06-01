@@ -2,7 +2,7 @@
 // 타입 정의 — schema_final_clean.sql 완전 일치
 // ================================================================
 
-export type UserRole = 'guide' | 'staff' | 'admin'
+export type UserRole = 'guide' | 'admin' | 'master_admin'
 export type SettlementStatus =
   | 'draft' | 'submitted' | 'approved'
   | 'rejected' | 'edit_requested' | 'paid'
@@ -253,10 +253,13 @@ export {
   canGuideConfirm,
   canGuideRequestClarification,
   canAdminEditSettlement,
+  canMasterAdminEditSettlement,
+  canAdminOrMasterAdminEditSettlement,
   canAdminDirectApprove,
   canAdminReject,
   canAdminRequestEdit,
   canAdminPaySettlement,
+  canMarkSettlementPaidForRole,
   assertAdminReviewAction,
   assertAdminSaveSettlement,
   canAdminSendForConfirmation,

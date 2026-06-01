@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { canAccessAdminRoutes, canAccessGuideRoutes, homePathForRole } from '@/lib/auth/permissions'
 import type { UserRole } from '@/types'
 
 export async function getSession() {
@@ -25,15 +26,30 @@ export async function requireAuth() {
   return session
 }
 
+/** Guide routes — guide role only. */
 export async function requireGuide() {
   const session = await requireAuth()
-  if (!['guide', 'admin', 'staff'].includes(session.role)) redirect('/login')
+  if (!canAccessGuideRoutes(session.role)) {
+    redirect(homePathForRole(session.role))
+  }
   return session
 }
 
+/** Admin routes — admin and master_admin. */
 export async function requireAdmin() {
   const session = await requireAuth()
-  if (!['admin', 'staff'].includes(session.role)) redirect('/guide')
+  if (!canAccessAdminRoutes(session.role)) {
+    redirect('/guide')
+  }
+  return session
+}
+
+/** Payment and other master-admin-only server actions. */
+export async function requireMasterAdmin() {
+  const session = await requireAuth()
+  if (session.role !== 'master_admin') {
+    redirect(canAccessAdminRoutes(session.role) ? '/admin' : '/guide')
+  }
   return session
 }
 

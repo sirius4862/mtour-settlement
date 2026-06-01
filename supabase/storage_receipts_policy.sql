@@ -51,7 +51,7 @@ USING (
   AND (
     -- 관리자/스태프: 전체 접근
     (SELECT role FROM public.profiles WHERE id = auth.uid())
-      IN ('admin', 'staff')
+      IN ('admin', 'master_admin')
     OR
     -- 가이드: 본인 정산서 폴더만
     EXISTS (
@@ -73,7 +73,7 @@ WITH CHECK (
   AND (
     -- 관리자: 제한 없음
     (SELECT role FROM public.profiles WHERE id = auth.uid())
-      IN ('admin', 'staff')
+      IN ('admin', 'master_admin')
     OR
     -- 가이드: 본인 + draft/rejected 상태 정산서만 업로드
     EXISTS (
@@ -96,7 +96,7 @@ USING (
   AND (
     -- 관리자: 전체 삭제 가능
     (SELECT role FROM public.profiles WHERE id = auth.uid())
-      IN ('admin', 'staff')
+      IN ('admin', 'master_admin')
     OR
     -- 가이드: 본인 + draft/rejected 상태만 삭제 가능 (제출 후 삭제 불가)
     EXISTS (
@@ -123,7 +123,7 @@ CREATE POLICY "receipts_meta_guide_select"
 ON public.receipts FOR SELECT
 TO authenticated
 USING (
-  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   OR EXISTS (
     SELECT 1 FROM public.settlements s
     WHERE s.id = receipts.settlement_id
@@ -164,8 +164,8 @@ CREATE POLICY "receipts_meta_admin_all"
 ON public.receipts FOR ALL
 TO authenticated
 USING (
-  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
 )
 WITH CHECK (
-  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
 );

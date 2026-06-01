@@ -11,7 +11,7 @@ import { calcSettlement } from '@/lib/settlement/calc'
 import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migrate'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
-import { STATUS_META, canAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation } from '@/types'
+import { STATUS_META, canAdminEditSettlement, canAdminOrMasterAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation, canMarkSettlementPaidForRole } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
 export const dynamic = 'force-dynamic'
@@ -23,7 +23,7 @@ export default async function AdminSettlementDetailPage({
   params,
 }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  await requireAdmin()
+  const session = await requireAdmin()
   const data = await getSettlementFull(id)
   if (!data || !data.tour) notFound()
 
@@ -50,10 +50,10 @@ export default async function AdminSettlementDetailPage({
   const settlementRatio = s.settlement_ratio ?? 0.5
 
   const canSendForConfirmation = canAdminSendForConfirmation(s.status)
-  const canAdminEdit = canAdminEditSettlement(s.status)
+  const canAdminEdit = canAdminOrMasterAdminEditSettlement(s.status, session.role)
   const canReqEdit = canAdminRequestEdit(s.status)
   const canReject  = canAdminReject(s.status)
-  const canPay     = canAdminPaySettlement(s)
+  const canPay     = canMarkSettlementPaidForRole(session.role, s)
 
   return (
     <div className="max-w-2xl mx-auto space-y-4 pb-32">
@@ -170,7 +170,11 @@ export default async function AdminSettlementDetailPage({
           className="block bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 hover:border-blue-200"
         >
           <p className="text-sm font-semibold text-blue-800">회사 전용 필드 수정</p>
-          <p className="text-xs text-blue-600 mt-0.5">투어피/지상비·호텔 단가·KB·추가차량·회사 지출 등 admin 필드 저장 →</p>
+          <p className="text-xs text-blue-600 mt-0.5">
+            {canAdminEditSettlement(s.status)
+              ? '지상비·호텔 단가·KB·추가차량·회사 지출 등 admin 필드 저장 →'
+              : '가이드 재확인이 필요한 최종확인 완료 정산서 — 마스터 관리자만 수정 가능 →'}
+          </p>
         </Link>
       )}
 

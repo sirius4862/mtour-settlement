@@ -33,6 +33,8 @@ import {
   filterGuideConfirmationChanges,
   parseSnapshotPayload,
   sanitizeSettlementFullForGuide,
+  sanitizeSettlementForGuide,
+  sanitizeSettlementSyncForGuide,
 } from '@/lib/settlement/snapshot'
 import type { SnapshotPayload } from '@/lib/settlement/snapshot'
 import { externalReceivableDbFields } from '@/lib/settlement/external-receivable'
@@ -42,6 +44,7 @@ import {
   assertAdminSendForConfirmation,
   assertGuideConfirmAction,
 } from '@/lib/settlement/status-guards'
+import { isAdminTier, settlementRequiresReconfirmAfterMasterAdminEdit } from '@/lib/auth/permissions'
 import {
   ADMIN_SETTLEMENT_PAGE_SIZE,
   ADMIN_SETTLEMENT_SELECT,
@@ -179,7 +182,16 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
     .eq('guide_id', user.id)
     .order('created_at', { ascending: false })
 
-  return (data ?? []) as SettlementWithTour[]
+  return (data ?? []).map((row) =>
+    sanitizeSettlementForGuide(row as SettlementWithTour),
+  ) as SettlementWithTour[]
+}
+
+/** Guide-facing settlement load — admin-only fields redacted. */
+export async function getSettlementFullForGuide(id: string): Promise<SettlementFull | null> {
+  const full = await getSettlementFull(id)
+  if (!full) return null
+  return sanitizeSettlementFullForGuide(full)
 }
 
 /** 정산서 상세 + 모든 항목 */
@@ -653,10 +665,11 @@ export async function saveSettlementDraft(
   let preservedTourFeeUsd = 0
   if (payload.settlementId) {
     const existing = await getSettlementFull(payload.settlementId)
-    if (existing) {
-      preservedTourFeeUsd = existing.tour_fee_usd ?? 0
-      payloadToSave = sanitizeGuideDraftPayload(payload, existing)
+    if (!existing) {
+      return { ok: false, error: '정산서를 불러올 수 없습니다. 저장을 중단했습니다.' }
     }
+    preservedTourFeeUsd = existing.tour_fee_usd ?? 0
+    payloadToSave = sanitizeGuideDraftPayload(payload, existing)
   } else {
     payloadToSave = sanitizeGuideDraftPayload(payload, null)
   }
@@ -699,7 +712,7 @@ export async function saveSettlementDraft(
   return {
     ok: true,
     id: headerResult.id,
-    sync: {
+    sync: sanitizeSettlementSyncForGuide({
       status: full.status,
       receipts: full.receipts,
       hotels: full.hotels,
@@ -709,7 +722,7 @@ export async function saveSettlementDraft(
       company_expenses: full.company_expenses,
       shoppings: full.shoppings,
       options: full.options,
-    },
+    }),
   }
 }
 
@@ -723,7 +736,7 @@ export async function saveAdminSettlementEdits(
 }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
-  if (profile.role === 'guide') {
+  if (!isAdminTier(profile.role)) {
     return { ok: false, error: '관리자 권한이 필요합니다.' }
   }
 
@@ -780,6 +793,12 @@ export async function saveAdminSettlementEdits(
 
   await persistSettlementCalcSummary(supabase, payload.settlementId)
 
+  const savedFull = await getSettlementFull(payload.settlementId)
+  if (!savedFull) {
+    revalidateSettlementPaths(payload.settlementId)
+    return { ok: true }
+  }
+
   await insertAuditEvent(supabase, {
     settlementId: payload.settlementId,
     actorId: profile.id,
@@ -789,10 +808,19 @@ export async function saveAdminSettlementEdits(
     toStatus: currentStatus,
   })
 
-  const full = await getSettlementFull(payload.settlementId)
-  if (!full) {
-    revalidateSettlementPaths(payload.settlementId)
-    return { ok: true }
+  if (settlementRequiresReconfirmAfterMasterAdminEdit(currentStatus, profile.role)) {
+    const reconfirm = await queuePendingGuideConfirmation(supabase, {
+      settlementId: payload.settlementId,
+      fromStatus: currentStatus,
+      actorId: profile.id,
+      actorRole: profile.role,
+      guideSubmitSnapshotId: existing.guide_submit_snapshot_id,
+      activeConfirmationId: existing.active_confirmation_id,
+      adminNote: savedFull.admin_note,
+      full: savedFull,
+      clearGuideConfirmation: true,
+    })
+    if (!reconfirm.ok) return { ok: false, error: reconfirm.error }
   }
 
   revalidateSettlementPaths(payload.settlementId)
@@ -800,15 +828,15 @@ export async function saveAdminSettlementEdits(
   return {
     ok: true,
     sync: {
-      status: full.status,
-      receipts: full.receipts,
-      hotels: full.hotels,
-      meals: full.meals,
-      entrances: full.entrances,
-      others: full.others,
-      company_expenses: full.company_expenses,
-      shoppings: full.shoppings,
-      options: full.options,
+      status: (await getSettlementFull(payload.settlementId))?.status ?? savedFull.status,
+      receipts: savedFull.receipts,
+      hotels: savedFull.hotels,
+      meals: savedFull.meals,
+      entrances: savedFull.entrances,
+      others: savedFull.others,
+      company_expenses: savedFull.company_expenses,
+      shoppings: savedFull.shoppings,
+      options: savedFull.options,
     },
   }
 }
@@ -822,7 +850,7 @@ export async function reviewSettlement(params: {
   adminNote?: string
 }): Promise<{ ok: boolean; error?: string }> {
   const profile = await getProfile()
-  if (!profile || !['admin', 'staff'].includes(profile.role)) {
+  if (!profile || !isAdminTier(profile.role)) {
     return { ok: false, error: '관리자 권한이 필요합니다.' }
   }
 
@@ -836,13 +864,16 @@ export async function reviewSettlement(params: {
 
   if (!current) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
 
+  const fromStatus = current.status as SettlementStatus
+
   const guard = assertAdminReviewAction(
     {
-      status: current.status as import('@/types').SettlementStatus,
+      status: fromStatus,
       guide_confirmed_at: current.guide_confirmed_at,
       guide_submit_snapshot_id: current.guide_submit_snapshot_id,
     },
     params.action,
+    profile.role,
   )
   if (!guard.ok) return { ok: false, error: guard.error }
 
@@ -853,26 +884,37 @@ export async function reviewSettlement(params: {
     admin_note: params.adminNote ?? null,
   }
 
+  let toStatus: SettlementStatus = fromStatus
+  let auditAction: import('@/types').SettlementAuditAction = 'status_change'
+
   switch (params.action) {
     case 'approve':
       updates.status = 'approved'
       updates.reviewed_at = now
       updates.reject_reason = null
+      toStatus = 'approved'
+      auditAction = 'status_change'
       break
     case 'reject':
       if (!params.rejectReason?.trim()) return { ok: false, error: '반려 사유를 입력해주세요.' }
       updates.status = 'rejected'
       updates.reviewed_at = now
       updates.reject_reason = params.rejectReason.trim()
+      toStatus = 'rejected'
+      auditAction = 'admin_reject'
       break
     case 'request_edit':
       updates.status = 'edit_requested'
       updates.edit_requested_at = now
       updates.edit_requested_by = profile.id
+      toStatus = 'edit_requested'
+      auditAction = 'admin_request_edit'
       break
     case 'pay':
       updates.status = 'paid'
       updates.paid_at = now
+      toStatus = 'paid'
+      auditAction = 'admin_pay'
       break
   }
 
@@ -880,15 +922,175 @@ export async function reviewSettlement(params: {
     .from('settlements')
     .update(updates)
     .eq('id', params.id)
-    .eq('status', current.status)
+    .eq('status', fromStatus)
 
   if (error) return { ok: false, error: error.message }
+
+  await insertAuditEvent(supabase, {
+    settlementId: params.id,
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: auditAction,
+    fromStatus,
+    toStatus,
+    note: params.rejectReason?.trim() || params.adminNote?.trim() || null,
+  })
 
   revalidateSettlementPaths(params.id)
   return { ok: true }
 }
 
 // ── 확인 워크플로 (Phase 2) ───────────────────────────────────
+
+async function resolveConfirmationBeforeSnapshotId(
+  supabase: SupabaseClient,
+  settlementId: string,
+  guideSubmitSnapshotId: string | null,
+): Promise<string | null> {
+  const { data: confirmedSnap } = await supabase
+    .from('settlement_snapshots')
+    .select('id')
+    .eq('settlement_id', settlementId)
+    .eq('kind', 'guide_confirmed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return (confirmedSnap?.id as string | undefined) ?? guideSubmitSnapshotId
+}
+
+async function queuePendingGuideConfirmation(
+  supabase: SupabaseClient,
+  params: {
+    settlementId: string
+    fromStatus: SettlementStatus
+    actorId: string
+    actorRole: UserRole
+    guideSubmitSnapshotId: string | null
+    activeConfirmationId: string | null
+    adminNote?: string | null
+    full: SettlementFull
+    clearGuideConfirmation?: boolean
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const beforeSnapshotId = await resolveConfirmationBeforeSnapshotId(
+    supabase,
+    params.settlementId,
+    params.guideSubmitSnapshotId,
+  )
+  if (!beforeSnapshotId) {
+    return { ok: false, error: '비교 기준 스냅샷이 없습니다.' }
+  }
+
+  const { data: beforeRow } = await supabase
+    .from('settlement_snapshots')
+    .select('payload_json')
+    .eq('id', beforeSnapshotId)
+    .single()
+
+  const beforePayload = parseSnapshotPayload(beforeRow?.payload_json)
+  if (!beforePayload) return { ok: false, error: '비교 기준 스냅샷을 읽을 수 없습니다.' }
+
+  const afterPayload = buildSnapshotPayload(params.full)
+  const allChanges = diffSnapshotPayloads(beforePayload, afterPayload)
+  const changes = filterGuideConfirmationChanges(allChanges)
+
+  const afterSnap = await insertSnapshot(supabase, {
+    settlementId: params.settlementId,
+    kind: 'admin_pre_confirm',
+    payload: afterPayload,
+    createdBy: params.actorId,
+  })
+  if (!afterSnap.ok) return { ok: false, error: afterSnap.error }
+
+  if (params.activeConfirmationId) {
+    await supabase
+      .from('settlement_confirmations')
+      .update({ status: 'superseded' })
+      .eq('id', params.activeConfirmationId)
+      .eq('status', 'pending')
+  }
+
+  const now = new Date().toISOString()
+
+  const { data: confirmation, error: confErr } = await supabase
+    .from('settlement_confirmations')
+    .insert({
+      settlement_id: params.settlementId,
+      snapshot_before_id: beforeSnapshotId,
+      snapshot_after_id: afterSnap.id,
+      status: 'pending',
+      sent_by: params.actorId,
+      sent_at: now,
+      r85_before: beforePayload.calc_summary.guide_settlement_usd,
+      r85_after: afterPayload.calc_summary.guide_settlement_usd,
+      r87_before: beforePayload.calc_summary.company_grand_total_usd,
+      r87_after: afterPayload.calc_summary.company_grand_total_usd,
+      change_count: changes.length,
+    })
+    .select('id')
+    .single()
+
+  if (confErr || !confirmation) {
+    return { ok: false, error: confErr?.message ?? '확인 요청 생성 실패' }
+  }
+
+  if (changes.length > 0) {
+    const { error: fcErr } = await supabase.from('settlement_field_changes').insert(
+      changes.map((c) => ({
+        settlement_id: params.settlementId,
+        confirmation_id: confirmation.id,
+        field_path: c.field_path,
+        excel_ref: c.excel_ref,
+        label: c.label,
+        owner: c.owner,
+        old_value_json: c.old_value_json,
+        new_value_json: c.new_value_json,
+        old_display: c.old_display,
+        new_display: c.new_display,
+      })),
+    )
+    if (fcErr) return { ok: false, error: fcErr.message }
+  }
+
+  const settlementUpdate: Record<string, unknown> = {
+    status: 'pending_guide_confirmation',
+    sent_for_confirmation_at: now,
+    sent_for_confirmation_by: params.actorId,
+    active_confirmation_id: confirmation.id,
+    admin_note: params.adminNote?.trim() || params.full.admin_note,
+    reviewed_at: now,
+    reviewed_by: params.actorId,
+    calc_summary_json: afterPayload.calc_summary,
+  }
+
+  if (params.clearGuideConfirmation) {
+    settlementUpdate.guide_confirmed_at = null
+    settlementUpdate.guide_confirmed_by = null
+  }
+
+  const { error: updErr } = await supabase
+    .from('settlements')
+    .update(settlementUpdate)
+    .eq('id', params.settlementId)
+    .eq('status', params.fromStatus)
+
+  if (updErr) return { ok: false, error: updErr.message }
+
+  await insertAuditEvent(supabase, {
+    settlementId: params.settlementId,
+    actorId: params.actorId,
+    actorRole: params.actorRole,
+    action: 'send_for_confirmation',
+    fromStatus: params.fromStatus,
+    toStatus: 'pending_guide_confirmation',
+    note: params.clearGuideConfirmation
+      ? 'master_admin_post_confirm_edit'
+      : params.adminNote?.trim() || null,
+  })
+
+  return { ok: true }
+}
 
 export interface GuideConfirmationPacket {
   settlement: SettlementFull
@@ -906,7 +1108,7 @@ export async function sendForConfirmation(
   adminNote?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const profile = await getProfile()
-  if (!profile || !['admin', 'staff'].includes(profile.role)) {
+  if (!profile || !isAdminTier(profile.role)) {
     return { ok: false, error: '관리자 권한이 필요합니다.' }
   }
 
@@ -929,104 +1131,18 @@ export async function sendForConfirmation(
   const full = await getSettlementFull(id)
   if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
 
-  const { data: beforeRow } = await supabase
-    .from('settlement_snapshots')
-    .select('payload_json')
-    .eq('id', current.guide_submit_snapshot_id)
-    .single()
-
-  const beforePayload = parseSnapshotPayload(beforeRow?.payload_json)
-  if (!beforePayload) return { ok: false, error: '가이드 제출 스냅샷을 읽을 수 없습니다.' }
-
-  const afterPayload = buildSnapshotPayload(full)
-  const allChanges = diffSnapshotPayloads(beforePayload, afterPayload)
-  const changes = filterGuideConfirmationChanges(allChanges)
-
-  const afterSnap = await insertSnapshot(supabase, {
+  const result = await queuePendingGuideConfirmation(supabase, {
     settlementId: id,
-    kind: 'admin_pre_confirm',
-    payload: afterPayload,
-    createdBy: profile.id,
-  })
-  if (!afterSnap.ok) return { ok: false, error: afterSnap.error }
-
-  if (current.active_confirmation_id) {
-    await supabase
-      .from('settlement_confirmations')
-      .update({ status: 'superseded' })
-      .eq('id', current.active_confirmation_id)
-      .eq('status', 'pending')
-  }
-
-  const now = new Date().toISOString()
-  const fromStatus = current.status as SettlementStatus
-
-  const { data: confirmation, error: confErr } = await supabase
-    .from('settlement_confirmations')
-    .insert({
-      settlement_id: id,
-      snapshot_before_id: current.guide_submit_snapshot_id,
-      snapshot_after_id: afterSnap.id,
-      status: 'pending',
-      sent_by: profile.id,
-      sent_at: now,
-      r85_before: beforePayload.calc_summary.guide_settlement_usd,
-      r85_after: afterPayload.calc_summary.guide_settlement_usd,
-      r87_before: beforePayload.calc_summary.company_grand_total_usd,
-      r87_after: afterPayload.calc_summary.company_grand_total_usd,
-      change_count: changes.length,
-    })
-    .select('id')
-    .single()
-
-  if (confErr || !confirmation) {
-    return { ok: false, error: confErr?.message ?? '확인 요청 생성 실패' }
-  }
-
-  if (changes.length > 0) {
-    const { error: fcErr } = await supabase.from('settlement_field_changes').insert(
-      changes.map((c) => ({
-        settlement_id: id,
-        confirmation_id: confirmation.id,
-        field_path: c.field_path,
-        excel_ref: c.excel_ref,
-        label: c.label,
-        owner: c.owner,
-        old_value_json: c.old_value_json,
-        new_value_json: c.new_value_json,
-        old_display: c.old_display,
-        new_display: c.new_display,
-      })),
-    )
-    if (fcErr) return { ok: false, error: fcErr.message }
-  }
-
-  const { error: updErr } = await supabase
-    .from('settlements')
-    .update({
-      status: 'pending_guide_confirmation',
-      sent_for_confirmation_at: now,
-      sent_for_confirmation_by: profile.id,
-      active_confirmation_id: confirmation.id,
-      admin_note: adminNote?.trim() || full.admin_note,
-      reviewed_at: now,
-      reviewed_by: profile.id,
-      calc_summary_json: afterPayload.calc_summary,
-    })
-    .eq('id', id)
-    .eq('status', fromStatus)
-
-  if (updErr) return { ok: false, error: updErr.message }
-
-  await insertAuditEvent(supabase, {
-    settlementId: id,
+    fromStatus: current.status as SettlementStatus,
     actorId: profile.id,
     actorRole: profile.role,
-    action: 'send_for_confirmation',
-    fromStatus,
-    toStatus: 'pending_guide_confirmation',
-    note: adminNote?.trim() || null,
+    guideSubmitSnapshotId: current.guide_submit_snapshot_id as string | null,
+    activeConfirmationId: current.active_confirmation_id as string | null,
+    adminNote: adminNote?.trim() || full.admin_note,
+    full,
   })
+
+  if (!result.ok) return { ok: false, error: result.error }
 
   revalidateSettlementPaths(id)
   return { ok: true }

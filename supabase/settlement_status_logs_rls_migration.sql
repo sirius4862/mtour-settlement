@@ -27,7 +27,7 @@ AS $$
     SELECT 1
     FROM public.profiles p
     WHERE p.id = auth.uid()
-      AND p.role IN ('admin', 'staff')
+      AND p.role IN ('admin', 'master_admin')
   )
   OR EXISTS (
     SELECT 1
@@ -71,10 +71,10 @@ CREATE POLICY settlement_status_logs_admin_all
   FOR ALL
   TO authenticated
   USING (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   )
   WITH CHECK (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   );
 
 -- ── 2. settlement_audit_events (confirm workflow) ────────────────
@@ -105,10 +105,10 @@ CREATE POLICY settlement_audit_events_admin_all
   FOR ALL
   TO authenticated
   USING (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   )
   WITH CHECK (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   );
 
 -- ── 3. settlement_snapshots ────────────────────────────────────
@@ -139,10 +139,10 @@ CREATE POLICY settlement_snapshots_admin_all
   FOR ALL
   TO authenticated
   USING (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   )
   WITH CHECK (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   );
 
 -- ── 4. settlement_confirmations ────────────────────────────────
@@ -178,10 +178,10 @@ CREATE POLICY settlement_confirmations_admin_all
   FOR ALL
   TO authenticated
   USING (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   )
   WITH CHECK (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   );
 
 -- ── 5. settlement_field_changes ────────────────────────────────
@@ -203,7 +203,7 @@ CREATE POLICY settlement_field_changes_admin_insert
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
     AND public.auth_user_can_access_settlement(settlement_id)
   );
 
@@ -212,10 +212,10 @@ CREATE POLICY settlement_field_changes_admin_all
   FOR ALL
   TO authenticated
   USING (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   )
   WITH CHECK (
-    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'staff')
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'master_admin')
   );
 
 COMMIT;

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { requireGuide } from '@/lib/auth/session'
-import { getSettlementFull } from '@/lib/actions/settlementActions'
+import { getSettlementFullForGuide } from '@/lib/actions/settlementActions'
 import { calcSettlement } from '@/lib/settlement/calc'
 import { GUIDE_FOOTER_LABELS, GUIDE_PAYOUT_FLOOR_WARNING, Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
@@ -21,7 +21,7 @@ export default async function SettlementDetailPage({
 }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await requireGuide()
-  const data = await getSettlementFull(id)
+  const data = await getSettlementFullForGuide(id)
   if (!data || !data.tour) notFound()
   if (session.role === 'guide' && data.guide_id !== session.id) notFound()
 

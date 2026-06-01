@@ -20,7 +20,7 @@ AS $$
     SELECT 1
     FROM public.profiles p
     WHERE p.id = auth.uid()
-      AND p.role IN ('admin', 'staff')
+      AND p.role IN ('admin', 'master_admin')
   )
   OR EXISTS (
     SELECT 1

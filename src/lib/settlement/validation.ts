@@ -78,7 +78,7 @@ export function validateSettlementForm(
 
     issues.push({
       sectionId: 'adjustments',
-      message: '차량비·인두세·서울영업비·투어피/지상비·정산비율(R77)은 제출 후 관리자가 입력합니다.',
+      message: '차량비·인두세·서울영업비·지상비·정산비율(R77)은 제출 후 관리자가 입력합니다.',
       severity: 'warning',
     })
   }

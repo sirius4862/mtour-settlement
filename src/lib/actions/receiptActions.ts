@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { isAdminTier } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
 import type { Receipt, SettlementStatus } from '@/types'
 import { GUIDE_EDITABLE } from '@/types'
@@ -54,7 +55,7 @@ export async function createReceiptUploadUrl(params: {
 }): Promise<{ ok: boolean; signedUrl?: string; path?: string; error?: string }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
-  if (profile.role !== 'guide' && !['admin', 'staff'].includes(profile.role)) {
+  if (profile.role !== 'guide' && !isAdminTier(profile.role as import('@/types').UserRole)) {
     return { ok: false, error: '권한이 없습니다.' }
   }
 

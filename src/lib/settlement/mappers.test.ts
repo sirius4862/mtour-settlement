@@ -12,6 +12,7 @@ import {
   isMissingDbColumnError,
   mergeServerSync,
   resolveGroundFeeUsd,
+  sanitizeGuideDraftPayload,
   splitDbRowsForPersist,
   stateFromSettlementFull,
   toCalcInput,
@@ -343,5 +344,28 @@ describe('DB round-trip mappers', () => {
 
     const merged = mergeServerSync(state, sync as unknown as SettlementSyncPayload)
     expect(merged.hotels?.find((h) => h.clientId === 'new-hotel')?.id).toBe('hotel-new')
+  })
+})
+
+describe('sanitizeGuideDraftPayload admin header preservation', () => {
+  it('preserves ground_fee_usd from DB when guide payload sends 0', () => {
+    const existing = mockSettlementFull()
+    existing.ground_fee_usd = 500
+    existing.vehicle_fee_usd = 80
+    existing.head_tax_usd = 20
+    existing.seoul_biz_fee_usd = 10
+
+    const state = stateFromSettlementFull(existing, 'Guide')
+    state.header.ground_fee_usd = 0
+    state.header.vehicle_fee_usd = 0
+    state.header.head_tax_usd = 0
+    state.header.seoul_biz_fee_usd = 0
+
+    const sanitized = sanitizeGuideDraftPayload(toDraftPayload(state), existing)
+
+    expect(sanitized.header.ground_fee_usd).toBe(500)
+    expect(sanitized.header.vehicle_fee_usd).toBe(80)
+    expect(sanitized.header.head_tax_usd).toBe(20)
+    expect(sanitized.header.seoul_biz_fee_usd).toBe(10)
   })
 })

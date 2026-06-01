@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { requireGuide } from '@/lib/auth/session'
-import { getAvailableTours, getSettlementFull } from '@/lib/actions/settlementActions'
+import { getAvailableTours, getSettlementFullForGuide } from '@/lib/actions/settlementActions'
 import { SettlementForm } from '@/components/settlement/SettlementForm'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +14,7 @@ export default async function EditSettlementPage({
 }) {
   const session = await requireGuide()
   const { id } = await params
-  const full = await getSettlementFull(id)
+  const full = await getSettlementFullForGuide(id)
 
   if (!full || full.guide_id !== session.id) notFound()
   if (!EDITABLE.has(full.status)) redirect(`/guide/settlements/${id}`)

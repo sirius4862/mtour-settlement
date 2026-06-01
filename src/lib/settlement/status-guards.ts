@@ -1,3 +1,12 @@
+import {
+  assertRoleCanMarkPaid,
+  assertRoleCanSaveAdminSettlement,
+  canMarkSettlementPaid,
+  canMasterAdminEditApprovedSettlement,
+  canSaveAdminSettlementEdits,
+  isAdminTier,
+  type SettlementPayGuardInput,
+} from '@/lib/auth/permissions'
 import type { Settlement, SettlementStatus, UserRole } from '@/types'
 
 /** Guide may edit settlement content */
@@ -6,8 +15,11 @@ export const GUIDE_EDITABLE: SettlementStatus[] = ['draft', 'rejected', 'edit_re
 /** Guide may only confirm or request clarification (read-only form) */
 export const GUIDE_CONFIRM_ONLY: SettlementStatus[] = ['pending_guide_confirmation']
 
-/** Admin may edit admin-owned fields (Phase B save action) */
+/** Admin may edit admin-owned fields during pre-confirm review */
 export const ADMIN_EDITABLE: SettlementStatus[] = ['submitted', 'clarification_requested']
+
+/** Master admin may edit after guide confirmation (not after payment) */
+export const MASTER_ADMIN_EDITABLE: SettlementStatus[] = ['approved']
 
 /** Admin may reject or request guide content edit (pre-confirmation) */
 export const ADMIN_PRE_CONFIRM_REVIEW: SettlementStatus[] = ['submitted', 'clarification_requested']
@@ -44,6 +56,17 @@ export function canGuideRequestClarification(
 
 export function canAdminEditSettlement(status: SettlementStatus): boolean {
   return ADMIN_EDITABLE.includes(status)
+}
+
+export function canMasterAdminEditSettlement(status: SettlementStatus): boolean {
+  return MASTER_ADMIN_EDITABLE.includes(status)
+}
+
+export function canAdminOrMasterAdminEditSettlement(
+  status: SettlementStatus,
+  role: UserRole,
+): boolean {
+  return canSaveAdminSettlementEdits(status, role)
 }
 
 /**
@@ -99,32 +122,32 @@ export function assertAdminSaveSettlement(
   role: UserRole,
   status: SettlementStatus,
 ): { ok: true } | { ok: false; error: string } {
-  if (role !== 'admin' && role !== 'staff') {
-    return { ok: false, error: '관리자 권한이 필요합니다.' }
-  }
-  if (!canAdminEditSettlement(status)) {
-    return { ok: false, error: '제출됨 또는 확인 이의 상태에서만 수정할 수 있습니다.' }
-  }
-  return { ok: true }
+  return assertRoleCanSaveAdminSettlement(role, status)
 }
 
 /**
  * Pay only after guide final confirmation in the new workflow.
  * Legacy `approved` rows (no guide_submit_snapshot_id) remain payable.
  */
-export function canAdminPaySettlement(
-  s: Pick<Settlement, 'status' | 'guide_confirmed_at' | 'guide_submit_snapshot_id'>,
-): boolean {
+export function canAdminPaySettlement(s: SettlementPayGuardInput): boolean {
   if (s.status !== 'approved') return false
   if (s.guide_submit_snapshot_id && !s.guide_confirmed_at) return false
   return true
 }
 
+export function canMarkSettlementPaidForRole(
+  role: UserRole,
+  s: SettlementPayGuardInput,
+): boolean {
+  return canMarkSettlementPaid(role) && canAdminPaySettlement(s)
+}
+
 export type AdminReviewAction = 'approve' | 'reject' | 'request_edit' | 'pay'
 
 export function assertAdminReviewAction(
-  s: Pick<Settlement, 'status' | 'guide_confirmed_at' | 'guide_submit_snapshot_id'>,
+  s: SettlementPayGuardInput,
   action: AdminReviewAction,
+  role: UserRole,
 ): { ok: true } | { ok: false; error: string } {
   switch (action) {
     case 'approve':
@@ -145,7 +168,9 @@ export function assertAdminReviewAction(
         return { ok: false, error: '현재 상태에서는 수정 요청을 할 수 없습니다.' }
       }
       return { ok: true }
-    case 'pay':
+    case 'pay': {
+      const roleGuard = assertRoleCanMarkPaid(role)
+      if (!roleGuard.ok) return roleGuard
       if (!canAdminPaySettlement(s)) {
         if (s.status !== 'approved') {
           return { ok: false, error: '승인된 정산서만 지급 처리할 수 있습니다.' }
@@ -153,7 +178,15 @@ export function assertAdminReviewAction(
         return { ok: false, error: '가이드 최종 확인 후에만 지급 처리할 수 있습니다.' }
       }
       return { ok: true }
+    }
     default:
       return { ok: false, error: '지원하지 않는 작업입니다.' }
   }
 }
+
+export {
+  canMasterAdminEditApprovedSettlement,
+  canMarkSettlementPaid,
+  isAdminTier,
+  settlementRequiresReconfirmAfterMasterAdminEdit,
+} from '@/lib/auth/permissions'

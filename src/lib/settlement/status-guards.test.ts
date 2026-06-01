@@ -161,12 +161,12 @@ describe('assertGuideConfirmAction', () => {
 
 describe('assertAdminReviewAction', () => {
   it('blocks admin approve from submitted', () => {
-    const result = assertAdminReviewAction({ ...base, status: 'submitted' }, 'approve')
+    const result = assertAdminReviewAction({ ...base, status: 'submitted' }, 'approve', 'admin')
     expect(result.ok).toBe(false)
   })
 
   it('allows reject from submitted', () => {
-    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject').ok).toBe(true)
+    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'admin').ok).toBe(true)
   })
 
   it('blocks pay before guide confirmation when snapshot exists', () => {
@@ -177,6 +177,7 @@ describe('assertAdminReviewAction', () => {
         guide_submit_snapshot_id: 'snap-1',
       },
       'pay',
+      'master_admin',
     )
     expect(result.ok).toBe(false)
   })

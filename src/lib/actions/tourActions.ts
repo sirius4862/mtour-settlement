@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { isAdminTier } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
 import type { Branch, Tour } from '@/types'
 
@@ -39,7 +40,7 @@ async function requireAdminProfile() {
     .eq('id', user.id)
     .single()
 
-  if (!data || !['admin', 'staff'].includes(data.role)) return null
+  if (!data || !isAdminTier(data.role as import('@/types').UserRole)) return null
   return { id: data.id as string, supabase }
 }
 

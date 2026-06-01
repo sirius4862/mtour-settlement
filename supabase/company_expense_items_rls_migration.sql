@@ -12,12 +12,12 @@ CREATE POLICY company_expense_items_admin_all
   USING (
     EXISTS (
       SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid() AND p.role IN ('admin', 'staff')
+      WHERE p.id = auth.uid() AND p.role IN ('admin', 'master_admin')
     )
   )
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid() AND p.role IN ('admin', 'staff')
+      WHERE p.id = auth.uid() AND p.role IN ('admin', 'master_admin')
     )
   );

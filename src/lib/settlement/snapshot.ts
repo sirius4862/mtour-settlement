@@ -1,9 +1,9 @@
 import { calcSettlement } from './calc'
 import type { SettlementCalcResult } from './types-calc'
 import { CONFIRM_DIFF_HEADER_KEYS } from './field-ownership'
-import { resolveGroundFeeUsd, stateFromSettlementFull, toCalcInput } from './mappers'
+import { resolveGroundFeeUsd, stateFromSettlementFull, toCalcInput, type SettlementSyncPayload } from './mappers'
 import { normalizeExternalReceivableForForm, resolveOptionCreditUsd } from './external-receivable'
-import type { SettlementFieldOwner, SettlementFull } from '@/types'
+import type { Settlement, SettlementFieldOwner, SettlementFull } from '@/types'
 
 /** Serializable settlement state stored in settlement_snapshots.payload_json */
 export interface SnapshotPayload {
@@ -38,7 +38,7 @@ export interface FieldChangeDraft {
 }
 
 const HEADER_LABELS: Record<string, { label: string; excelRef: string; owner: SettlementFieldOwner }> = {
-  ground_fee_usd: { label: '투어피/지상비 (회사 수익)', excelRef: '—', owner: 'admin' },
+  ground_fee_usd: { label: '지상비', excelRef: '—', owner: 'admin' },
   vehicle_fee_usd: { label: '차량비', excelRef: 'O79', owner: 'admin' },
   head_tax_usd: { label: '인두세', excelRef: 'O80', owner: 'admin' },
   seoul_biz_fee_usd: { label: '서울영업비', excelRef: 'O81', owner: 'admin' },
@@ -123,12 +123,76 @@ export function stripCompanyExpensesFromGuideSnapshotPayload(
   }
 }
 
+/** Admin-only header fields stripped from guide-facing API payloads. */
+export const GUIDE_REDACTED_HEADER_KEYS = [
+  'ground_fee_usd',
+  'vehicle_fee_usd',
+  'head_tax_usd',
+  'seoul_biz_fee_usd',
+] as const
+
+/** Remove company profit from denormalized calc summary for guides. */
+export function redactCalcSummaryJsonForGuide(
+  json: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!json) return null
+  const { company_grand_total_usd: _removed, ...rest } = json
+  return rest
+}
+
+function redactHotelsForGuide<T extends {
+  unit_price_sgl_usd: number
+  unit_price_trp_usd: number
+  company_amount_usd: number
+}>(hotels: T[]): T[] {
+  return hotels.map((h) => ({
+    ...h,
+    unit_price_sgl_usd: 0,
+    unit_price_trp_usd: 0,
+    company_amount_usd: 0,
+  }))
+}
+
+function redactShoppingsForGuide<T extends { kb_usd: number }>(shoppings: T[]): T[] {
+  return shoppings.map((s) => ({ ...s, kb_usd: 0 }))
+}
+
 /** Strip KB from settlement rows in guide-facing API responses. */
 export function sanitizeSettlementFullForGuide(full: SettlementFull): SettlementFull {
   return {
     ...full,
-    shoppings: full.shoppings.map((s) => ({ ...s, kb_usd: 0 })),
+    ground_fee_usd: 0,
+    vehicle_fee_usd: 0,
+    head_tax_usd: 0,
+    seoul_biz_fee_usd: 0,
+    hotels: redactHotelsForGuide(full.hotels),
+    shoppings: redactShoppingsForGuide(full.shoppings),
     company_expenses: [],
+    calc_summary_json: redactCalcSummaryJsonForGuide(full.calc_summary_json),
+  }
+}
+
+/** Redact admin-only settlement header fields on list/detail rows for guides. */
+export function sanitizeSettlementForGuide<T extends Settlement>(
+  settlement: T,
+): T {
+  return {
+    ...settlement,
+    ground_fee_usd: 0,
+    vehicle_fee_usd: 0,
+    head_tax_usd: 0,
+    seoul_biz_fee_usd: 0,
+    calc_summary_json: redactCalcSummaryJsonForGuide(settlement.calc_summary_json),
+  }
+}
+
+/** Redact admin-only line items from guide draft-save sync responses. */
+export function sanitizeSettlementSyncForGuide(sync: SettlementSyncPayload): SettlementSyncPayload {
+  return {
+    ...sync,
+    company_expenses: [],
+    hotels: redactHotelsForGuide(sync.hotels),
+    shoppings: redactShoppingsForGuide(sync.shoppings),
   }
 }
 

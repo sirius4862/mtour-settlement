@@ -63,6 +63,6 @@ describe('validateSettlementForm', () => {
       hotels: [{ ...emptyHotelRow(), clientId: '1', hotel_name: 'H', guide_amount_usd: 1, nights: 1 }],
     }
     const issues = validateSettlementForm(state, 'submit', 'guide')
-    expect(issues.some((i) => i.message.includes('투어피/지상비'))).toBe(true)
+    expect(issues.some((i) => i.message.includes('지상비'))).toBe(true)
   })
 })

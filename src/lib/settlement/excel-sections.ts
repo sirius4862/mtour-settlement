@@ -38,7 +38,7 @@ export const EXCEL_SECTIONS = {
   },
   adjustments: {
     rows: 'O79–81, O82+, R77, R80, R82, ground_fee',
-    hint: '투어피/지상비(회사 수익), 고정 회사 지출(O79–81), 회사 비용(자유 입력), 메꾸기(R80), 가이드일비(R82). R77은 참고 전용.',
+    hint: '지상비, 고정 회사 지출(O79–81), 회사 비용(자유 입력), 메꾸기(R80), 가이드일비(R82). R77은 참고 전용.',
   },
   summary: {
     rows: 'R77–R87',

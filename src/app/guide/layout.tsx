@@ -16,20 +16,9 @@ export default async function GuideLayout({ children }: { children: React.ReactN
               </svg>
             </div>
             <span className="font-semibold text-gray-800 text-sm truncate">M투어 정산</span>
-            {(session.role === 'admin' || session.role === 'staff') && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium shrink-0">
-                관리자
-              </span>
-            )}
           </Link>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-gray-500 hidden sm:block">{session.full_name}</span>
-            {(session.role === 'admin' || session.role === 'staff') && (
-              <Link href="/admin"
-                className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
-                관리자
-              </Link>
-            )}
             <form action={signOutAction}>
               <button type="submit" className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
                 로그아웃

@@ -21,7 +21,6 @@ export function ConfirmPanel({ settlementId }: Props) {
       const res = await guideConfirm(settlementId)
       if (res.ok) {
         router.push(`/guide/settlements/${settlementId}`)
-        router.refresh()
       } else {
         setError(res.error ?? '오류 발생')
       }
@@ -34,7 +33,6 @@ export function ConfirmPanel({ settlementId }: Props) {
       const res = await guideRequestClarification(settlementId, message)
       if (res.ok) {
         router.push(`/guide/settlements/${settlementId}`)
-        router.refresh()
       } else {
         setError(res.error ?? '오류 발생')
       }

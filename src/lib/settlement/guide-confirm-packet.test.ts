@@ -177,4 +177,24 @@ describe('guide confirm page source', () => {
     expect(source).toContain('GUIDE_FOOTER_LABELS.companyDeposit')
     expect(source).toContain('GUIDE_FOOTER_LABELS.guideSettlement')
   })
+
+  it('redirects to detail when confirmation packet is unavailable', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/app/guide/settlements/[id]/confirm/page.tsx'),
+      'utf8',
+    )
+
+    expect(source).toContain('redirect(`/guide/settlements/${id}`)')
+    expect(source).not.toMatch(/status !== 'pending_guide_confirmation'[\s\S]*notFound\(\)/)
+  })
+
+  it('ConfirmPanel navigates without refresh after success', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/app/guide/settlements/[id]/confirm/ConfirmPanel.tsx'),
+      'utf8',
+    )
+
+    expect(source).toContain('router.push(`/guide/settlements/${settlementId}`)')
+    expect(source).not.toContain('router.refresh()')
+  })
 })

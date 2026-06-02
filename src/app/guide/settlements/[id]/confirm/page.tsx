@@ -22,12 +22,10 @@ export default async function GuideConfirmPage({
 
   if (!packet) {
     const { getSettlementFull } = await import('@/lib/actions/settlementActions')
-    const full = await getSettlementFull(id)
+    const full = await getSettlementFull(id, { audience: 'guide' })
     if (!full || full.guide_id !== session.id) notFound()
-    if (full.status !== 'pending_guide_confirmation') {
-      redirect(`/guide/settlements/${id}`)
-    }
-    notFound()
+    // No pending confirmation row (e.g. already confirmed) — detail page is valid.
+    redirect(`/guide/settlements/${id}`)
   }
 
   const {

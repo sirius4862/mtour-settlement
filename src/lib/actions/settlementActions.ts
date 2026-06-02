@@ -1067,74 +1067,22 @@ export async function reviewSettlement(params: {
   )
   if (!guard.ok) return { ok: false, error: guard.error }
 
-  const now = new Date().toISOString()
-
   if (params.action === 'approve') {
-    if (!current.active_confirmation_id) {
-      return { ok: false, error: '활성 확인 요청이 없습니다.' }
-    }
-
-    const full = await getSettlementFull(params.id)
-    if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
-
-    const payload = buildSnapshotPayload(full)
-    const snap = await insertSnapshot(supabase, {
-      settlementId: params.id,
-      kind: 'guide_confirmed',
-      payload,
-      createdBy: profile.id,
-    })
-    if (!snap.ok) return { ok: false, error: snap.error }
-
-    const { error: confErr } = await supabase
-      .from('settlement_confirmations')
-      .update({
-        status: 'confirmed',
-        confirmed_by: profile.id,
-        confirmed_at: now,
-      })
-      .eq('id', current.active_confirmation_id)
-      .eq('status', 'pending')
-
-    if (confErr) return { ok: false, error: confErr.message }
-
-    const { error: updErr } = await supabase
-      .from('settlements')
-      .update({
-        status: 'approved',
-        guide_confirmed_at: now,
-        guide_confirmed_by: profile.id,
-        reviewed_at: now,
-        reviewed_by: profile.id,
-        reject_reason: null,
-        admin_note: params.adminNote?.trim() || full.admin_note,
-      })
-      .eq('id', params.id)
-      .eq('status', 'pending_guide_confirmation')
-
-    if (updErr) return { ok: false, error: updErr.message }
-
-    await insertAuditEvent(supabase, {
-      settlementId: params.id,
-      actorId: profile.id,
-      actorRole: profile.role,
-      action: 'status_change',
-      fromStatus: 'pending_guide_confirmation',
-      toStatus: 'approved',
-      note: params.adminNote?.trim() || 'master_approve',
-    })
-
-    revalidateSettlementPaths(params.id)
-    return { ok: true }
+    return { ok: false, error: '최종 승인은 더 이상 사용하지 않습니다. 지급완료 처리를 사용하세요.' }
   }
+
+  const now = new Date().toISOString()
 
   if (params.action === 'reopen') {
     const { error } = await supabase
       .from('settlements')
       .update({
-        status: 'approved',
+        status: 'edit_requested',
         paid_at: null,
-        reviewed_by: profile.id,
+        guide_confirmed_at: null,
+        guide_confirmed_by: null,
+        edit_requested_at: now,
+        edit_requested_by: profile.id,
         admin_note: params.adminNote?.trim() || null,
       })
       .eq('id', params.id)
@@ -1148,7 +1096,7 @@ export async function reviewSettlement(params: {
       actorRole: profile.role,
       action: 'status_change',
       fromStatus: 'paid',
-      toStatus: 'approved',
+      toStatus: 'edit_requested',
       note: params.adminNote?.trim() || 'master_reopen_paid',
     })
 
@@ -1166,13 +1114,7 @@ export async function reviewSettlement(params: {
 
   switch (params.action) {
     case 'reject':
-      if (!params.rejectReason?.trim()) return { ok: false, error: '반려 사유를 입력해주세요.' }
-      updates.status = 'rejected'
-      updates.reviewed_at = now
-      updates.reject_reason = params.rejectReason.trim()
-      toStatus = 'rejected'
-      auditAction = 'admin_reject'
-      break
+      return { ok: false, error: '반려는 더 이상 사용하지 않습니다. 수정요청을 사용하세요.' }
     case 'request_edit':
       updates.status = 'edit_requested'
       updates.edit_requested_at = now
@@ -1445,7 +1387,7 @@ export async function sendForConfirmation(
   return { ok: true }
 }
 
-/** Guide accepts admin-reviewed settlement → approved. */
+/** Guide accepts admin-reviewed settlement — status stays 최종확인; sets confirmation flags. */
 export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: string }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
@@ -1455,11 +1397,15 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
 
   const { data: current } = await supabase
     .from(GUIDE_READ.settlements)
-    .select('id, status, guide_id, active_confirmation_id')
+    .select('id, status, guide_id, active_confirmation_id, guide_confirmed_at')
     .eq('id', id)
     .single()
 
   if (!current) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+
+  if (current.guide_confirmed_at) {
+    return { ok: false, error: '이미 최종확인(이상없음) 처리되었습니다.' }
+  }
 
   const guard = assertGuideConfirmAction(
     { status: current.status as SettlementStatus, guide_id: current.guide_id as string },
@@ -1486,6 +1432,15 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
 
   const now = new Date().toISOString()
 
+  const { data: rpcRes, error: rpcErr } = await supabase.rpc('guide_confirm_settlement', {
+    p_settlement_id: id,
+    p_confirmed_at: now,
+  })
+  if (rpcErr) return { ok: false, error: rpcErr.message }
+  if (!rpcRes || typeof rpcRes !== 'object' || (rpcRes as { ok?: boolean }).ok !== true) {
+    return { ok: false, error: '최종확인 처리에 실패했습니다.' }
+  }
+
   const { error: confErr } = await supabase
     .from('settlement_confirmations')
     .update({
@@ -1498,27 +1453,13 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
 
   if (confErr) return { ok: false, error: confErr.message }
 
-  const { error: updErr } = await supabase
-    .from('settlements')
-    .update({
-      status: 'approved',
-      guide_confirmed_at: now,
-      guide_confirmed_by: profile.id,
-      reviewed_at: now,
-    })
-    .eq('id', id)
-    .eq('guide_id', profile.id)
-    .eq('status', 'pending_guide_confirmation')
-
-  if (updErr) return { ok: false, error: updErr.message }
-
   await insertAuditEvent(supabase, {
     settlementId: id,
     actorId: profile.id,
     actorRole: profile.role,
     action: 'guide_confirm',
     fromStatus: 'pending_guide_confirmation',
-    toStatus: 'approved',
+    toStatus: 'pending_guide_confirmation',
   })
 
   revalidateSettlementPaths(id)

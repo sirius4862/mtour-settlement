@@ -5,7 +5,6 @@ import { SettlementBusinessSummary } from '@/components/settlement/sections/Sett
 import { Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
 import {
-  canMasterApproveFromPending,
   canMasterReopenPaid,
   isPostApprovalReadOnlyForAdmin,
   isAdmin,
@@ -17,7 +16,7 @@ import { calcSettlement } from '@/lib/settlement/calc'
 import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migrate'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
-import { STATUS_META, canAdminEditSettlement, canAdminOrMasterAdminEditSettlement, canAdminPaySettlement, canAdminReject, canAdminRequestEdit, canAdminSendForConfirmation, canMarkSettlementPaidForRole } from '@/types'
+import { STATUS_META, canAdminEditSettlement, canAdminOrMasterAdminEditSettlement, canAdminRequestEdit, canAdminSendForConfirmation, canMarkSettlementPaidForRole } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
 export const dynamic = 'force-dynamic'
@@ -59,8 +58,6 @@ export default async function AdminSettlementDetailPage({
   const canSendForConfirmation = canAdminSendForConfirmation(s.status, session.role)
   const canAdminEdit = canAdminOrMasterAdminEditSettlement(s.status, session.role)
   const canReqEdit = canAdminRequestEdit(s.status, session.role)
-  const canReject  = canAdminReject(s.status, session.role)
-  const canApprove = canMasterApproveFromPending(s.status, session.role)
   const canReopen  = canMasterReopenPaid(s.status, session.role)
   const canPay     = canMarkSettlementPaidForRole(session.role, s)
 
@@ -197,13 +194,11 @@ export default async function AdminSettlementDetailPage({
       )}
 
       {/* 관리자 액션 패널 */}
-      {(canSendForConfirmation || canReject || canReqEdit || canPay || canApprove || canReopen) && (
+      {(canSendForConfirmation || canReqEdit || canPay || canReopen) && (
         <ReviewPanel
           settlementId={s.id}
           canSendForConfirmation={canSendForConfirmation}
-          canReject={canReject}
           canRequestEdit={canReqEdit}
-          canApprove={canApprove}
           canReopen={canReopen}
           canPay={canPay}
           currentAdminNote={s.admin_note ?? ''}

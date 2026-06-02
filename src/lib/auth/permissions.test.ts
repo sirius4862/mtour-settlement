@@ -33,55 +33,44 @@ describe('permissions', () => {
     expect(homePathForRole('master_admin')).toBe('/admin')
   })
 
-  it('restricts payment to master_admin', () => {
+  it('allows admin and master_admin to mark paid', () => {
     expect(canMarkSettlementPaid('master_admin')).toBe(true)
-    expect(canMarkSettlementPaid('admin')).toBe(false)
-    expect(assertRoleCanMarkPaid('admin').ok).toBe(false)
+    expect(canMarkSettlementPaid('admin')).toBe(true)
+    expect(assertRoleCanMarkPaid('admin').ok).toBe(true)
     expect(assertRoleCanMarkPaid('master_admin').ok).toBe(true)
+    expect(assertRoleCanMarkPaid('guide').ok).toBe(false)
   })
 
-  it('allows admin pre-confirm edits and master_admin approved edits only', () => {
+  it('allows admin tier edits only during submitted review', () => {
     expect(canSaveAdminSettlementEdits('submitted', 'admin')).toBe(true)
-    expect(canSaveAdminSettlementEdits('approved', 'admin')).toBe(false)
-    expect(canSaveAdminSettlementEdits('approved', 'master_admin')).toBe(true)
+    expect(canSaveAdminSettlementEdits('approved', 'master_admin')).toBe(false)
     expect(canSaveAdminSettlementEdits('paid', 'master_admin')).toBe(false)
     expect(assertRoleCanSaveAdminSettlement('master_admin', 'paid').ok).toBe(false)
   })
 
-  it('requires re-confirm when master_admin edits approved settlement', () => {
-    expect(settlementRequiresReconfirmAfterMasterAdminEdit('approved', 'master_admin')).toBe(true)
-    expect(settlementRequiresReconfirmAfterMasterAdminEdit('submitted', 'master_admin')).toBe(false)
-    expect(settlementRequiresReconfirmAfterMasterAdminEdit('approved', 'admin')).toBe(false)
+  it('does not require re-confirm after master edits in v1', () => {
+    expect(settlementRequiresReconfirmAfterMasterAdminEdit('pending_guide_confirmation', 'master_admin')).toBe(false)
   })
 
-  it('locks admin after approved or paid', () => {
-    expect(isPostApprovalReadOnlyForAdmin('approved')).toBe(true)
+  it('locks plain admin only after paid', () => {
     expect(isPostApprovalReadOnlyForAdmin('paid')).toBe(true)
-    expect(isPostApprovalReadOnlyForAdmin('submitted')).toBe(false)
-    expect(assertAdminReadOnlyAfterApproval('admin', 'approved').ok).toBe(false)
+    expect(isPostApprovalReadOnlyForAdmin('pending_guide_confirmation')).toBe(false)
     expect(assertAdminReadOnlyAfterApproval('admin', 'paid').ok).toBe(false)
-    expect(assertAdminReadOnlyAfterApproval('master_admin', 'approved').ok).toBe(true)
-    expect(assertRoleCanSaveAdminSettlement('admin', 'approved').ok).toBe(false)
+    expect(assertAdminReadOnlyAfterApproval('admin', 'pending_guide_confirmation').ok).toBe(true)
+    expect(assertRoleCanSaveAdminSettlement('admin', 'pending_guide_confirmation').ok).toBe(false)
   })
 
-  it('master_admin inherits every admin operational permission', () => {
+  it('master_admin inherits admin operational permissions', () => {
     expect(canOperationalAdminReview('master_admin')).toBe(true)
     expect(canAdminReviewActions('master_admin')).toBe(true)
     expect(canAdminReviewEditSettlement('submitted', 'master_admin')).toBe(true)
     expect(canAdminReviewEditSettlement('clarification_requested', 'master_admin')).toBe(true)
-    expect(assertAdminReadOnlyAfterApproval('master_admin', 'approved').ok).toBe(true)
-    expect(assertAdminReadOnlyAfterApproval('master_admin', 'paid').ok).toBe(true)
-    expect(canMarkSettlementPaid('master_admin')).toBe(true)
-    expect(canMasterApproveFromPending('pending_guide_confirmation', 'master_admin')).toBe(true)
     expect(canMasterReopenPaid('paid', 'master_admin')).toBe(true)
   })
 
-  it('keeps final authority master_admin-only', () => {
-    expect(canOperationalAdminReview('admin')).toBe(true)
-    expect(canOperationalAdminReview('guide')).toBe(false)
+  it('disables deprecated master approve path', () => {
+    expect(canMasterApproveFromPending('pending_guide_confirmation', 'master_admin')).toBe(false)
     expect(canMasterApproveFromPending('pending_guide_confirmation', 'admin')).toBe(false)
-    expect(canMarkSettlementPaid('admin')).toBe(false)
     expect(canMasterReopenPaid('paid', 'admin')).toBe(false)
-    expect(canSaveAdminSettlementEdits('approved', 'admin')).toBe(false)
   })
 })

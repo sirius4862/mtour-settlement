@@ -62,7 +62,7 @@ export default async function SettlementDetailPage({
           className="block bg-orange-50 border border-orange-200 rounded-xl p-4 hover:border-orange-300"
         >
           <p className="text-sm font-semibold text-orange-800 mb-1">관리자 확인 요청</p>
-          <p className="text-sm text-orange-700">변경된 정산 내용을 확인하고 최종 승인해 주세요.</p>
+          <p className="text-sm text-orange-700">변경된 정산 내용을 확인하고 이상없음을 선택해 주세요.</p>
           <p className="text-xs text-orange-600 mt-2 font-medium">변경사항 확인 →</p>
         </Link>
       )}

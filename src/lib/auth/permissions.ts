@@ -7,7 +7,7 @@ export function isGuide(role: UserRole): role is 'guide' {
   return role === 'guide'
 }
 
-/** Plain `admin` role — use only to distinguish staff admin from master_admin (e.g. post-approval read-only). */
+/** Plain `admin` role — use only to distinguish staff admin from master_admin (e.g. post-payment read-only). */
 export function isAdmin(role: UserRole): role is 'admin' {
   return role === 'admin'
 }
@@ -37,13 +37,14 @@ export function canPerformGuideMutation(role: UserRole): boolean {
   return isGuide(role)
 }
 
+/** Admin and master_admin may mark 지급완료. */
 export function canMarkSettlementPaid(role: UserRole): boolean {
-  return isMasterAdmin(role)
+  return isAdminTier(role)
 }
 
-/** After approval or payment, admin users are read-only. */
+/** After payment, plain admin users are read-only. */
 export function isPostApprovalReadOnlyForAdmin(status: SettlementStatus): boolean {
-  return status === 'approved' || status === 'paid'
+  return status === 'paid'
 }
 
 /** Pre-payment operational review — admin tier (admin + master_admin). */
@@ -51,18 +52,20 @@ export function canOperationalAdminReview(role: UserRole): boolean {
   return isAdminTier(role)
 }
 
+/** @deprecated v1 — no separate approved status or master post-confirm edits. */
 export function canMasterAdminEditApprovedSettlement(
-  status: SettlementStatus,
-  role: UserRole,
+  _status: SettlementStatus,
+  _role: UserRole,
 ): boolean {
-  return isMasterAdmin(role) && status === 'approved'
+  return false
 }
 
+/** @deprecated v1 — guide confirmation replaces master approve. */
 export function canMasterApproveFromPending(
-  status: SettlementStatus,
-  role: UserRole,
+  _status: SettlementStatus,
+  _role: UserRole,
 ): boolean {
-  return isMasterAdmin(role) && status === 'pending_guide_confirmation'
+  return false
 }
 
 export function canMasterReopenPaid(status: SettlementStatus, role: UserRole): boolean {
@@ -81,13 +84,10 @@ export function canSaveAdminSettlementEdits(
   status: SettlementStatus,
   role: UserRole,
 ): boolean {
-  return (
-    canAdminReviewEditSettlement(status, role) ||
-    canMasterAdminEditApprovedSettlement(status, role)
-  )
+  return canAdminReviewEditSettlement(status, role)
 }
 
-/** Pre-payment review actions (reject, send for confirmation, etc.). */
+/** Pre-payment review actions (request edit, send for confirmation, pay). */
 export function canAdminReviewActions(role: UserRole): boolean {
   return canOperationalAdminReview(role)
 }
@@ -99,7 +99,7 @@ export function assertAdminReadOnlyAfterApproval(
   if (isAdmin(role) && isPostApprovalReadOnlyForAdmin(status)) {
     return {
       ok: false,
-      error: '최종확인 완료 또는 지급 완료된 정산서는 조회만 가능합니다.',
+      error: '지급 완료된 정산서는 조회만 가능합니다.',
     }
   }
   return { ok: true }
@@ -116,12 +116,6 @@ export function assertRoleCanSaveAdminSettlement(
     if (status === 'paid') {
       return { ok: false, error: '지급 완료된 정산서는 수정할 수 없습니다. 마스터 관리자가 재오픈해야 합니다.' }
     }
-    if (status === 'approved' && isAdmin(role)) {
-      return {
-        ok: false,
-        error: '최종확인 완료 정산서는 마스터 관리자만 수정할 수 있습니다.',
-      }
-    }
     return { ok: false, error: '현재 상태에서는 수정할 수 없습니다.' }
   }
   return { ok: true }
@@ -131,16 +125,17 @@ export function assertRoleCanMarkPaid(
   role: UserRole,
 ): { ok: true } | { ok: false; error: string } {
   if (!canMarkSettlementPaid(role)) {
-    return { ok: false, error: '지급 처리는 마스터 관리자만 할 수 있습니다.' }
+    return { ok: false, error: '지급 처리는 관리자 권한이 필요합니다.' }
   }
   return { ok: true }
 }
 
+/** @deprecated v1 — confirmation flags on pending_guide_confirmation replace re-confirm flow. */
 export function settlementRequiresReconfirmAfterMasterAdminEdit(
-  status: SettlementStatus,
-  role: UserRole,
+  _status: SettlementStatus,
+  _role: UserRole,
 ): boolean {
-  return status === 'approved' && isMasterAdmin(role)
+  return false
 }
 
 export type SettlementPayGuardInput = Pick<

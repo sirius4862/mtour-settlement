@@ -3,8 +3,6 @@ import {
   assertRoleCanMarkPaid,
   assertRoleCanSaveAdminSettlement,
   canMarkSettlementPaid,
-  canMasterAdminEditApprovedSettlement,
-  canMasterApproveFromPending,
   canMasterReopenPaid,
   canOperationalAdminReview,
   canSaveAdminSettlementEdits,
@@ -16,16 +14,16 @@ import type { Settlement, SettlementStatus, UserRole } from '@/types'
 /** Guide may edit settlement content */
 export const GUIDE_EDITABLE: SettlementStatus[] = ['draft', 'rejected', 'edit_requested']
 
-/** Guide may only confirm or request clarification (read-only form) */
+/** Guide may only confirm or request edit (read-only form) */
 export const GUIDE_CONFIRM_ONLY: SettlementStatus[] = ['pending_guide_confirmation']
 
 /** Admin may edit admin-owned fields during pre-confirm review */
 export const ADMIN_EDITABLE: SettlementStatus[] = ['submitted', 'clarification_requested']
 
-/** Master admin may edit after guide confirmation (not after payment) */
-export const MASTER_ADMIN_EDITABLE: SettlementStatus[] = ['approved']
+/** @deprecated v1 — no master post-confirm edit path */
+export const MASTER_ADMIN_EDITABLE: SettlementStatus[] = []
 
-/** Admin may reject or request guide content edit (pre-confirmation) */
+/** Admin may request guide content edit (pre-confirmation) */
 export const ADMIN_PRE_CONFIRM_REVIEW: SettlementStatus[] = ['submitted', 'clarification_requested']
 
 /** Fully locked for guide */
@@ -62,8 +60,8 @@ export function canAdminEditSettlement(status: SettlementStatus): boolean {
   return ADMIN_EDITABLE.includes(status)
 }
 
-export function canMasterAdminEditSettlement(status: SettlementStatus): boolean {
-  return MASTER_ADMIN_EDITABLE.includes(status)
+export function canMasterAdminEditSettlement(_status: SettlementStatus): boolean {
+  return false
 }
 
 export function canAdminOrMasterAdminEditSettlement(
@@ -73,17 +71,15 @@ export function canAdminOrMasterAdminEditSettlement(
   return canSaveAdminSettlementEdits(status, role)
 }
 
-/**
- * Admin direct approve is replaced by guide final confirmation.
- * Legacy rows already `approved` in DB are unchanged.
- */
+/** @deprecated v1 — guide confirmation replaces admin/master direct approve. */
 export function canAdminDirectApprove(_status: SettlementStatus): boolean {
   return false
 }
 
-export function canAdminReject(status: SettlementStatus, role?: UserRole): boolean {
+/** @deprecated v1 — use 수정요청 instead of 반려. */
+export function canAdminReject(_status: SettlementStatus, role?: UserRole): boolean {
   if (role !== undefined && !canOperationalAdminReview(role)) return false
-  return ADMIN_PRE_CONFIRM_REVIEW.includes(status)
+  return false
 }
 
 export function canAdminRequestEdit(status: SettlementStatus, role?: UserRole): boolean {
@@ -106,7 +102,7 @@ export function assertGuideConfirmAction(
     return { ok: false, error: '본인에게 배정된 정산서만 처리할 수 있습니다.' }
   }
   if (s.status !== 'pending_guide_confirmation') {
-    return { ok: false, error: '최종 확인 대기 상태에서만 처리할 수 있습니다.' }
+    return { ok: false, error: '최종확인 상태에서만 처리할 수 있습니다.' }
   }
   if (action === 'clarification') return { ok: true }
   return { ok: true }
@@ -117,7 +113,7 @@ export function assertAdminSendForConfirmation(
   guideSubmitSnapshotId: string | null,
 ): { ok: true } | { ok: false; error: string } {
   if (!canAdminSendForConfirmation(status)) {
-    return { ok: false, error: '제출됨 또는 확인 이의 상태에서만 확인 요청을 보낼 수 있습니다.' }
+    return { ok: false, error: '제출됨 상태에서만 최종확인을 보낼 수 있습니다.' }
   }
   if (!guideSubmitSnapshotId) {
     return { ok: false, error: '가이드 제출 스냅샷이 없습니다. 가이드가 다시 제출해야 합니다.' }
@@ -133,13 +129,18 @@ export function assertAdminSaveSettlement(
 }
 
 /**
- * Pay only after guide final confirmation in the new workflow.
- * Legacy `approved` rows (no guide_submit_snapshot_id) remain payable.
+ * Pay from 최종확인 after guide confirmation.
+ * Legacy `approved` rows remain payable for migration.
  */
 export function canAdminPaySettlement(s: SettlementPayGuardInput): boolean {
-  if (s.status !== 'approved') return false
-  if (s.guide_submit_snapshot_id && !s.guide_confirmed_at) return false
-  return true
+  if (s.status === 'pending_guide_confirmation') {
+    return s.guide_confirmed_at != null
+  }
+  if (s.status === 'approved') {
+    if (s.guide_submit_snapshot_id && !s.guide_confirmed_at) return false
+    return true
+  }
+  return false
 }
 
 export function canMarkSettlementPaidForRole(
@@ -163,21 +164,12 @@ export function assertAdminReviewAction(
 
   switch (action) {
     case 'approve':
-      if (!canMasterApproveFromPending(s.status, role)) {
-        return { ok: false, error: '최종 승인은 마스터 관리자만 할 수 있습니다.' }
-      }
-      return { ok: true }
+      return { ok: false, error: '최종 승인은 더 이상 사용하지 않습니다. 지급완료 처리를 사용하세요.' }
+    case 'reject':
+      return { ok: false, error: '반려는 더 이상 사용하지 않습니다. 수정요청을 사용하세요.' }
     case 'reopen':
       if (!canMasterReopenPaid(s.status, role)) {
         return { ok: false, error: '지급 완료 정산서 재오픈은 마스터 관리자만 할 수 있습니다.' }
-      }
-      return { ok: true }
-    case 'reject':
-      if (!canOperationalAdminReview(role)) {
-        return { ok: false, error: '관리자 권한이 필요합니다.' }
-      }
-      if (!canAdminReject(s.status)) {
-        return { ok: false, error: '현재 상태에서는 반려할 수 없습니다.' }
       }
       return { ok: true }
     case 'request_edit':
@@ -185,17 +177,17 @@ export function assertAdminReviewAction(
         return { ok: false, error: '관리자 권한이 필요합니다.' }
       }
       if (!canAdminRequestEdit(s.status)) {
-        return { ok: false, error: '현재 상태에서는 수정 요청을 할 수 없습니다.' }
+        return { ok: false, error: '현재 상태에서는 수정요청을 할 수 없습니다.' }
       }
       return { ok: true }
     case 'pay': {
       const roleGuard = assertRoleCanMarkPaid(role)
       if (!roleGuard.ok) return roleGuard
       if (!canAdminPaySettlement(s)) {
-        if (s.status !== 'approved') {
-          return { ok: false, error: '승인된 정산서만 지급 처리할 수 있습니다.' }
+        if (s.status !== 'pending_guide_confirmation' && s.status !== 'approved') {
+          return { ok: false, error: '최종확인 상태에서만 지급 처리할 수 있습니다.' }
         }
-        return { ok: false, error: '가이드 최종 확인 후에만 지급 처리할 수 있습니다.' }
+        return { ok: false, error: '가이드 최종확인(이상없음) 후에만 지급 처리할 수 있습니다.' }
       }
       return { ok: true }
     }

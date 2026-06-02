@@ -7,9 +7,7 @@ import { useRouter } from 'next/navigation'
 interface Props {
   settlementId: string
   canSendForConfirmation: boolean
-  canReject: boolean
   canRequestEdit: boolean
-  canApprove: boolean
   canReopen: boolean
   canPay: boolean
   currentAdminNote: string
@@ -18,9 +16,7 @@ interface Props {
 export function ReviewPanel({
   settlementId,
   canSendForConfirmation,
-  canReject,
   canRequestEdit,
-  canApprove,
   canReopen,
   canPay,
   currentAdminNote,
@@ -28,17 +24,14 @@ export function ReviewPanel({
   const router = useRouter()
   const [pending, start] = useTransition()
   const [adminNote, setAdminNote] = useState(currentAdminNote)
-  const [rejectReason, setRejectReason] = useState('')
-  const [showReject, setShowReject] = useState(false)
   const [error, setError] = useState('')
 
-  const handleReview = (action: 'approve' | 'reject' | 'request_edit' | 'pay' | 'reopen') => {
+  const handleReview = (action: 'request_edit' | 'pay' | 'reopen') => {
     setError('')
     start(async () => {
       const res = await reviewSettlement({
         id: settlementId,
         action,
-        rejectReason: action === 'reject' ? rejectReason : undefined,
         adminNote: adminNote.trim() || undefined,
       })
       if (res.ok) {
@@ -61,8 +54,7 @@ export function ReviewPanel({
     })
   }
 
-  const showActions =
-    canSendForConfirmation || canReject || canRequestEdit || canApprove || canReopen || canPay
+  const showActions = canSendForConfirmation || canRequestEdit || canReopen || canPay
   if (!showActions) return null
 
   return (
@@ -74,63 +66,29 @@ export function ReviewPanel({
         rows={2}
         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
 
-      {showReject && (
-        <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
-          placeholder="반려 사유를 입력하세요 (필수)"
-          rows={2} autoFocus
-          className="w-full px-3 py-2 text-sm border border-red-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-red-400" />
-      )}
-
       <div className="flex gap-2 flex-wrap">
-        {(canSendForConfirmation || canReject) && !showReject && canReject && (
-          <button onClick={() => setShowReject(true)} disabled={pending}
-            className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-40">
-            반려
-          </button>
-        )}
-
-        {canSendForConfirmation && !showReject && (
-          <button onClick={handleSendForConfirmation} disabled={pending}
-            className="flex-1 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-40">
-            {pending ? '처리 중…' : '가이드 검토 요청'}
-          </button>
-        )}
-
-        {(canSendForConfirmation || canReject) && showReject && (
-          <>
-            <button onClick={() => { setShowReject(false); setRejectReason('') }}
-              className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm">
-              취소
-            </button>
-            <button onClick={() => handleReview('reject')} disabled={pending || !rejectReason.trim()}
-              className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold disabled:opacity-40">
-              {pending ? '처리 중…' : '반려 확정'}
-            </button>
-          </>
-        )}
-
-        {canRequestEdit && !showReject && (
+        {canRequestEdit && (
           <button onClick={() => handleReview('request_edit')} disabled={pending}
             className="px-4 py-2.5 border border-blue-200 text-blue-600 rounded-xl text-sm font-medium hover:bg-blue-50 disabled:opacity-40">
-            수정 허용
+            수정요청
           </button>
         )}
 
-        {canApprove && !showReject && (
-          <button onClick={() => handleReview('approve')} disabled={pending}
-            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-40">
-            {pending ? '처리 중…' : '최종 승인'}
+        {canSendForConfirmation && (
+          <button onClick={handleSendForConfirmation} disabled={pending}
+            className="flex-1 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-40">
+            {pending ? '처리 중…' : '최종확인 보내기'}
           </button>
         )}
 
-        {canPay && !showReject && (
+        {canPay && (
           <button onClick={() => handleReview('pay')} disabled={pending}
             className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 disabled:opacity-40">
-            {pending ? '처리 중…' : '지급 완료'}
+            {pending ? '처리 중…' : '지급완료 처리'}
           </button>
         )}
 
-        {canReopen && !showReject && (
+        {canReopen && (
           <button onClick={() => handleReview('reopen')} disabled={pending}
             className="flex-1 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 disabled:opacity-40">
             {pending ? '처리 중…' : '지급 재오픈'}

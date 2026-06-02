@@ -6,6 +6,7 @@ import {
   canAdminDirectApprove,
   canAdminEditSettlement,
   canAdminPaySettlement,
+  canAdminReject,
   canAdminSendForConfirmation,
   canGuideConfirm,
   canGuideEdit,
@@ -50,7 +51,7 @@ describe('canGuideConfirm', () => {
 })
 
 describe('canAdminEditSettlement', () => {
-  it('allows submitted and clarification_requested', () => {
+  it('allows submitted and legacy clarification_requested', () => {
     expect(canAdminEditSettlement('submitted')).toBe(true)
     expect(canAdminEditSettlement('clarification_requested')).toBe(true)
     expect(canAdminEditSettlement('pending_guide_confirmation')).toBe(false)
@@ -58,18 +59,46 @@ describe('canAdminEditSettlement', () => {
 })
 
 describe('canAdminDirectApprove', () => {
-  it('is always false in the new workflow', () => {
+  it('is always false in the v1 workflow', () => {
     expect(canAdminDirectApprove('submitted')).toBe(false)
-    expect(canAdminDirectApprove('approved')).toBe(false)
+    expect(canAdminDirectApprove('pending_guide_confirmation')).toBe(false)
+  })
+})
+
+describe('canAdminReject', () => {
+  it('is always false in the v1 workflow', () => {
+    expect(canAdminReject('submitted', 'admin')).toBe(false)
+    expect(canAdminReject('submitted', 'master_admin')).toBe(false)
   })
 })
 
 describe('canAdminPaySettlement', () => {
+  it('allows pending_guide_confirmation when guide confirmed', () => {
+    expect(
+      canAdminPaySettlement({
+        ...base,
+        status: 'pending_guide_confirmation',
+        guide_confirmed_at: '2026-05-27T00:00:00Z',
+      }),
+    ).toBe(true)
+  })
+
+  it('blocks pending_guide_confirmation before guide confirmation', () => {
+    expect(
+      canAdminPaySettlement({
+        ...base,
+        status: 'pending_guide_confirmation',
+        guide_submit_snapshot_id: 'snap-1',
+        guide_confirmed_at: null,
+      }),
+    ).toBe(false)
+  })
+
   it('allows legacy approved without snapshot', () => {
     expect(canAdminPaySettlement({ ...base, status: 'approved' })).toBe(true)
   })
 
-  it('blocks approved when snapshot exists but guide has not confirmed', () => {
+  it('blocks legacy approved when snapshot exists but guide has not confirmed', () => {
     expect(
       canAdminPaySettlement({
         ...base,
@@ -78,17 +107,6 @@ describe('canAdminPaySettlement', () => {
         guide_confirmed_at: null,
       }),
     ).toBe(false)
-  })
-
-  it('allows approved after guide confirmation', () => {
-    expect(
-      canAdminPaySettlement({
-        ...base,
-        status: 'approved',
-        guide_submit_snapshot_id: 'snap-1',
-        guide_confirmed_at: '2026-05-27T00:00:00Z',
-      }),
-    ).toBe(true)
   })
 })
 
@@ -107,19 +125,19 @@ describe('canGuideRequestClarification', () => {
 })
 
 describe('canAdminSendForConfirmation', () => {
-  it('allows submitted and clarification_requested only', () => {
+  it('allows submitted and legacy clarification_requested only', () => {
     expect(canAdminSendForConfirmation('submitted')).toBe(true)
     expect(canAdminSendForConfirmation('clarification_requested')).toBe(true)
     expect(canAdminSendForConfirmation('pending_guide_confirmation')).toBe(false)
-    expect(canAdminSendForConfirmation('approved')).toBe(false)
+    expect(canAdminSendForConfirmation('paid')).toBe(false)
   })
 })
 
 describe('assertAdminSendForConfirmation', () => {
-  it('requires admin/staff role context via snapshot id', () => {
+  it('requires guide submit snapshot', () => {
     expect(assertAdminSendForConfirmation('submitted', null).ok).toBe(false)
     expect(assertAdminSendForConfirmation('submitted', 'snap-1').ok).toBe(true)
-    expect(assertAdminSendForConfirmation('approved', 'snap-1').ok).toBe(false)
+    expect(assertAdminSendForConfirmation('paid', 'snap-1').ok).toBe(false)
   })
 })
 
@@ -139,71 +157,60 @@ describe('assertGuideConfirmAction', () => {
         'confirm',
       ).ok,
     ).toBe(false)
-    expect(
-      assertGuideConfirmAction({ status: 'submitted', guide_id: 'guide-1' }, 'guide-1', 'confirm').ok,
-    ).toBe(false)
-  })
-
-  it('allows clarification request under same rules as confirm', () => {
-    expect(
-      assertGuideConfirmAction(
-        { status: 'pending_guide_confirmation', guide_id: 'guide-1' },
-        'guide-1',
-        'clarification',
-      ).ok,
-    ).toBe(true)
-    expect(
-      assertGuideConfirmAction({ status: 'approved', guide_id: 'guide-1' }, 'guide-1', 'clarification')
-        .ok,
-    ).toBe(false)
   })
 })
 
 describe('assertAdminReviewAction', () => {
-  it('blocks admin approve from submitted', () => {
-    const result = assertAdminReviewAction({ ...base, status: 'submitted' }, 'approve', 'admin')
-    expect(result.ok).toBe(false)
+  it('blocks deprecated approve and reject actions', () => {
+    expect(
+      assertAdminReviewAction({ ...base, status: 'pending_guide_confirmation' }, 'approve', 'master_admin')
+        .ok,
+    ).toBe(false)
+    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'admin').ok).toBe(false)
   })
 
-  it('allows master approve from pending_guide_confirmation', () => {
+  it('allows admin pay from pending_guide_confirmation after guide confirmation', () => {
     expect(
       assertAdminReviewAction(
-        { ...base, status: 'pending_guide_confirmation' },
-        'approve',
+        {
+          ...base,
+          status: 'pending_guide_confirmation',
+          guide_confirmed_at: '2026-05-27T00:00:00Z',
+        },
+        'pay',
+        'admin',
+      ).ok,
+    ).toBe(true)
+    expect(
+      assertAdminReviewAction(
+        {
+          ...base,
+          status: 'pending_guide_confirmation',
+          guide_confirmed_at: '2026-05-27T00:00:00Z',
+        },
+        'pay',
         'master_admin',
       ).ok,
     ).toBe(true)
   })
 
-  it('allows reject from submitted for admin tier', () => {
-    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'admin').ok).toBe(true)
-    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'master_admin').ok).toBe(
-      true,
-    )
-    expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'guide').ok).toBe(false)
+  it('blocks pay before guide confirmation', () => {
+    expect(
+      assertAdminReviewAction(
+        { ...base, status: 'pending_guide_confirmation', guide_submit_snapshot_id: 'snap-1' },
+        'pay',
+        'admin',
+      ).ok,
+    ).toBe(false)
   })
 
-  it('blocks admin mutations after approval', () => {
-    expect(assertAdminReviewAction({ ...base, status: 'approved' }, 'reject', 'admin').ok).toBe(false)
+  it('blocks admin mutations after payment', () => {
     expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'request_edit', 'admin').ok).toBe(false)
   })
 
   it('allows master reopen from paid', () => {
     expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'reopen', 'master_admin').ok).toBe(true)
     expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'reopen', 'admin').ok).toBe(false)
-  })
-
-  it('blocks pay before guide confirmation when snapshot exists', () => {
-    const result = assertAdminReviewAction(
-      {
-        ...base,
-        status: 'approved',
-        guide_submit_snapshot_id: 'snap-1',
-      },
-      'pay',
-      'master_admin',
-    )
-    expect(result.ok).toBe(false)
   })
 })
 

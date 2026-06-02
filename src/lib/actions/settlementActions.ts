@@ -551,6 +551,13 @@ function formatSubmitSettlementVerifyDiagnosticError(params: {
   return lines.join('\n')
 }
 
+// TEMPORARY DIAGNOSTIC — deployment/bundle proof marker (remove after confirmed).
+const SUBMIT_SETTLEMENT_BUILD_MARKER = '[TEMP DIAG BUILD a8cce64]'
+
+function withSubmitSettlementBuildMarker(error: string): string {
+  return `${SUBMIT_SETTLEMENT_BUILD_MARKER}\n${error}`
+}
+
 export async function submitSettlement(id: string): Promise<{ ok: boolean; error?: string }> {
   const logStep = (step: string, extra?: Record<string, unknown>) => {
     console.error('[submitSettlement]', step, { settlementId: id, ...extra })
@@ -559,8 +566,8 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
   try {
     logStep('start')
     const profile = await getProfile()
-    if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
-    if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
+    if (!profile) return { ok: false, error: withSubmitSettlementBuildMarker('로그인이 필요합니다.') }
+    if (profile.role !== 'guide') return { ok: false, error: withSubmitSettlementBuildMarker('가이드 권한이 필요합니다.') }
 
     const supabase = await createClient()
 
@@ -572,11 +579,11 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       .in('status', ['draft', 'rejected', 'edit_requested'])
       .maybeSingle()
 
-    if (!current) return { ok: false, error: '제출할 수 없는 정산서입니다.' }
+    if (!current) return { ok: false, error: withSubmitSettlementBuildMarker('제출할 수 없는 정산서입니다.') }
     logStep('precheck_ok', { status: current.status })
 
     const full = await getSettlementFull(id, { audience: 'guide' })
-    if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+    if (!full) return { ok: false, error: withSubmitSettlementBuildMarker('정산서를 찾을 수 없습니다.') }
     logStep('load_ok')
 
     const payload = buildSnapshotPayload(full)
@@ -588,7 +595,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
     })
     if (!snap.ok) {
       logStep('snapshot_failed', { error: snap.error })
-      return { ok: false, error: snap.error }
+      return { ok: false, error: withSubmitSettlementBuildMarker(snap.error) }
     }
     logStep('snapshot_ok', { snapshotId: snap.id })
 
@@ -643,7 +650,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       return {
         ok: false,
         // TEMPORARY DIAGNOSTIC — surface PostgREST RPC error in UI
-        error: formatSubmitSettlementRpcDiagnosticError(rpcError),
+        error: withSubmitSettlementBuildMarker(formatSubmitSettlementRpcDiagnosticError(rpcError)),
       }
     }
     logStep('settlements_update_ok', {
@@ -685,11 +692,13 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       return {
         ok: false,
         // TEMPORARY DIAGNOSTIC — surface verify step details in UI
-        error: formatSubmitSettlementVerifyDiagnosticError({
-          verifyError,
-          actualStatus: verified?.status ?? null,
-          rpcResult,
-        }),
+        error: withSubmitSettlementBuildMarker(
+          formatSubmitSettlementVerifyDiagnosticError({
+            verifyError,
+            actualStatus: verified?.status ?? null,
+            rpcResult,
+          }),
+        ),
       }
     }
     logStep('verify_ok')
@@ -704,7 +713,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
     })
     if (!audit.ok) {
       logStep('audit_failed', { error: audit.error })
-      return { ok: false, error: audit.error ?? '감사 로그 저장 실패' }
+      return { ok: false, error: withSubmitSettlementBuildMarker(audit.error ?? '감사 로그 저장 실패') }
     }
     logStep('audit_ok')
 
@@ -714,7 +723,7 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
   } catch (err) {
     const message = err instanceof Error ? err.message : '제출 중 오류가 발생했습니다.'
     logStep('unexpected_error', { message })
-    return { ok: false, error: message || '제출 중 오류가 발생했습니다.' }
+    return { ok: false, error: withSubmitSettlementBuildMarker(message || '제출 중 오류가 발생했습니다.') }
   }
 }
 

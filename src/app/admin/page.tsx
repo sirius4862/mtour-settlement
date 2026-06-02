@@ -1,24 +1,38 @@
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getAdminActionQueue, getAdminDashboardStats } from '@/lib/actions/settlementActions'
+import { getBranches } from '@/lib/actions/tourActions'
 import { AdminSettlementQueueRow } from '@/components/admin/AdminSettlementTable'
+import { adminRegionScopeLabel } from '@/lib/region/permissions'
+import { formatRegionLabel } from '@/lib/region/regions'
+import { isMasterAdmin } from '@/lib/auth/permissions'
 import { STATUS_META } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminPage() {
-  await requireAdmin()
+  const session = await requireAdmin()
+  const regions = await getBranches()
 
   const [stats, actionQueue] = await Promise.all([
     getAdminDashboardStats(),
     getAdminActionQueue(10),
   ])
 
+  const scope = { role: session.role, assignedRegionId: session.branch_id }
+  const assignedRegion = regions.find((r) => r.id === session.branch_id)
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">관리자 대시보드</h1>
-        <p className="text-sm text-gray-500 mt-0.5">전체 정산 기준</p>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {adminRegionScopeLabel(scope)}
+          {!isMasterAdmin(session.role) && assignedRegion && (
+            <> · {formatRegionLabel(assignedRegion.code, assignedRegion.name)}</>
+          )}
+          {isMasterAdmin(session.role) && ' · 전체 지역 집계'}
+        </p>
         <Link href="/admin/tours/new" className="text-sm text-blue-600 mt-2 inline-block">
           + 투어 등록 (가이드 정산 테스트용)
         </Link>

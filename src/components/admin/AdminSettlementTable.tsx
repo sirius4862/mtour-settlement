@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { formatGuideDisplayName } from '@/lib/guide/display-name'
+import { formatGuideDisplayLines } from '@/lib/guide/display-name'
+import { formatRegionLabel } from '@/lib/region/regions'
 import {
   formatAdminListUsd,
   parseSettlementCalcSummaryJson,
@@ -36,6 +37,7 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">투어일</th>
             <th className="px-3 py-2.5 font-medium">투어명</th>
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">투어코드</th>
+            <th className="px-3 py-2.5 font-medium whitespace-nowrap">지역</th>
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">가이드</th>
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">상태</th>
             <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap">회사입금</th>
@@ -49,6 +51,7 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
           {items.map((s) => {
             const summary = parseSettlementCalcSummaryJson(s.calc_summary_json)
             const canEdit = canAdminEditSettlement(s.status)
+            const guideLines = formatGuideDisplayLines(s.guide)
             return (
               <tr
                 key={s.id}
@@ -68,8 +71,14 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
                 <td className="px-3 py-3 whitespace-nowrap text-xs text-gray-500 font-mono">
                   {s.tour?.tour_code ?? '—'}
                 </td>
+                <td className="px-3 py-3 whitespace-nowrap text-xs text-gray-600">
+                  {formatRegionLabel(s.branch?.code, s.branch?.name)}
+                </td>
                 <td className="px-3 py-3 whitespace-nowrap text-gray-600">
-                  {formatGuideDisplayName(s.guide)}
+                  <p className="text-sm">{guideLines.primary}</p>
+                  {guideLines.secondary && (
+                    <p className="text-xs text-gray-400">{guideLines.secondary}</p>
+                  )}
                 </td>
                 <td className="px-3 py-3 whitespace-nowrap">
                   <StatusBadge s={s} />
@@ -116,6 +125,7 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
 export function AdminSettlementQueueRow({ s }: { s: AdminSettlementListItem }) {
   const display = getSettlementStatusDisplay(s.status, s.guide_confirmed_at)
   const summary = parseSettlementCalcSummaryJson(s.calc_summary_json)
+  const guideLines = formatGuideDisplayLines(s.guide)
 
   return (
     <Link
@@ -125,7 +135,8 @@ export function AdminSettlementQueueRow({ s }: { s: AdminSettlementListItem }) {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-800 truncate">{s.tour?.pattern ?? '—'}</p>
         <p className="text-xs text-gray-400">
-          {formatGuideDisplayName(s.guide)} · {s.tour?.start_date ?? s.year_month}
+          {formatRegionLabel(s.branch?.code, s.branch?.name)} · {guideLines.primary}
+          {guideLines.secondary ? ` (${guideLines.secondary})` : ''} · {s.tour?.start_date ?? s.year_month}
           {summary && (
             <span className="ml-2 font-mono">
               지급액 {formatAdminListUsd(summary.guide_payout_usd)}

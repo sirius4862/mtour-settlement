@@ -11,7 +11,8 @@ import {
 } from '@/lib/auth/permissions'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { createClient } from '@/lib/supabase/server'
-import { formatGuideDisplayName } from '@/lib/guide/display-name'
+import { formatGuideDisplayLines } from '@/lib/guide/display-name'
+import { formatRegionLabel } from '@/lib/region/regions'
 import { calcSettlement } from '@/lib/settlement/calc'
 import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migrate'
@@ -35,12 +36,20 @@ export default async function AdminSettlementDetailPage({
   const supabase = await createClient()
   const { data: guideProfile } = await supabase
     .from('profiles')
-    .select('id, full_name, email, korean_name, vietnamese_name')
+    .select('id, full_name, email, korean_name, vietnamese_name, branch_id')
     .eq('id', data.guide_id)
     .maybeSingle()
 
   const { tour, hotels, meals, entrances, others, shoppings, options } = data
   const s = data
+
+  const { data: regionRow } = await supabase
+    .from('branches')
+    .select('id, name, code')
+    .eq('id', s.branch_id)
+    .maybeSingle()
+
+  const guideLines = formatGuideDisplayLines(guideProfile)
   const meta = STATUS_META[s.status]
 
   const calc = calcSettlement(toCalcInput(stateFromSettlementFull(data, '')))
@@ -84,7 +93,13 @@ export default async function AdminSettlementDetailPage({
         <div className="bg-white rounded-2xl p-4 border border-gray-100">
           <p className="text-xs font-semibold text-gray-500 mb-2">투어 정보</p>
           <div className="space-y-1 text-xs text-gray-600">
-            <p>가이드: <strong>{formatGuideDisplayName(guideProfile)}</strong></p>
+            <p>
+              가이드: <strong>{guideLines.primary}</strong>
+              {guideLines.secondary && (
+                <span className="text-gray-500"> · {guideLines.secondary}</span>
+              )}
+            </p>
+            <p>지역: <strong>{formatRegionLabel(regionRow?.code, regionRow?.name)}</strong></p>
             <p>{tour.agency_name}</p>
             <p>{tour.start_date} ~ {tour.end_date} ({tour.nights}박)</p>
             <p>{tour.pax_count}명 · 환율 {s.exchange_rate.toLocaleString()}동</p>

@@ -8,6 +8,8 @@ import type { GuideOption } from '@/lib/actions/tourActions'
 import { createTour } from '@/lib/actions/tourActions'
 import { calcTourNights } from '@/lib/tour/nights'
 import { FieldLabel, SectionCard } from '@/components/ui/FormPrimitives'
+import { formatGuideDisplayLines } from '@/lib/guide/display-name'
+import { formatRegionLabel } from '@/lib/region/regions'
 
 interface Props {
   branches: Branch[]
@@ -187,34 +189,38 @@ export function CreateTourForm({ branches, guides }: Props) {
               required
             >
               <option value="">가이드 선택</option>
-              {guides.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.full_name} ({g.email})
-                  {!g.branch_id ? ' — 지사 없음' : ''}
-                </option>
-              ))}
+              {guides.map((g) => {
+                const lines = formatGuideDisplayLines(g)
+                return (
+                  <option key={g.id} value={g.id}>
+                    {lines.primary}
+                    {lines.secondary ? ` / ${lines.secondary}` : ''} ({g.email})
+                    {!g.branch_id ? ' — 지역 없음' : ''}
+                  </option>
+                )
+              })}
             </select>
             {guides.length === 0 && (
               <p className="text-xs text-amber-600 mt-1">등록된 가이드가 없습니다.</p>
             )}
           </div>
           <div>
-            <FieldLabel required>지사</FieldLabel>
+            <FieldLabel required>지역</FieldLabel>
             <select
               className={inputClass}
               value={branchId}
               onChange={(e) => setBranchId(e.target.value)}
               required
             >
-              <option value="">지사 선택</option>
+              <option value="">지역 선택</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} ({b.code})
+                  {formatRegionLabel(b.code, b.name)}
                 </option>
               ))}
             </select>
             {selectedGuide && selectedGuide.branch_id && branchId !== selectedGuide.branch_id && (
-              <p className="text-xs text-red-500 mt-1">가이드 지사와 일치해야 합니다.</p>
+              <p className="text-xs text-red-500 mt-1">가이드 지역과 일치해야 합니다.</p>
             )}
           </div>
         </div>

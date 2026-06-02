@@ -20,6 +20,8 @@ export async function getSession() {
   } | null
 }
 
+export type AdminSession = NonNullable<Awaited<ReturnType<typeof getSession>>>
+
 export async function requireAuth() {
   const session = await getSession()
   if (!session) redirect('/login')

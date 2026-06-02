@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatGuideDisplayName } from './display-name'
+import { formatGuideDisplayName, formatGuideDisplayLines } from './display-name'
 
 describe('formatGuideDisplayName', () => {
   it('prefers korean_name', () => {
@@ -32,5 +32,16 @@ describe('formatGuideDisplayName', () => {
   it('returns 이름 없음 when all empty', () => {
     expect(formatGuideDisplayName({})).toBe('이름 없음')
     expect(formatGuideDisplayName(null)).toBe('이름 없음')
+  })
+})
+
+describe('formatGuideDisplayLines', () => {
+  it('shows KO primary and EN secondary', () => {
+    const lines = formatGuideDisplayLines({
+      korean_name: '김가이드',
+      vietnamese_name: 'Kim Guide',
+    })
+    expect(lines.primary).toBe('김가이드')
+    expect(lines.secondary).toBe('Kim Guide')
   })
 })

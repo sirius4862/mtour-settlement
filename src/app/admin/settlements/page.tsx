@@ -1,7 +1,11 @@
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getAdminSettlements } from '@/lib/actions/settlementActions'
+import { getBranches } from '@/lib/actions/tourActions'
 import { AdminSettlementTable } from '@/components/admin/AdminSettlementTable'
+import { adminRegionScopeLabel } from '@/lib/region/permissions'
+import { formatRegionLabel } from '@/lib/region/regions'
+import { isMasterAdmin } from '@/lib/auth/permissions'
 import { STATUS_META, WORKFLOW_STATUS_ORDER } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -10,12 +14,14 @@ function buildListUrl(params: {
   yearMonth: string
   status: string
   search: string
+  regionId: string
   page: number
 }): string {
   const q = new URLSearchParams()
   if (params.yearMonth) q.set('yearMonth', params.yearMonth)
   if (params.status) q.set('status', params.status)
   if (params.search) q.set('search', params.search)
+  if (params.regionId) q.set('regionId', params.regionId)
   if (params.page > 1) q.set('page', String(params.page))
   const s = q.toString()
   return s ? `/admin/settlements?${s}` : '/admin/settlements'
@@ -24,8 +30,9 @@ function buildListUrl(params: {
 export default async function AdminSettlementsPage({
   searchParams,
 }: { searchParams: Promise<Record<string, string>> }) {
-  await requireAdmin()
+  const session = await requireAdmin()
   const params = await searchParams
+  const regions = await getBranches()
 
   const now = new Date()
   const defaultYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -33,20 +40,36 @@ export default async function AdminSettlementsPage({
   const status = params.status || ''
   const search = params.search || ''
   const page = Math.max(1, parseInt(params.page || '1', 10) || 1)
+  const regionId =
+    params.regionId ||
+    (!isMasterAdmin(session.role) && session.branch_id ? session.branch_id : '')
+
+  const scope = { role: session.role, assignedRegionId: session.branch_id }
+  const scopeLabel = adminRegionScopeLabel(scope)
+  const assignedRegion = regions.find((r) => r.id === session.branch_id)
 
   const result = await getAdminSettlements({
     yearMonth,
     status: status || undefined,
     search: search || undefined,
+    regionId: regionId || undefined,
     page,
   })
 
-  const listParams = { yearMonth, status, search, page: 1 }
+  const listParams = { yearMonth, status, search, regionId, page: 1 }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-gray-900">정산서 목록</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-lg font-bold text-gray-900">정산서 목록</h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {scopeLabel}
+            {!isMasterAdmin(session.role) && assignedRegion && (
+              <> · {formatRegionLabel(assignedRegion.code, assignedRegion.name)}</>
+            )}
+          </p>
+        </div>
         <span className="text-xs text-gray-400">
           {result.total}건 · {result.page}/{Math.max(result.totalPages, 1)}페이지
         </span>
@@ -59,6 +82,24 @@ export default async function AdminSettlementsPage({
           defaultValue={yearMonth}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
         />
+        {isMasterAdmin(session.role) ? (
+          <select
+            name="regionId"
+            defaultValue={regionId}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+          >
+            <option value="">전체 지역</option>
+            {regions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {formatRegionLabel(r.code, r.name)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          assignedRegion && (
+            <input type="hidden" name="regionId" value={assignedRegion.id} />
+          )
+        )}
         <select
           name="status"
           defaultValue={status}

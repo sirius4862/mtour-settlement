@@ -1,7 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { isAdminTier } from '@/lib/auth/permissions'
+import { isAdminTier, isMasterAdmin } from '@/lib/auth/permissions'
+import { canAdminAccessRegion, type AdminRegionScope } from '@/lib/region/permissions'
+import { filterMtourRegionBranches } from '@/lib/region/regions'
 import { createClient } from '@/lib/supabase/server'
 import type { Branch, Tour } from '@/types'
 
@@ -10,6 +12,8 @@ export interface GuideOption {
   full_name: string
   email: string
   branch_id: string | null
+  korean_name: string | null
+  vietnamese_name: string | null
 }
 
 export interface TourWithGuide extends Tour {
@@ -36,12 +40,21 @@ async function requireAdminProfile() {
 
   const { data } = await supabase
     .from('profiles')
-    .select('id, role')
+    .select('id, role, branch_id')
     .eq('id', user.id)
     .single()
 
   if (!data || !isAdminTier(data.role as import('@/types').UserRole)) return null
-  return { id: data.id as string, supabase }
+  return {
+    id: data.id as string,
+    role: data.role as import('@/types').UserRole,
+    branch_id: data.branch_id as string | null,
+    supabase,
+  }
+}
+
+function adminRegionScope(ctx: NonNullable<Awaited<ReturnType<typeof requireAdminProfile>>>): AdminRegionScope {
+  return { role: ctx.role, assignedRegionId: ctx.branch_id }
 }
 
 export async function getAdminTours(): Promise<TourWithGuide[]> {
@@ -66,7 +79,11 @@ export async function getBranches(): Promise<Branch[]> {
     .select('id, name, code, created_at')
     .order('name')
 
-  return (data ?? []) as Branch[]
+  const regions = filterMtourRegionBranches((data ?? []) as Branch[])
+  const scope = adminRegionScope(ctx)
+  if (isMasterAdmin(scope.role)) return regions
+  if (!scope.assignedRegionId) return regions
+  return regions.filter((b) => b.id === scope.assignedRegionId)
 }
 
 export async function getGuideProfiles(): Promise<GuideOption[]> {
@@ -75,12 +92,15 @@ export async function getGuideProfiles(): Promise<GuideOption[]> {
 
   const { data } = await ctx.supabase
     .from('profiles')
-    .select('id, full_name, email, branch_id')
+    .select('id, full_name, email, branch_id, korean_name, vietnamese_name')
     .eq('role', 'guide')
     .eq('is_active', true)
     .order('full_name')
 
-  return (data ?? []) as GuideOption[]
+  const guides = (data ?? []) as GuideOption[]
+  const scope = adminRegionScope(ctx)
+  if (isMasterAdmin(scope.role) || !scope.assignedRegionId) return guides
+  return guides.filter((g) => g.branch_id === scope.assignedRegionId)
 }
 
 export async function createTour(
@@ -108,7 +128,12 @@ export async function createTour(
   if (!vehicle_type) return { ok: false, error: '차량 종류를 입력해주세요.' }
   if (!tc_name) return { ok: false, error: 'TC 이름을 입력해주세요.' }
   if (!input.guide_id) return { ok: false, error: '가이드를 선택해주세요.' }
-  if (!input.branch_id) return { ok: false, error: '지사를 선택해주세요.' }
+  if (!input.branch_id) return { ok: false, error: '지역을 선택해주세요.' }
+
+  const scope = adminRegionScope(ctx)
+  if (!canAdminAccessRegion(scope, input.branch_id)) {
+    return { ok: false, error: '담당 지역 밖의 투어는 생성할 수 없습니다.' }
+  }
 
   const { data: guide } = await ctx.supabase
     .from('profiles')
@@ -120,10 +145,10 @@ export async function createTour(
     return { ok: false, error: '유효한 가이드를 선택해주세요.' }
   }
   if (!guide.branch_id) {
-    return { ok: false, error: '선택한 가이드에 지사(branch)가 설정되어 있지 않습니다.' }
+    return { ok: false, error: '선택한 가이드에 지역이 설정되어 있지 않습니다.' }
   }
   if (guide.branch_id !== input.branch_id) {
-    return { ok: false, error: '가이드 지사와 선택한 지사가 일치하지 않습니다.' }
+    return { ok: false, error: '가이드 지역과 선택한 지역이 일치하지 않습니다.' }
   }
 
   const { data, error } = await ctx.supabase

@@ -106,6 +106,7 @@ export interface AdminSettlementListItem {
   updated_at: string
   submitted_at: string | null
   guide_confirmed_at: string | null
+  branch_id: string
   calc_summary_json: SettlementCalcSummaryJson | Record<string, unknown> | null
   tour: {
     id: string
@@ -115,6 +116,7 @@ export interface AdminSettlementListItem {
     pax_count: number
   } | null
   guide: (GuideNameFields & { id: string; email: string }) | null
+  branch: { id: string; name: string; code: string } | null
 }
 
 export interface AdminSettlementsPageResult {
@@ -129,14 +131,17 @@ export interface AdminSettlementListFilters {
   yearMonth?: string
   status?: string
   search?: string
+  /** Region filter — `settlements.branch_id`. Master admin only; plain admin uses assigned region. */
+  regionId?: string
   page?: number
   pageSize?: number
 }
 
 export const ADMIN_SETTLEMENT_SELECT = `
-  id, status, year_month, updated_at, submitted_at, guide_confirmed_at, calc_summary_json,
+  id, status, year_month, updated_at, submitted_at, guide_confirmed_at, branch_id, calc_summary_json,
   tour:tours(id, pattern, tour_code, start_date, pax_count),
-  guide:profiles!guide_id(id, full_name, email, korean_name, vietnamese_name)
+  guide:profiles!guide_id(id, full_name, email, korean_name, vietnamese_name, branch_id),
+  branch:branches(id, name, code)
 `
 
 /** Escape user input for PostgREST ilike patterns. */

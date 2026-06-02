@@ -32,10 +32,18 @@ export interface Branch {
   id: string; name: string; code: string; created_at: string
 }
 
+/** MTour region — stored as `branches` row; referenced by `branch_id`. */
+export type MtourRegion = Branch
+
 export interface Profile {
   id: string; email: string; full_name: string
-  korean_name: string | null; vietnamese_name: string | null
-  role: UserRole; branch_id: string | null
+  /** display_name_ko — Korean name shown to Korean admins */
+  korean_name: string | null
+  /** display_name_en — English/local name (optional) */
+  vietnamese_name: string | null
+  role: UserRole
+  /** Assigned MTour region (`branches.id`). Guide: required. Admin: primary region v1. */
+  branch_id: string | null
   agency_name: string | null; phone: string | null
   is_active: boolean; created_at: string; updated_at: string
 }

@@ -56,6 +56,7 @@ import {
   isAdminTier,
   settlementRequiresReconfirmAfterMasterAdminEdit,
 } from '@/lib/auth/permissions'
+import { resolveAdminRegionFilter, type AdminRegionScope } from '@/lib/region/permissions'
 import {
   ADMIN_SETTLEMENT_PAGE_SIZE,
   ADMIN_SETTLEMENT_SELECT,
@@ -78,6 +79,20 @@ async function getProfile() {
   const { data } = await supabase
     .from('profiles').select('id,role,branch_id').eq('id', user.id).single()
   return data as { id: string; role: UserRole; branch_id: string | null } | null
+}
+
+async function getAdminRegionScope(): Promise<AdminRegionScope | null> {
+  const profile = await getProfile()
+  if (!profile || !isAdminTier(profile.role)) return null
+  return { role: profile.role, assignedRegionId: profile.branch_id }
+}
+
+async function resolveSettlementRegionFilter(
+  filters?: AdminSettlementListFilters,
+): Promise<string | undefined> {
+  const scope = await getAdminRegionScope()
+  if (!scope) return undefined
+  return resolveAdminRegionFilter(scope, filters?.regionId)
 }
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
@@ -324,6 +339,9 @@ export async function getAdminSettlements(
     .select(ADMIN_SETTLEMENT_SELECT, { count: 'exact' })
     .order('updated_at', { ascending: false })
 
+  const regionId = await resolveSettlementRegionFilter(filters)
+  if (regionId) q = q.eq('branch_id', regionId)
+
   if (filters?.yearMonth) q = q.eq('year_month', filters.yearMonth)
   if (filters?.status) {
     const statuses = expandWorkflowStatusFilter(filters.status)
@@ -379,13 +397,18 @@ export async function getAdminSettlements(
 /** 대시보드 처리 필요 큐 (우선순위 정렬) */
 export async function getAdminActionQueue(limit = 10): Promise<AdminSettlementListItem[]> {
   const supabase = await createClient()
+  const regionId = await resolveSettlementRegionFilter()
 
-  const { data, error } = await supabase
+  let q = supabase
     .from('settlements')
     .select(ADMIN_SETTLEMENT_SELECT)
     .in('status', [...ACTION_NEEDED_STATUSES])
     .order('updated_at', { ascending: false })
     .limit(Math.max(limit * 5, 50))
+
+  if (regionId) q = q.eq('branch_id', regionId)
+
+  const { data, error } = await q
 
   if (error) {
     console.error('getAdminActionQueue:', error.message)
@@ -395,13 +418,17 @@ export async function getAdminActionQueue(limit = 10): Promise<AdminSettlementLi
   return sortActionNeededSettlements((data ?? []) as unknown as AdminSettlementListItem[]).slice(0, limit)
 }
 
-/** 대시보드 상태 집계 (global — same scope as action queue) */
+/** 대시보드 상태 집계 — scoped by admin region when assigned */
 export async function getAdminDashboardStats(): Promise<
   { status: SettlementStatus; count: number }[]
 > {
   const supabase = await createClient()
+  const regionId = await resolveSettlementRegionFilter()
 
-  const { data, error } = await supabase.from('settlements').select('status')
+  let q = supabase.from('settlements').select('status')
+  if (regionId) q = q.eq('branch_id', regionId)
+
+  const { data, error } = await q
 
   if (error) {
     console.error('getAdminDashboardStats:', error.message)

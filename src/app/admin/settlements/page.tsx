@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getAdminSettlements } from '@/lib/actions/settlementActions'
 import { AdminSettlementTable } from '@/components/admin/AdminSettlementTable'
-import { STATUS_META } from '@/types'
+import { STATUS_META, WORKFLOW_STATUS_ORDER } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,8 +65,8 @@ export default async function AdminSettlementsPage({
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
         >
           <option value="">전체 상태</option>
-          {Object.entries(STATUS_META).map(([v, m]) => (
-            <option key={v} value={v}>{m.label}</option>
+          {WORKFLOW_STATUS_ORDER.map((v) => (
+            <option key={v} value={v}>{STATUS_META[v].label}</option>
           ))}
         </select>
         <input

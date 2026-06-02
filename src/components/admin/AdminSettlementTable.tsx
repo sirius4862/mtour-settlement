@@ -4,11 +4,27 @@ import {
   formatAdminListUsd,
   parseSettlementCalcSummaryJson,
 } from '@/lib/settlement/calc-summary'
-import { STATUS_META, canAdminEditSettlement } from '@/types'
+import { canAdminEditSettlement, getSettlementStatusDisplay } from '@/types'
 import type { AdminSettlementListItem } from '@/lib/admin/settlement-list'
 
 function formatUpdatedAt(iso: string): string {
   return iso.slice(0, 16).replace('T', ' ')
+}
+
+function StatusBadge({ s }: { s: AdminSettlementListItem }) {
+  const display = getSettlementStatusDisplay(s.status, s.guide_confirmed_at)
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${display.bg} ${display.text}`}>
+        {display.label}
+      </span>
+      {display.payReadyBadge && (
+        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-700">
+          {display.payReadyBadge}
+        </span>
+      )}
+    </div>
+  )
 }
 
 export function AdminSettlementTable({ items }: { items: AdminSettlementListItem[] }) {
@@ -22,16 +38,15 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">투어코드</th>
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">가이드</th>
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">상태</th>
-            <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap">Q75</th>
-            <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap">P85</th>
-            <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap">R87</th>
+            <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap">회사입금</th>
+            <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap">지급액</th>
+            <th className="px-3 py-2.5 font-medium text-right whitespace-nowrap">회사수익</th>
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">수정일</th>
             <th className="px-3 py-2.5 font-medium whitespace-nowrap">작업</th>
           </tr>
         </thead>
         <tbody>
           {items.map((s) => {
-            const meta = STATUS_META[s.status]
             const summary = parseSettlementCalcSummaryJson(s.calc_summary_json)
             const canEdit = canAdminEditSettlement(s.status)
             return (
@@ -57,9 +72,7 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
                   {formatGuideDisplayName(s.guide)}
                 </td>
                 <td className="px-3 py-3 whitespace-nowrap">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${meta.bg} ${meta.text}`}>
-                    {meta.label}
-                  </span>
+                  <StatusBadge s={s} />
                 </td>
                 <td className="px-3 py-3 text-right font-mono text-xs whitespace-nowrap">
                   {formatAdminListUsd(summary?.company_deposit_usd)}
@@ -101,7 +114,7 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
 }
 
 export function AdminSettlementQueueRow({ s }: { s: AdminSettlementListItem }) {
-  const meta = STATUS_META[s.status]
+  const display = getSettlementStatusDisplay(s.status, s.guide_confirmed_at)
   const summary = parseSettlementCalcSummaryJson(s.calc_summary_json)
 
   return (
@@ -115,14 +128,21 @@ export function AdminSettlementQueueRow({ s }: { s: AdminSettlementListItem }) {
           {formatGuideDisplayName(s.guide)} · {s.tour?.start_date ?? s.year_month}
           {summary && (
             <span className="ml-2 font-mono">
-              P85 {formatAdminListUsd(summary.guide_payout_usd)}
+              지급액 {formatAdminListUsd(summary.guide_payout_usd)}
             </span>
           )}
         </p>
       </div>
-      <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${meta.bg} ${meta.text}`}>
-        {meta.label}
-      </span>
+      <div className="flex items-center gap-1 shrink-0">
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${display.bg} ${display.text}`}>
+          {display.label}
+        </span>
+        {display.payReadyBadge && (
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-700">
+            {display.payReadyBadge}
+          </span>
+        )}
+      </div>
     </Link>
   )
 }

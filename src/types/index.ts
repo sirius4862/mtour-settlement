@@ -233,15 +233,18 @@ export interface SettlementFull extends Settlement {
 // ── 상태 메타 ─────────────────────────────────────────────────
 
 export const STATUS_META: Record<SettlementStatus, { label: string; bg: string; text: string }> = {
-  draft:          { label: '작성중',       bg: 'bg-gray-100',    text: 'text-gray-600'    },
+  draft:          { label: '미제출',       bg: 'bg-gray-100',    text: 'text-gray-600'    },
   submitted:      { label: '제출됨',       bg: 'bg-amber-100',   text: 'text-amber-700'   },
-  pending_guide_confirmation: { label: '최종확인 대기', bg: 'bg-orange-100', text: 'text-orange-700' },
-  clarification_requested:    { label: '확인 이의',     bg: 'bg-rose-100',   text: 'text-rose-700'   },
-  approved:       { label: '최종확인 완료', bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  rejected:       { label: '반려됨',       bg: 'bg-red-100',     text: 'text-red-600'     },
+  pending_guide_confirmation: { label: '최종확인', bg: 'bg-orange-100', text: 'text-orange-700' },
   edit_requested: { label: '수정요청',     bg: 'bg-blue-100',    text: 'text-blue-700'    },
   paid:           { label: '지급완료',     bg: 'bg-purple-100',  text: 'text-purple-700'  },
+  /** @deprecated legacy DB rows — hidden from admin filters; mapped in status-display */
+  clarification_requested:    { label: '확인 이의',     bg: 'bg-rose-100',   text: 'text-rose-700'   },
+  approved:       { label: '최종확인', bg: 'bg-orange-100', text: 'text-orange-700' },
+  rejected:       { label: '반려됨',       bg: 'bg-red-100',     text: 'text-red-600'     },
 }
+
+export { WORKFLOW_STATUS_ORDER, getSettlementStatusDisplay, isWorkflowStatus } from '@/lib/settlement/status-display'
 
 export {
   isPostApprovalReadOnlyForAdmin,

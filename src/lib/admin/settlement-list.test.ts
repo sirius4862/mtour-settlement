@@ -5,15 +5,17 @@ import {
   aggregateSettlementStatusCounts,
   countActionNeededFromRows,
   countActionNeededFromStats,
+  expandWorkflowStatusFilter,
   sortActionNeededSettlements,
 } from './settlement-list'
 
 describe('ACTION_NEEDED_STATUSES', () => {
   it('includes admin action-needed statuses only', () => {
     expect(ACTION_NEEDED_STATUSES).toEqual([
+      'submitted',
       'clarification_requested',
       'pending_guide_confirmation',
-      'submitted',
+      'approved',
     ])
   })
 
@@ -30,24 +32,26 @@ describe('sortActionNeededSettlements', () => {
       { id: '3', status: 'pending_guide_confirmation', updated_at: '2026-06-01T00:00:00Z' },
     ]
     const sorted = sortActionNeededSettlements(rows)
-    expect(sorted.map((r) => r.id)).toEqual(['2', '3', '1'])
+    expect(sorted.map((r) => r.id)).toEqual(['1', '2', '3'])
   })
 })
 
 describe('aggregateSettlementStatusCounts', () => {
-  it('counts all statuses globally without year_month filter', () => {
+  it('counts five workflow statuses with legacy normalization', () => {
     const rows = [
       { status: 'submitted' },
       { status: 'submitted' },
       { status: 'submitted' },
       { status: 'submitted' },
+      { status: 'clarification_requested' },
       { status: 'pending_guide_confirmation' },
       { status: 'approved' },
     ]
     const stats = aggregateSettlementStatusCounts(rows)
     expect(stats.find((s) => s.status === 'submitted')?.count).toBe(4)
-    expect(stats.find((s) => s.status === 'pending_guide_confirmation')?.count).toBe(1)
-    expect(stats.find((s) => s.status === 'approved')?.count).toBe(1)
+    expect(stats.find((s) => s.status === 'edit_requested')?.count).toBe(1)
+    expect(stats.find((s) => s.status === 'pending_guide_confirmation')?.count).toBe(2)
+    expect(stats.find((s) => s.status === 'approved')).toBeUndefined()
     expect(stats.find((s) => s.status === 'draft')?.count).toBe(0)
   })
 
@@ -74,6 +78,23 @@ describe('aggregateSettlementStatusCounts', () => {
     const stats = aggregateSettlementStatusCounts(rows)
     expect(stats.find((s) => s.status === 'submitted')?.count).toBe(4)
     expect(countActionNeededFromStats(stats)).toBe(4)
-    expect(actionNeededStatusPriority('submitted')).toBe(2)
+    expect(actionNeededStatusPriority('submitted')).toBe(0)
+  })
+})
+
+describe('expandWorkflowStatusFilter', () => {
+  it('includes legacy statuses for pre-migration list filters', () => {
+    expect(expandWorkflowStatusFilter('submitted')).toEqual(['submitted'])
+    expect(expandWorkflowStatusFilter('pending_guide_confirmation')).toEqual([
+      'pending_guide_confirmation',
+      'approved',
+    ])
+    expect(expandWorkflowStatusFilter('edit_requested')).toEqual([
+      'edit_requested',
+      'rejected',
+      'clarification_requested',
+    ])
+    expect(expandWorkflowStatusFilter('draft')).toEqual(['draft'])
+    expect(expandWorkflowStatusFilter('paid')).toEqual(['paid'])
   })
 })

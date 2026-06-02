@@ -49,7 +49,7 @@ export default async function AdminPage() {
           </Link>
         </div>
         <p className="text-xs text-gray-400 mb-2">
-          이의 요청 → 확인 대기 → 검토 대기 순
+          제출됨 → 최종확인 순
         </p>
         {actionQueue.length === 0 ? (
           <p className="text-sm text-gray-400 py-4 text-center">처리 필요 정산서가 없습니다.</p>

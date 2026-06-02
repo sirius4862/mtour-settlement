@@ -62,6 +62,7 @@ import {
   ACTION_NEEDED_STATUSES,
   aggregateSettlementStatusCounts,
   escapeIlikePattern,
+  expandWorkflowStatusFilter,
   sortActionNeededSettlements,
   type AdminSettlementListFilters,
   type AdminSettlementListItem,
@@ -324,7 +325,10 @@ export async function getAdminSettlements(
     .order('updated_at', { ascending: false })
 
   if (filters?.yearMonth) q = q.eq('year_month', filters.yearMonth)
-  if (filters?.status) q = q.eq('status', filters.status)
+  if (filters?.status) {
+    const statuses = expandWorkflowStatusFilter(filters.status)
+    q = statuses.length === 1 ? q.eq('status', statuses[0]) : q.in('status', [...statuses])
+  }
 
   const search = filters?.search?.trim()
   if (search) {

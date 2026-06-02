@@ -508,6 +508,49 @@ export async function upsertSettlement(payload: {
 
 // ── 제출 ──────────────────────────────────────────────────────
 
+// TEMPORARY DIAGNOSTIC — remove after guide submit root cause is confirmed.
+function formatSubmitSettlementRpcDiagnosticError(error: {
+  code?: string | null
+  message?: string | null
+  details?: string | null
+  hint?: string | null
+}): string {
+  return [
+    '[TEMP DIAG] guide_submit_settlement RPC error',
+    `code: ${error.code ?? '(null)'}`,
+    `message: ${error.message ?? '(null)'}`,
+    `details: ${error.details ?? '(null)'}`,
+    `hint: ${error.hint ?? '(null)'}`,
+  ].join('\n')
+}
+
+// TEMPORARY DIAGNOSTIC — remove after guide submit root cause is confirmed.
+function formatSubmitSettlementVerifyDiagnosticError(params: {
+  verifyError?: {
+    code?: string | null
+    message?: string | null
+    details?: string | null
+    hint?: string | null
+  } | null
+  actualStatus?: string | null
+  rpcResult?: unknown
+}): string {
+  const lines = ['[TEMP DIAG] submitSettlement verify failed']
+  if (params.verifyError) {
+    lines.push(
+      `verify code: ${params.verifyError.code ?? '(null)'}`,
+      `verify message: ${params.verifyError.message ?? '(null)'}`,
+      `verify details: ${params.verifyError.details ?? '(null)'}`,
+      `verify hint: ${params.verifyError.hint ?? '(null)'}`,
+    )
+  } else {
+    lines.push('verify PostgREST error: (none)')
+  }
+  lines.push(`actualStatus: ${params.actualStatus ?? '(null)'}`)
+  lines.push(`rpcResult: ${params.rpcResult == null ? '(null)' : JSON.stringify(params.rpcResult)}`)
+  return lines.join('\n')
+}
+
 export async function submitSettlement(id: string): Promise<{ ok: boolean; error?: string }> {
   const logStep = (step: string, extra?: Record<string, unknown>) => {
     console.error('[submitSettlement]', step, { settlementId: id, ...extra })
@@ -599,7 +642,8 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       })
       return {
         ok: false,
-        error: rpcError.message || '정산서 상태 변경에 실패했습니다.',
+        // TEMPORARY DIAGNOSTIC — surface PostgREST RPC error in UI
+        error: formatSubmitSettlementRpcDiagnosticError(rpcError),
       }
     }
     logStep('settlements_update_ok', {
@@ -640,9 +684,12 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       })
       return {
         ok: false,
-        error:
-          verifyError?.message ||
-          '제출 상태 변경에 실패했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.',
+        // TEMPORARY DIAGNOSTIC — surface verify step details in UI
+        error: formatSubmitSettlementVerifyDiagnosticError({
+          verifyError,
+          actualStatus: verified?.status ?? null,
+          rpcResult,
+        }),
       }
     }
     logStep('verify_ok')

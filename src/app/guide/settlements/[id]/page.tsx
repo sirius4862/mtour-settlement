@@ -30,6 +30,10 @@ export default async function SettlementDetailPage({
   const meta = STATUS_META[s.status]
   const editable = canGuideEdit(s, session.id)
   const needsConfirm = canGuideConfirm(s, session.id)
+  const guideConfirmComplete =
+    s.guide_id === session.id &&
+    s.status === 'pending_guide_confirmation' &&
+    s.guide_confirmed_at != null
   const rate = s.exchange_rate
 
   const calc = calcSettlement(toCalcInput(stateFromSettlementFull(data, '')))
@@ -65,6 +69,13 @@ export default async function SettlementDetailPage({
           <p className="text-sm text-orange-700">변경된 정산 내용을 확인하고 이상없음을 선택해 주세요.</p>
           <p className="text-xs text-orange-600 mt-2 font-medium">변경사항 확인 →</p>
         </Link>
+      )}
+
+      {guideConfirmComplete && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+          <p className="text-sm font-semibold text-emerald-800 mb-1">확인 완료</p>
+          <p className="text-sm text-emerald-700">관리자 지급완료 처리를 기다리는 중입니다.</p>
+        </div>
       )}
 
       {s.status === 'clarification_requested' && s.clarification_message && (

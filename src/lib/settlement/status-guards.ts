@@ -43,14 +43,18 @@ export function canGuideEdit(
 }
 
 export function canGuideConfirm(
-  s: Pick<Settlement, 'status' | 'guide_id'>,
+  s: Pick<Settlement, 'status' | 'guide_id' | 'guide_confirmed_at'>,
   uid: string,
 ): boolean {
-  return s.guide_id === uid && s.status === 'pending_guide_confirmation'
+  return (
+    s.guide_id === uid &&
+    s.status === 'pending_guide_confirmation' &&
+    s.guide_confirmed_at == null
+  )
 }
 
 export function canGuideRequestClarification(
-  s: Pick<Settlement, 'status' | 'guide_id'>,
+  s: Pick<Settlement, 'status' | 'guide_id' | 'guide_confirmed_at'>,
   uid: string,
 ): boolean {
   return canGuideConfirm(s, uid)

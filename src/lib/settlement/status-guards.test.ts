@@ -42,11 +42,27 @@ describe('canGuideEdit', () => {
 })
 
 describe('canGuideConfirm', () => {
-  it('allows only pending_guide_confirmation for owner', () => {
+  it('allows only pending_guide_confirmation for owner before guide confirms', () => {
     expect(
-      canGuideConfirm({ status: 'pending_guide_confirmation', guide_id: 'guide-1' }, 'guide-1'),
+      canGuideConfirm(
+        { status: 'pending_guide_confirmation', guide_id: 'guide-1', guide_confirmed_at: null },
+        'guide-1',
+      ),
     ).toBe(true)
-    expect(canGuideConfirm({ status: 'submitted', guide_id: 'guide-1' }, 'guide-1')).toBe(false)
+    expect(canGuideConfirm({ status: 'submitted', guide_id: 'guide-1', guide_confirmed_at: null }, 'guide-1')).toBe(false)
+  })
+
+  it('denies after guide_confirmed_at is set', () => {
+    expect(
+      canGuideConfirm(
+        {
+          status: 'pending_guide_confirmation',
+          guide_id: 'guide-1',
+          guide_confirmed_at: '2026-05-27T00:00:00Z',
+        },
+        'guide-1',
+      ),
+    ).toBe(false)
   })
 })
 
@@ -111,15 +127,15 @@ describe('canAdminPaySettlement', () => {
 })
 
 describe('canGuideRequestClarification', () => {
-  it('allows only pending_guide_confirmation for owner', () => {
+  it('allows only pending_guide_confirmation for owner before guide confirms', () => {
     expect(
       canGuideRequestClarification(
-        { status: 'pending_guide_confirmation', guide_id: 'guide-1' },
+        { status: 'pending_guide_confirmation', guide_id: 'guide-1', guide_confirmed_at: null },
         'guide-1',
       ),
     ).toBe(true)
     expect(
-      canGuideRequestClarification({ status: 'submitted', guide_id: 'guide-1' }, 'guide-1'),
+      canGuideRequestClarification({ status: 'submitted', guide_id: 'guide-1', guide_confirmed_at: null }, 'guide-1'),
     ).toBe(false)
   })
 })

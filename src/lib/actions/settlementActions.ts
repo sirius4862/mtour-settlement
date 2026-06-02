@@ -570,6 +570,15 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       guideIdMatch: profile.id === authUser?.id,
     })
 
+    logStep('rpc_call', {
+      profileId: profile.id,
+      guideIdFromPrecheck: profile.id,
+      fromStatus,
+      snapshotId: snap.id,
+      authUid: authUser?.id ?? null,
+      guideIdMatch: profile.id === authUser?.id,
+    })
+
     const { data: rpcResult, error: rpcError } = await supabase.rpc('guide_submit_settlement', {
       p_settlement_id: id,
       p_snapshot_id: snap.id,
@@ -580,15 +589,26 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
     if (rpcError) {
       logStep('settlements_update_failed', {
         via: 'rpc',
-        error: rpcError.message,
-        code: rpcError.code,
+        profileId: profile.id,
+        guideIdFromPrecheck: profile.id,
+        fromStatus,
+        code: rpcError.code ?? null,
+        error: rpcError.message ?? null,
+        details: rpcError.details ?? null,
+        hint: rpcError.hint ?? null,
       })
       return {
         ok: false,
         error: rpcError.message || '정산서 상태 변경에 실패했습니다.',
       }
     }
-    logStep('settlements_update_ok', { via: 'rpc', rpcResult })
+    logStep('settlements_update_ok', {
+      via: 'rpc',
+      profileId: profile.id,
+      guideIdFromPrecheck: profile.id,
+      fromStatus,
+      rpcResult: rpcResult ?? null,
+    })
 
     const { data: verified, error: verifyError } = await supabase
       .from(GUIDE_READ.settlements)
@@ -607,10 +627,16 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
     if (verifyError || verified?.status !== 'submitted') {
       logStep('verify_failed', {
         via: 'rpc',
+        profileId: profile.id,
+        guideIdFromPrecheck: profile.id,
         fromStatus,
         beforeStatus: beforeUpdate?.status,
-        verifyError: verifyError?.message,
-        actualStatus: verified?.status,
+        verifyError: verifyError?.message ?? null,
+        verifyErrorCode: verifyError?.code ?? null,
+        verifyErrorDetails: verifyError?.details ?? null,
+        verifyErrorHint: verifyError?.hint ?? null,
+        actualStatus: verified?.status ?? null,
+        rpcResult: rpcResult ?? null,
       })
       return {
         ok: false,

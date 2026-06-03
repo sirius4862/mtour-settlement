@@ -2,16 +2,29 @@
 
 import { Suspense, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Playfair_Display, Inter } from 'next/font/google'
 import { createClient } from '@/lib/supabase/client'
 
-/** Deep bronze / espresso — premium hospitality ops CTA */
+const playfair = Playfair_Display({
+  weight: '400',
+  subsets: ['latin'],
+  display: 'swap',
+})
+
+const inter = Inter({
+  weight: '400',
+  subsets: ['latin'],
+  display: 'swap',
+})
+
 const LOGIN_BUTTON = {
-  bg: '#7A4E2D',
-  hover: '#684225',
-  active: '#5C3A20',
+  bg: '#F37021',
+  hover: '#E0661E',
+  active: '#D15F1A',
 } as const
 
-const FOCUS_RING = 'focus:outline-none focus:border-[#B88A5A] focus:ring-2 focus:ring-[#B88A5A]/20'
+const FOCUS_RING =
+  'focus:outline-none focus:border-[#5A3A20]/35 focus:ring-1 focus:ring-[#5A3A20]/12'
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'Invalid login credentials': '이메일 또는 비밀번호가 올바르지 않습니다.',
@@ -90,15 +103,15 @@ function LoginForm() {
           >
             <header className="flex flex-col items-center text-center mb-7 sm:mb-8">
               <p
-                className="m-0 font-sans text-[28px] sm:text-[32px] font-bold leading-none
-                           tracking-[-0.02em] text-[#111111] select-none"
-                aria-label="MTOUR"
+                className={`m-0 ${playfair.className} text-[30px] sm:text-[34px] font-normal leading-none
+                           tracking-[0.02em] text-[#5A3A20] select-none`}
+                aria-label="Mtour"
               >
-                MTOUR
+                <span className="text-[1.12em] leading-none">M</span>tour
               </p>
               <p
                 id="login-heading"
-                className="mt-3.5 text-[13px] font-medium tracking-[0.02em] text-[#6B7280]"
+                className={`mt-3.5 ${inter.className} text-[14px] font-normal tracking-[0.5px] text-[#7A746E]`}
               >
                 Guide Operations Platform
               </p>
@@ -117,7 +130,7 @@ function LoginForm() {
               <div className="space-y-1.5">
                 <label
                   htmlFor="login-email"
-                  className="block text-sm font-medium text-[#374151]"
+                  className={`block text-sm font-normal text-[#374151] ${inter.className}`}
                 >
                   Email
                 </label>
@@ -141,7 +154,7 @@ function LoginForm() {
               <div className="space-y-1.5">
                 <label
                   htmlFor="login-password"
-                  className="block text-sm font-medium text-[#374151]"
+                  className={`block text-sm font-normal text-[#374151] ${inter.className}`}
                 >
                   Password
                 </label>
@@ -206,10 +219,11 @@ function LoginForm() {
                     '--btn-active': LOGIN_BUTTON.active,
                   } as React.CSSProperties
                 }
-                className="w-full py-3.5 mt-2 bg-[var(--btn-bg)] hover:bg-[var(--btn-hover)]
+                className="w-full h-[50px] mt-2 flex items-center justify-center
+                           bg-[#F37021] hover:bg-[var(--btn-hover)]
                            active:bg-[var(--btn-active)]
                            disabled:opacity-40 disabled:cursor-not-allowed
-                           text-white text-[0.9375rem] font-semibold rounded-xl
+                           text-white text-[0.9375rem] font-semibold rounded-[10px]
                            transition-colors"
               >
                 {pending ? (
@@ -246,7 +260,9 @@ function LoginForm() {
             </form>
           </section>
 
-          <p className="text-center text-[#9CA3AF] text-xs sm:text-[0.8125rem] mt-6 leading-relaxed">
+          <p
+            className={`text-center text-[#B5AFA8] text-xs sm:text-[0.8125rem] mt-6 leading-relaxed ${inter.className}`}
+          >
             계정이 없으면 관리자에게 문의하세요
           </p>
         </div>
@@ -261,7 +277,7 @@ export default function LoginPage() {
       fallback={
         <div className="min-h-screen bg-[#F7F4EF] flex items-center justify-center">
           <div
-            className="w-8 h-8 border-2 border-[#7A4E2D] border-t-transparent rounded-full animate-spin"
+            className="w-8 h-8 border-2 border-[#F37021] border-t-transparent rounded-full animate-spin"
             aria-label="로딩"
           />
         </div>

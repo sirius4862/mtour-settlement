@@ -4,15 +4,14 @@ import { Suspense, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-/** Warm burnt-orange — hospitality CTA (not brand logo red) */
+/** Deep bronze / espresso — premium hospitality ops CTA */
 const LOGIN_BUTTON = {
-  bg: '#B76E2B',
-  hover: '#A66428',
-  active: '#9A5A24',
-  focus: '#B76E2B',
-  shadow:
-    'shadow-sm shadow-[#B76E2B]/20 hover:shadow-md hover:shadow-[#B76E2B]/25',
+  bg: '#7A4E2D',
+  hover: '#684225',
+  active: '#5C3A20',
 } as const
+
+const FOCUS_RING = 'focus:outline-none focus:border-[#B88A5A] focus:ring-2 focus:ring-[#B88A5A]/20'
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'Invalid login credentials': '이메일 또는 비밀번호가 올바르지 않습니다.',
@@ -80,27 +79,26 @@ function LoginForm() {
   }
 
   return (
-    <main className="min-h-screen bg-[#FAFAFA] flex flex-col">
+    <main className="min-h-screen bg-[#F7F4EF] flex flex-col">
       <div className="flex-1 flex items-center justify-center px-5 sm:px-6 py-10 sm:py-12">
-        <div className="w-full max-w-[400px]">
+        <div className="w-full max-w-[420px]">
           <section
-            className="rounded-2xl bg-white px-6 sm:px-8 pt-8 sm:pt-9 pb-8 sm:pb-9
-                       border border-[#E8E8E8] shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+            className="rounded-[24px] bg-white px-7 sm:px-8 pt-9 sm:pt-10 pb-8 sm:pb-9
+                       border border-[#E7E2DA]
+                       shadow-[0_18px_45px_rgba(17,24,39,0.08)]"
             aria-labelledby="login-heading"
           >
-            <header className="flex flex-col items-center text-center mb-6 sm:mb-7">
+            <header className="flex flex-col items-center text-center mb-7 sm:mb-8">
               <p
-                className="m-0 font-sans text-[1.75rem] sm:text-[1.875rem] leading-none text-[#111111] select-none"
+                className="m-0 font-sans text-[28px] sm:text-[32px] font-bold leading-none
+                           tracking-[-0.02em] text-[#111111] select-none"
                 aria-label="MTOUR"
               >
-                <span className="font-semibold tracking-tight">M</span>
-                <span className="font-medium -ml-[0.06em] tracking-[0.14em] sm:tracking-[0.16em]">
-                  TOUR
-                </span>
+                MTOUR
               </p>
               <p
                 id="login-heading"
-                className="mt-3.5 text-[0.8125rem] sm:text-sm font-medium tracking-[0.04em] text-[#6B7280]"
+                className="mt-3.5 text-[13px] font-medium tracking-[0.02em] text-[#6B7280]"
               >
                 Guide Operations Platform
               </p>
@@ -134,10 +132,9 @@ function LoginForm() {
                   inputMode="email"
                   required
                   disabled={pending}
-                  className="w-full px-4 py-3.5 bg-white border border-[#E5E7EB] rounded-xl
+                  className={`w-full px-4 py-3.5 bg-white border border-[#DDD6CC] rounded-xl
                              text-[#111111] placeholder:text-[#9CA3AF]
-                             focus:outline-none focus:border-[#B76E2B]/50 focus:ring-2 focus:ring-[#B76E2B]/12
-                             disabled:opacity-50 transition-[border-color,box-shadow]"
+                             disabled:opacity-50 transition-[border-color,box-shadow] ${FOCUS_RING}`}
                 />
               </div>
 
@@ -158,10 +155,9 @@ function LoginForm() {
                     autoComplete="current-password"
                     required
                     disabled={pending}
-                    className="w-full px-4 py-3.5 pr-12 bg-white border border-[#E5E7EB] rounded-xl
+                    className={`w-full px-4 py-3.5 pr-12 bg-white border border-[#DDD6CC] rounded-xl
                                text-[#111111] placeholder:text-[#9CA3AF]
-                               focus:outline-none focus:border-[#B76E2B]/50 focus:ring-2 focus:ring-[#B76E2B]/12
-                               disabled:opacity-50 transition-[border-color,box-shadow]"
+                               disabled:opacity-50 transition-[border-color,box-shadow] ${FOCUS_RING}`}
                   />
                   <button
                     type="button"
@@ -210,11 +206,11 @@ function LoginForm() {
                     '--btn-active': LOGIN_BUTTON.active,
                   } as React.CSSProperties
                 }
-                className={`w-full py-3.5 mt-2 bg-[var(--btn-bg)] hover:bg-[var(--btn-hover)]
+                className="w-full py-3.5 mt-2 bg-[var(--btn-bg)] hover:bg-[var(--btn-hover)]
                            active:bg-[var(--btn-active)]
                            disabled:opacity-40 disabled:cursor-not-allowed
                            text-white text-[0.9375rem] font-semibold rounded-xl
-                           transition-[background-color,box-shadow] ${LOGIN_BUTTON.shadow}`}
+                           transition-colors"
               >
                 {pending ? (
                   <span className="flex items-center justify-center gap-2">
@@ -263,9 +259,9 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center">
+        <div className="min-h-screen bg-[#F7F4EF] flex items-center justify-center">
           <div
-            className="w-8 h-8 border-2 border-[#B76E2B] border-t-transparent rounded-full animate-spin"
+            className="w-8 h-8 border-2 border-[#7A4E2D] border-t-transparent rounded-full animate-spin"
             aria-label="로딩"
           />
         </div>

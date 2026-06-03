@@ -1,10 +1,16 @@
 /** Guide display name for admin UI — single source of truth. */
 
+import { formatRegionLabel } from '@/lib/region/regions'
+
 export interface GuideNameFields {
   korean_name?: string | null
   vietnamese_name?: string | null
   full_name?: string | null
   email?: string | null
+}
+
+export interface GuideHomeBranchFields extends GuideNameFields {
+  branch_id?: string | null
 }
 
 const FALLBACK = '이름 없음'
@@ -43,4 +49,18 @@ export function formatGuideDisplayLines(profile: GuideNameFields | null | undefi
     secondary = profile.full_name!.trim()
   }
   return { primary, secondary }
+}
+
+/** Admin assignment label: "홍길동 — DANANG" (home/base branch, not tour region). */
+export function formatGuideAssignmentLabel(
+  guide: GuideHomeBranchFields,
+  homeBranch?: { code: string; name?: string | null } | null,
+): string {
+  const { primary } = formatGuideDisplayLines(guide)
+  const homeLabel = homeBranch
+    ? formatRegionLabel(homeBranch.code, homeBranch.name)
+    : guide.branch_id
+      ? '—'
+      : '지역 없음'
+  return `${primary} — ${homeLabel}`
 }

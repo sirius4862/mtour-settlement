@@ -2,7 +2,12 @@
 
 import { revalidatePath } from 'next/cache'
 import { isAdminTier, isMasterAdmin } from '@/lib/auth/permissions'
-import { canAdminAccessRegion, type AdminRegionScope } from '@/lib/region/permissions'
+import {
+  filterAdminToursByRegionScope,
+  filterGuidesForTourAssignment,
+  validateTourGuideAssignment,
+} from '@/lib/guide/assignment'
+import type { AdminRegionScope } from '@/lib/region/permissions'
 import { filterMtourRegionBranches } from '@/lib/region/regions'
 import { createClient } from '@/lib/supabase/server'
 import type { Branch, Tour } from '@/types'
@@ -67,7 +72,8 @@ export async function getAdminTours(): Promise<TourWithGuide[]> {
     .order('start_date', { ascending: false })
     .limit(200)
 
-  return (data ?? []) as TourWithGuide[]
+  const tours = (data ?? []) as TourWithGuide[]
+  return filterAdminToursByRegionScope(tours, adminRegionScope(ctx))
 }
 
 export async function getBranches(): Promise<Branch[]> {
@@ -98,9 +104,9 @@ export async function getGuideProfiles(): Promise<GuideOption[]> {
     .order('full_name')
 
   const guides = (data ?? []) as GuideOption[]
-  const scope = adminRegionScope(ctx)
-  if (isMasterAdmin(scope.role) || !scope.assignedRegionId) return guides
-  return guides.filter((g) => g.branch_id === scope.assignedRegionId)
+  return filterGuidesForTourAssignment(
+    guides.map((g) => ({ ...g, role: 'guide', is_active: true })),
+  )
 }
 
 export async function createTour(
@@ -131,9 +137,6 @@ export async function createTour(
   if (!input.branch_id) return { ok: false, error: '지역을 선택해주세요.' }
 
   const scope = adminRegionScope(ctx)
-  if (!canAdminAccessRegion(scope, input.branch_id)) {
-    return { ok: false, error: '담당 지역 밖의 투어는 생성할 수 없습니다.' }
-  }
 
   const { data: guide } = await ctx.supabase
     .from('profiles')
@@ -141,15 +144,19 @@ export async function createTour(
     .eq('id', input.guide_id)
     .single()
 
-  if (!guide || guide.role !== 'guide' || !guide.is_active) {
-    return { ok: false, error: '유효한 가이드를 선택해주세요.' }
-  }
-  if (!guide.branch_id) {
-    return { ok: false, error: '선택한 가이드에 지역이 설정되어 있지 않습니다.' }
-  }
-  if (guide.branch_id !== input.branch_id) {
-    return { ok: false, error: '가이드 지역과 선택한 지역이 일치하지 않습니다.' }
-  }
+  const assignmentError = validateTourGuideAssignment({
+    adminScope: scope,
+    tourBranchId: input.branch_id,
+    guide: guide
+      ? {
+          id: guide.id as string,
+          role: guide.role as string,
+          is_active: !!guide.is_active,
+          branch_id: guide.branch_id as string | null,
+        }
+      : null,
+  })
+  if (assignmentError) return { ok: false, error: assignmentError }
 
   const { data, error } = await ctx.supabase
     .from('tours')

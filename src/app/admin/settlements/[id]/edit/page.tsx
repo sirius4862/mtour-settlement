@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { requireAdmin } from '@/lib/auth/session'
+import { canAdminAccessRegion } from '@/lib/region/permissions'
 import { createClient } from '@/lib/supabase/server'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { SettlementForm } from '@/components/settlement/SettlementForm'
@@ -17,6 +18,15 @@ export default async function AdminSettlementEditPage({
   const { id } = await params
   const full = await getSettlementFull(id)
   if (!full) notFound()
+
+  if (
+    !canAdminAccessRegion(
+      { role: session.role, assignedRegionId: session.branch_id },
+      full.branch_id,
+    )
+  ) {
+    notFound()
+  }
 
   if (!canAdminOrMasterAdminEditSettlement(full.status, session.role)) {
     redirect(`/admin/settlements/${id}`)

@@ -4,6 +4,7 @@ import { SettlementAuditMatrix } from '@/components/settlement/sections/Settleme
 import { SettlementBusinessSummary } from '@/components/settlement/sections/SettlementBusinessSummary'
 import { Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
+import { canAdminAccessRegion } from '@/lib/region/permissions'
 import {
   canMasterReopenPaid,
   isPostApprovalReadOnlyForAdmin,
@@ -32,6 +33,15 @@ export default async function AdminSettlementDetailPage({
   const session = await requireAdmin()
   const data = await getSettlementFull(id)
   if (!data || !data.tour) notFound()
+
+  if (
+    !canAdminAccessRegion(
+      { role: session.role, assignedRegionId: session.branch_id },
+      data.branch_id,
+    )
+  ) {
+    notFound()
+  }
 
   const supabase = await createClient()
   const { data: guideProfile } = await supabase

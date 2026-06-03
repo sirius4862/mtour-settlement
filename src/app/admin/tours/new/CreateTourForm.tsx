@@ -8,7 +8,7 @@ import type { GuideOption } from '@/lib/actions/tourActions'
 import { createTour } from '@/lib/actions/tourActions'
 import { calcTourNights } from '@/lib/tour/nights'
 import { FieldLabel, SectionCard } from '@/components/ui/FormPrimitives'
-import { formatGuideDisplayLines } from '@/lib/guide/display-name'
+import { formatGuideAssignmentLabel } from '@/lib/guide/display-name'
 import { formatRegionLabel } from '@/lib/region/regions'
 
 interface Props {
@@ -32,21 +32,15 @@ export function CreateTourForm({ branches, guides }: Props) {
   const [guideId, setGuideId] = useState('')
   const [branchId, setBranchId] = useState('')
 
-  const selectedGuide = useMemo(
-    () => guides.find((g) => g.id === guideId),
-    [guides, guideId],
+  const branchById = useMemo(
+    () => new Map(branches.map((b) => [b.id, b])),
+    [branches],
   )
 
   const nightsPreview = useMemo(() => {
     if (!startDate || !endDate || endDate < startDate) return null
     return calcTourNights(startDate, endDate)
   }, [startDate, endDate])
-
-  const handleGuideChange = (id: string) => {
-    setGuideId(id)
-    const guide = guides.find((g) => g.id === id)
-    if (guide?.branch_id) setBranchId(guide.branch_id)
-  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -185,21 +179,19 @@ export function CreateTourForm({ branches, guides }: Props) {
             <select
               className={inputClass}
               value={guideId}
-              onChange={(e) => handleGuideChange(e.target.value)}
+              onChange={(e) => setGuideId(e.target.value)}
               required
             >
               <option value="">가이드 선택</option>
-              {guides.map((g) => {
-                const lines = formatGuideDisplayLines(g)
-                return (
-                  <option key={g.id} value={g.id}>
-                    {lines.primary}
-                    {lines.secondary ? ` / ${lines.secondary}` : ''} ({g.email})
-                    {!g.branch_id ? ' — 지역 없음' : ''}
-                  </option>
-                )
-              })}
+              {guides.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {formatGuideAssignmentLabel(g, g.branch_id ? branchById.get(g.branch_id) : null)}
+                </option>
+              ))}
             </select>
+            <p className="text-xs text-gray-500 mt-1">
+              괄호 없이 표시된 지역은 가이드 소속(홈) 지역입니다. 투어 운영 지역은 아래에서 선택합니다.
+            </p>
             {guides.length === 0 && (
               <p className="text-xs text-amber-600 mt-1">등록된 가이드가 없습니다.</p>
             )}
@@ -219,9 +211,6 @@ export function CreateTourForm({ branches, guides }: Props) {
                 </option>
               ))}
             </select>
-            {selectedGuide && selectedGuide.branch_id && branchId !== selectedGuide.branch_id && (
-              <p className="text-xs text-red-500 mt-1">가이드 지역과 일치해야 합니다.</p>
-            )}
           </div>
         </div>
       </SectionCard>

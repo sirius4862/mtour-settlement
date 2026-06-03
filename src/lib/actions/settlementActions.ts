@@ -7,6 +7,7 @@ import {
   persistGuideLineItemTable,
 } from '@/lib/settlement/guide-line-item-persist'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
+import { resolveSettlementOperatingBranchId } from '@/lib/guide/assignment'
 import { createClient } from '@/lib/supabase/server'
 import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
 import type {
@@ -58,6 +59,10 @@ import {
 } from '@/lib/auth/permissions'
 import { resolveAdminRegionFilter, type AdminRegionScope } from '@/lib/region/permissions'
 import {
+  assertAdminCanAccessSettlementBranch,
+  evaluateAdminSettlementReadAccess,
+} from '@/lib/region/settlement-access'
+import {
   ADMIN_SETTLEMENT_PAGE_SIZE,
   ADMIN_SETTLEMENT_SELECT,
   ACTION_NEEDED_STATUSES,
@@ -93,6 +98,30 @@ async function resolveSettlementRegionFilter(
   const scope = await getAdminRegionScope()
   if (!scope) return undefined
   return resolveAdminRegionFilter(scope, filters?.regionId)
+}
+
+/** Admin/master read-write gate — settlements.branch_id only (not guide home branch). */
+async function requireAdminSettlementRegionAccess(
+  supabase: SupabaseClient,
+  settlementId: string,
+): Promise<{ ok: true; branchId: string } | { ok: false; error: string }> {
+  const scope = await getAdminRegionScope()
+  if (!scope) return { ok: false, error: '관리자 권한이 필요합니다.' }
+
+  const { data, error } = await supabase
+    .from('settlements')
+    .select('branch_id')
+    .eq('id', settlementId)
+    .maybeSingle()
+
+  if (error || !data) {
+    return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+  }
+
+  const branchId = data.branch_id as string
+  const guard = assertAdminCanAccessSettlementBranch(scope, branchId)
+  if (!guard.ok) return guard
+  return { ok: true, branchId }
 }
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
@@ -265,6 +294,19 @@ export async function getSettlementFull(
     if (settlementError) {
       console.error('[getSettlementFull] settlements:', settlementError.message)
     }
+    return null
+  }
+
+  const profile = await getProfile()
+  const adminScope = await getAdminRegionScope()
+  if (
+    evaluateAdminSettlementReadAccess({
+      scope: adminScope,
+      settlementBranchId: s.branch_id as string,
+      callerRole: profile?.role,
+      audience: options?.audience,
+    }) === 'deny'
+  ) {
     return null
   }
 
@@ -469,17 +511,28 @@ export async function upsertSettlement(payload: {
 
   const supabase = await createClient()
 
-  // 투어 년월
   const { data: tour } = await supabase
-    .from('tours').select('start_date').eq('id', payload.tour_id).single()
+    .from('tours')
+    .select('start_date, branch_id, guide_id')
+    .eq('id', payload.tour_id)
+    .single()
   if (!tour) return { ok: false, error: '투어를 찾을 수 없습니다.' }
+
+  const branchResult = resolveSettlementOperatingBranchId(
+    {
+      branch_id: tour.branch_id as string,
+      guide_id: tour.guide_id as string,
+    },
+    profile.id,
+  )
+  if (!branchResult.ok) return { ok: false, error: branchResult.error }
 
   const { id: _omitId, ...headerFields } = payload
   const base = {
     ...headerFields,
     guide_id: profile.id,
-    branch_id: profile.branch_id,
-    year_month: tour.start_date.slice(0, 7),
+    branch_id: branchResult.branchId,
+    year_month: (tour.start_date as string).slice(0, 7),
   }
 
   type WriteResult = { error: { message: string } | null; id?: string }
@@ -961,6 +1014,13 @@ export async function saveAdminSettlementEdits(
     return { ok: false, error: '정산서 ID가 필요합니다.' }
   }
 
+  const supabase = await createClient()
+  const regionAccess = await requireAdminSettlementRegionAccess(
+    supabase,
+    payload.settlementId,
+  )
+  if (!regionAccess.ok) return { ok: false, error: regionAccess.error }
+
   const existing = await getSettlementFull(payload.settlementId)
   if (!existing) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
 
@@ -968,7 +1028,6 @@ export async function saveAdminSettlementEdits(
   if (!statusGuard.ok) return { ok: false, error: statusGuard.error }
 
   const sanitized = sanitizeAdminDraftPayload(payload, existing)
-  const supabase = await createClient()
   const currentStatus = existing.status
 
   const headerPatch = buildAdminSettlementHeaderPatch(
@@ -1072,6 +1131,9 @@ export async function reviewSettlement(params: {
   }
 
   const supabase = await createClient()
+
+  const regionAccess = await requireAdminSettlementRegionAccess(supabase, params.id)
+  if (!regionAccess.ok) return { ok: false, error: regionAccess.error }
 
   const { data: current } = await supabase
     .from('settlements')
@@ -1379,6 +1441,9 @@ export async function sendForConfirmation(
   }
 
   const supabase = await createClient()
+
+  const regionAccess = await requireAdminSettlementRegionAccess(supabase, id)
+  if (!regionAccess.ok) return { ok: false, error: regionAccess.error }
 
   const { data: current } = await supabase
     .from('settlements')

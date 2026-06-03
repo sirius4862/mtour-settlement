@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { formatGuideDisplayName, formatGuideDisplayLines } from './display-name'
+import {
+  formatGuideAssignmentLabel,
+  formatGuideDisplayName,
+  formatGuideDisplayLines,
+} from './display-name'
 
 describe('formatGuideDisplayName', () => {
   it('prefers korean_name', () => {
@@ -43,5 +47,16 @@ describe('formatGuideDisplayLines', () => {
     })
     expect(lines.primary).toBe('김가이드')
     expect(lines.secondary).toBe('Kim Guide')
+  })
+})
+
+describe('formatGuideAssignmentLabel', () => {
+  it('shows guide name and home region code', () => {
+    expect(
+      formatGuideAssignmentLabel(
+        { korean_name: '홍길동', branch_id: 'b1' },
+        { code: 'DANANG', name: 'Da Nang' },
+      ),
+    ).toBe('홍길동 — Da Nang')
   })
 })

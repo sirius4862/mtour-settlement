@@ -3,6 +3,8 @@
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { isAdminTier } from '@/lib/auth/permissions'
+import { assertAdminCanAccessSettlementBranch } from '@/lib/region/settlement-access'
+import type { AdminRegionScope } from '@/lib/region/permissions'
 import { createClient } from '@/lib/supabase/server'
 import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
 import type { Receipt, SettlementStatus, UserRole } from '@/types'
@@ -18,10 +20,10 @@ async function getProfile() {
   if (!user) return null
   const { data } = await supabase
     .from('profiles')
-    .select('id,role')
+    .select('id, role, branch_id')
     .eq('id', user.id)
     .single()
-  return data as { id: string; role: UserRole } | null
+  return data as { id: string; role: UserRole; branch_id: string | null } | null
 }
 
 function lineItemTableForGuide(base: string): string {
@@ -41,7 +43,7 @@ async function assertReceiptEditable(
   const settlementTable = isGuide ? GUIDE_READ.settlements : 'settlements'
   const { data } = await supabase
     .from(settlementTable)
-    .select('id, status, guide_id')
+    .select('id, status, guide_id, branch_id')
     .eq('id', settlementId)
     .maybeSingle()
 
@@ -53,6 +55,22 @@ async function assertReceiptEditable(
   }
   if (!isGuide && !isAdminTier(role)) {
     return { ok: false as const, error: '권한이 없습니다.' }
+  }
+  if (!isGuide && isAdminTier(role)) {
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('branch_id')
+      .eq('id', userId)
+      .single()
+    const scope: AdminRegionScope = {
+      role,
+      assignedRegionId: (adminProfile?.branch_id as string | null) ?? null,
+    }
+    const regionGuard = assertAdminCanAccessSettlementBranch(
+      scope,
+      data.branch_id as string,
+    )
+    if (!regionGuard.ok) return { ok: false as const, error: regionGuard.error }
   }
   if (!GUIDE_EDITABLE.includes(data.status as SettlementStatus)) {
     return { ok: false as const, error: '제출된 정산서는 영수증을 수정할 수 없습니다.' }

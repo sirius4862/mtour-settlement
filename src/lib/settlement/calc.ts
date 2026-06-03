@@ -636,7 +636,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     {
       key: 'r86',
       incomeLabel: '회사수익합계',
-      income: annotate(adminIncome, '회사 수익', '—', ADMIN_COMPANY_INCOME_FORMULA),
+      income: annotate(adminIncome, '회사수익', '—', ADMIN_COMPANY_INCOME_FORMULA),
       expenseLabel: '회사지출합계',
       guideExpense: annotate(adminExpense, '회사 지출', 'H85', 'H84+J84+O84'),
       settlementLabel: '회사수익(R86)',
@@ -657,7 +657,7 @@ export function calcSettlement(input: SettlementCalcInput): SettlementCalcResult
     matrix,
     summary: {
       income_total_usd: annotate(d84, '가이드 수익풀', 'D84', SETTLEMENT_PROFIT_INCOME_FORMULA),
-      admin_income_usd: annotate(adminIncome, '회사 수익 합계', '—', ADMIN_COMPANY_INCOME_FORMULA),
+      admin_income_usd: annotate(adminIncome, '회사수익 합계', '—', ADMIN_COMPANY_INCOME_FORMULA),
       expense_total_usd: annotate(adminExpense, '회사 지출 총액', 'H85', 'H84+J84+M84+O84'),
       company_gross_usd: annotate(f86, '수익−지출', 'F86', 'admin_income−admin_expense'),
       balance_usd: annotate(r84, '차액(밸런스)', 'R84', 'R79−R80−R81'),

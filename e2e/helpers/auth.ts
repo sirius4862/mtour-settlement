@@ -8,12 +8,18 @@ export async function login(
 ) {
   const next = options?.next ? `?next=${encodeURIComponent(options.next)}` : ''
   await page.goto(`/login${next}`, { waitUntil: 'domcontentloaded' })
-  await page.getByLabel('이메일').fill(email)
-  await page.getByLabel('비밀번호').fill(password)
-  await page.getByRole('button', { name: '로그인' }).click()
+  const emailField = page.getByRole('textbox', { name: 'Email' })
+  await emailField.waitFor({ state: 'visible', timeout: 30_000 })
+  await emailField.fill(email)
+  await page.getByLabel('Password').fill(password)
+  await page.getByRole('button', { name: 'Login' }).click()
   await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 60_000 }).catch(async () => {
-    const err = await page.locator('.text-red-400').first().textContent().catch(() => null)
-    if (err) throw new Error(`Login failed: ${err}`)
+    const err = await page
+      .getByRole('alert')
+      .first()
+      .textContent()
+      .catch(() => null)
+    if (err?.trim()) throw new Error(`Login failed: ${err.trim()}`)
     throw new Error(`Still on login after 60s (url=${page.url()})`)
   })
 }

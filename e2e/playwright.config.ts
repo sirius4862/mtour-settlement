@@ -7,7 +7,7 @@ const baseURL = process.env.PROD_SMOKE_URL?.trim() || 'https://mtour-settlement.
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'prod-smoke.spec.ts',
+  testMatch: ['prod-smoke.spec.ts', 'auth-helper.verify.spec.ts'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

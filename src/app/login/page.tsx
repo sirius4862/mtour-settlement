@@ -1,15 +1,17 @@
 'use client'
 
-import Image from 'next/image'
 import { Suspense, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+/** Warm burnt-orange — hospitality CTA (not brand logo red) */
 const LOGIN_BUTTON = {
-  bg: '#1F2937',
-  hover: '#111827',
-  active: '#374151',
-  shadow: 'shadow-sm shadow-gray-900/10 hover:shadow-md hover:shadow-gray-900/15',
+  bg: '#B76E2B',
+  hover: '#A66428',
+  active: '#9A5A24',
+  focus: '#B76E2B',
+  shadow:
+    'shadow-sm shadow-[#B76E2B]/20 hover:shadow-md hover:shadow-[#B76E2B]/25',
 } as const
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -82,24 +84,27 @@ function LoginForm() {
       <div className="flex-1 flex items-center justify-center px-5 sm:px-6 py-10 sm:py-12">
         <div className="w-full max-w-[400px]">
           <section
-            className="rounded-2xl bg-white px-6 sm:px-8 pt-7 sm:pt-8 pb-8 sm:pb-9
-                       border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+            className="rounded-2xl bg-white px-6 sm:px-8 pt-8 sm:pt-9 pb-8 sm:pb-9
+                       border border-[#E8E8E8] shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
             aria-labelledby="login-heading"
           >
-            <div className="flex justify-center mb-6 sm:mb-7">
-              <Image
-                src="/MTour_logo_transparent.png"
-                alt="MTour"
-                width={435}
-                height={120}
-                priority
-                className="h-auto w-[min(100%,168px)] sm:w-[min(100%,180px)] max-w-[180px] object-contain"
-              />
-            </div>
-
-            <h1 id="login-heading" className="sr-only">
-              MTour 로그인
-            </h1>
+            <header className="flex flex-col items-center text-center mb-6 sm:mb-7">
+              <p
+                className="m-0 font-sans text-[1.75rem] sm:text-[1.875rem] leading-none text-[#111111] select-none"
+                aria-label="MTOUR"
+              >
+                <span className="font-semibold tracking-tight">M</span>
+                <span className="font-medium -ml-[0.06em] tracking-[0.14em] sm:tracking-[0.16em]">
+                  TOUR
+                </span>
+              </p>
+              <p
+                id="login-heading"
+                className="mt-3.5 text-[0.8125rem] sm:text-sm font-medium tracking-[0.04em] text-[#6B7280]"
+              >
+                Guide Operations Platform
+              </p>
+            </header>
 
             <form onSubmit={handleSubmit} className="space-y-4" noValidate>
               {errMsg && (
@@ -116,7 +121,7 @@ function LoginForm() {
                   htmlFor="login-email"
                   className="block text-sm font-medium text-[#374151]"
                 >
-                  이메일
+                  Email
                 </label>
                 <input
                   id="login-email"
@@ -131,7 +136,7 @@ function LoginForm() {
                   disabled={pending}
                   className="w-full px-4 py-3.5 bg-white border border-[#E5E7EB] rounded-xl
                              text-[#111111] placeholder:text-[#9CA3AF]
-                             focus:outline-none focus:border-[#9CA3AF] focus:ring-2 focus:ring-[#111111]/8
+                             focus:outline-none focus:border-[#B76E2B]/50 focus:ring-2 focus:ring-[#B76E2B]/12
                              disabled:opacity-50 transition-[border-color,box-shadow]"
                 />
               </div>
@@ -141,7 +146,7 @@ function LoginForm() {
                   htmlFor="login-password"
                   className="block text-sm font-medium text-[#374151]"
                 >
-                  비밀번호
+                  Password
                 </label>
                 <div className="relative">
                   <input
@@ -149,13 +154,13 @@ function LoginForm() {
                     type={showPw ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="비밀번호 입력"
+                    placeholder="Enter password"
                     autoComplete="current-password"
                     required
                     disabled={pending}
                     className="w-full px-4 py-3.5 pr-12 bg-white border border-[#E5E7EB] rounded-xl
                                text-[#111111] placeholder:text-[#9CA3AF]
-                               focus:outline-none focus:border-[#9CA3AF] focus:ring-2 focus:ring-[#111111]/8
+                               focus:outline-none focus:border-[#B76E2B]/50 focus:ring-2 focus:ring-[#B76E2B]/12
                                disabled:opacity-50 transition-[border-color,box-shadow]"
                   />
                   <button
@@ -236,10 +241,10 @@ function LoginForm() {
                         strokeLinecap="round"
                       />
                     </svg>
-                    로그인 중…
+                    Signing in…
                   </span>
                 ) : (
-                  '로그인'
+                  'Login'
                 )}
               </button>
             </form>
@@ -260,7 +265,7 @@ export default function LoginPage() {
       fallback={
         <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center">
           <div
-            className="w-8 h-8 border-2 border-[#1F2937] border-t-transparent rounded-full animate-spin"
+            className="w-8 h-8 border-2 border-[#B76E2B] border-t-transparent rounded-full animate-spin"
             aria-label="로딩"
           />
         </div>

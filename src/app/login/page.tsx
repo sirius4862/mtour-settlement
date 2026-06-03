@@ -79,12 +79,12 @@ function LoginForm() {
       <div className="w-full max-w-[400px]">
         <div className="flex flex-col items-center text-center mb-8">
           <Image
-            src="/mtour-logo.svg"
+            src="/MTour_logo_transparent.png"
             alt="MTour"
-            width={250}
-            height={60}
+            width={435}
+            height={120}
             priority
-            className="h-auto w-[min(100%,250px)] max-w-[280px]"
+            className="h-auto w-[min(100%,250px)] max-w-[280px] object-contain"
           />
           <h1 className="mt-8 text-2xl font-bold tracking-tight text-gray-900">
             M투어 정산

@@ -5,10 +5,12 @@ import { Suspense, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-/** Primary red sampled from official MTour logo mark */
-const BRAND_RED = '#E31937'
-const BRAND_RED_HOVER = '#C91530'
-const BRAND_RED_ACTIVE = '#A81128'
+const LOGIN_BUTTON = {
+  bg: '#1F2937',
+  hover: '#111827',
+  active: '#374151',
+  shadow: 'shadow-sm shadow-gray-900/10 hover:shadow-md hover:shadow-gray-900/15',
+} as const
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'Invalid login credentials': '이메일 또는 비밀번호가 올바르지 않습니다.',
@@ -76,53 +78,36 @@ function LoginForm() {
   }
 
   return (
-    <main className="min-h-screen bg-white flex flex-col">
-      <div className="flex-1 flex items-center justify-center px-5 sm:px-6 py-12 sm:py-16">
-        <div className="w-full max-w-[420px]">
-          {/* Brand zone — logo is the dominant visual */}
-          <header className="flex flex-col items-center text-center">
-            <div className="mb-10 sm:mb-12 w-full flex justify-center">
+    <main className="min-h-screen bg-[#FAFAFA] flex flex-col">
+      <div className="flex-1 flex items-center justify-center px-5 sm:px-6 py-10 sm:py-12">
+        <div className="w-full max-w-[400px]">
+          <section
+            className="rounded-2xl bg-white px-6 sm:px-8 pt-7 sm:pt-8 pb-8 sm:pb-9
+                       border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+            aria-labelledby="login-heading"
+          >
+            <div className="flex justify-center mb-6 sm:mb-7">
               <Image
                 src="/MTour_logo_transparent.png"
                 alt="MTour"
                 width={435}
                 height={120}
                 priority
-                className="h-auto w-[min(100%,240px)] sm:w-[min(100%,280px)] max-w-[280px] object-contain"
+                className="h-auto w-[min(100%,168px)] sm:w-[min(100%,180px)] max-w-[180px] object-contain"
               />
             </div>
 
-            <div
-              className="w-10 h-0.5 rounded-full mb-6"
-              style={{ backgroundColor: BRAND_RED }}
-              aria-hidden
-            />
-
-            <h1 className="text-[1.625rem] sm:text-[1.75rem] font-semibold tracking-tight text-[#111111] leading-tight">
-              M투어 정산
+            <h1 id="login-heading" className="sr-only">
+              MTour 로그인
             </h1>
-            <p className="mt-3 text-[0.9375rem] sm:text-base font-normal text-[#6B7280] leading-relaxed max-w-[18rem]">
-              글로벌 운영 정산 시스템
-            </p>
-          </header>
 
-          {/* Sign-in — soft elevated panel, not bureaucratic card chrome */}
-          <section
-            className="mt-10 sm:mt-12 rounded-2xl sm:rounded-3xl bg-[#FAFAFA] px-6 sm:px-8 py-8 sm:py-9
-                       ring-1 ring-black/[0.04]"
-            aria-labelledby="login-heading"
-          >
-            <h2 id="login-heading" className="sr-only">
-              로그인
-            </h2>
-
-            <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
               {errMsg && (
                 <div
-                  className="rounded-xl border border-red-200/80 bg-white px-4 py-3"
+                  className="rounded-lg border border-red-200 bg-red-50/80 px-4 py-3"
                   role="alert"
                 >
-                  <p className="text-sm text-red-700 whitespace-pre-line">{errMsg}</p>
+                  <p className="text-sm text-red-800 whitespace-pre-line">{errMsg}</p>
                 </div>
               )}
 
@@ -146,7 +131,7 @@ function LoginForm() {
                   disabled={pending}
                   className="w-full px-4 py-3.5 bg-white border border-[#E5E7EB] rounded-xl
                              text-[#111111] placeholder:text-[#9CA3AF]
-                             focus:outline-none focus:border-[#E31937] focus:ring-2 focus:ring-[#E31937]/15
+                             focus:outline-none focus:border-[#9CA3AF] focus:ring-2 focus:ring-[#111111]/8
                              disabled:opacity-50 transition-[border-color,box-shadow]"
                 />
               </div>
@@ -170,7 +155,7 @@ function LoginForm() {
                     disabled={pending}
                     className="w-full px-4 py-3.5 pr-12 bg-white border border-[#E5E7EB] rounded-xl
                                text-[#111111] placeholder:text-[#9CA3AF]
-                               focus:outline-none focus:border-[#E31937] focus:ring-2 focus:ring-[#E31937]/15
+                               focus:outline-none focus:border-[#9CA3AF] focus:ring-2 focus:ring-[#111111]/8
                                disabled:opacity-50 transition-[border-color,box-shadow]"
                   />
                   <button
@@ -178,7 +163,7 @@ function LoginForm() {
                     tabIndex={-1}
                     onClick={() => setShowPw((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2
-                               text-[#9CA3AF] hover:text-[#4B5563] transition-colors"
+                               text-[#9CA3AF] hover:text-[#374151] transition-colors"
                     aria-label={showPw ? '비밀번호 숨기기' : '비밀번호 보기'}
                   >
                     {showPw ? (
@@ -215,17 +200,16 @@ function LoginForm() {
                 disabled={pending || !email || !password}
                 style={
                   {
-                    '--btn-bg': BRAND_RED,
-                    '--btn-hover': BRAND_RED_HOVER,
-                    '--btn-active': BRAND_RED_ACTIVE,
+                    '--btn-bg': LOGIN_BUTTON.bg,
+                    '--btn-hover': LOGIN_BUTTON.hover,
+                    '--btn-active': LOGIN_BUTTON.active,
                   } as React.CSSProperties
                 }
-                className="w-full py-3.5 mt-1 bg-[var(--btn-bg)] hover:bg-[var(--btn-hover)] active:bg-[var(--btn-active)]
+                className={`w-full py-3.5 mt-2 bg-[var(--btn-bg)] hover:bg-[var(--btn-hover)]
+                           active:bg-[var(--btn-active)]
                            disabled:opacity-40 disabled:cursor-not-allowed
                            text-white text-[0.9375rem] font-semibold rounded-xl
-                           shadow-[0_1px_2px_rgba(227,25,55,0.2),0_4px_12px_rgba(227,25,55,0.15)]
-                           hover:shadow-[0_2px_4px_rgba(227,25,55,0.25),0_6px_16px_rgba(227,25,55,0.2)]
-                           transition-[background-color,box-shadow]"
+                           transition-[background-color,box-shadow] ${LOGIN_BUTTON.shadow}`}
               >
                 {pending ? (
                   <span className="flex items-center justify-center gap-2">
@@ -261,7 +245,7 @@ function LoginForm() {
             </form>
           </section>
 
-          <p className="text-center text-[#9CA3AF] text-xs sm:text-[0.8125rem] mt-8 leading-relaxed">
+          <p className="text-center text-[#9CA3AF] text-xs sm:text-[0.8125rem] mt-6 leading-relaxed">
             계정이 없으면 관리자에게 문의하세요
           </p>
         </div>
@@ -274,9 +258,9 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center">
           <div
-            className="w-8 h-8 border-2 border-[#E31937] border-t-transparent rounded-full animate-spin"
+            className="w-8 h-8 border-2 border-[#1F2937] border-t-transparent rounded-full animate-spin"
             aria-label="로딩"
           />
         </div>

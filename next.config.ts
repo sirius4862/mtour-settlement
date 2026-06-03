@@ -1,6 +1,16 @@
 import type { NextConfig } from 'next'
 
+const gitSha =
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.NEXT_PUBLIC_GIT_SHA ||
+  process.env.NEXT_PUBLIC_DEPLOY_SHA ||
+  ''
+
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_GIT_SHA: gitSha,
+    NEXT_PUBLIC_DEPLOY_SHA: gitSha,
+  },
   images: {
     remotePatterns: [
       {

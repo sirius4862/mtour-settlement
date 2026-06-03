@@ -14,9 +14,15 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const deploySha =
+    process.env.NEXT_PUBLIC_GIT_SHA ||
+    process.env.NEXT_PUBLIC_DEPLOY_SHA ||
+    ''
+
   return (
     <html lang="ko">
       <body className="antialiased bg-gray-50 text-gray-900">
+        <div id="deploy-meta" data-git-sha={deploySha} hidden aria-hidden="true" />
         {children}
       </body>
     </html>

@@ -9,8 +9,6 @@ import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migr
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { normalizeExternalReceivableForForm } from '@/lib/settlement/external-receivable'
 import { STATUS_META, canGuideEdit, canGuideConfirm } from '@/types'
-import { SubmitButton } from './SubmitButton'
-
 export const dynamic = 'force-dynamic'
 
 const fmt2 = formatUsd
@@ -258,11 +256,18 @@ export default async function SettlementDetailPage({
       {editable && (
         <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-100 px-4 py-3 max-w-lg mx-auto">
           <div className="flex gap-2">
-            <Link href={`/guide/settlements/${s.id}/edit`}
-              className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 text-center hover:bg-gray-50">
+            <Link
+              href={`/guide/settlements/${s.id}/edit`}
+              className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 text-center hover:bg-gray-50"
+            >
               수정하기
             </Link>
-            <SubmitButton settlementId={s.id} />
+            <Link
+              href={`/guide/settlements/${s.id}/edit`}
+              className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold text-center hover:bg-blue-700"
+            >
+              저장 후 제출
+            </Link>
           </div>
         </div>
       )}

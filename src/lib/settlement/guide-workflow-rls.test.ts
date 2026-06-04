@@ -57,6 +57,12 @@ describe('guide workflow RLS regression', () => {
     }
   })
 
+  it('persistSettlementLineItems passes explicit soft-delete ids to persist helper', () => {
+    const source = readRepoFile('src/lib/actions/settlementActions.ts')
+    expect(source).toContain('explicitDeleteIdsFromDraft')
+    expect(source).toContain('persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)')
+  })
+
   it('persistSettlementLineItems does not use upsert on line-item tables', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
     const fnMatch = source.match(
@@ -96,22 +102,22 @@ describe('guide workflow RLS regression', () => {
     expect(sql).not.toContain("'clarification_requested'")
   })
 
-  it('persistGuideLineItemTable performs delete, insert, and per-row update', async () => {
+  it('persistGuideLineItemTable performs explicit delete, insert, and per-row update', async () => {
     const calls: string[] = []
     const supabase = {
       from(table: string) {
         return {
           delete() {
             calls.push(`delete:${table}`)
-            return {
-              eq() {
-                return {
-                  not() {
-                    return Promise.resolve({ error: null })
-                  },
+            const deleteChain = {
+              eq(col: string) {
+                if (col === 'settlement_id') {
+                  return Promise.resolve({ error: null, count: 1 })
                 }
+                return deleteChain
               },
             }
+            return deleteChain
           },
           insert(rows: unknown[]) {
             calls.push(`insert:${table}:${(rows as unknown[]).length}`)
@@ -141,6 +147,7 @@ describe('guide workflow RLS regression', () => {
         { id: '00000000-0000-4000-8000-000000000002', settlement_id: '00000000-0000-4000-8000-000000000001', meal_date: '2025-01-01' },
         { settlement_id: '00000000-0000-4000-8000-000000000001', meal_date: '2025-01-02' },
       ],
+      ['00000000-0000-4000-8000-000000000099'],
     )
     expect(result.ok).toBe(true)
     expect(calls.some((c) => c.startsWith('delete:meal_items'))).toBe(true)
@@ -224,14 +231,27 @@ describe('guide workflow RLS regression', () => {
     expect(sql).toContain("'submitted'")
   })
 
-  it('SubmitButton avoids useTransition refresh hang and has submit timeout', () => {
-    const source = readRepoFile('src/app/guide/settlements/[id]/SubmitButton.tsx')
-    expect(source).not.toContain('useTransition')
-    expect(source).not.toContain('router.refresh()')
-    expect(source).toContain('router.push(')
-    expect(source).toContain('SUBMIT_TIMEOUT_MS')
-    expect(source).toContain('role="alert"')
-    expect(source).toContain('finally')
+  it('guide detail page routes submit to edit form (no submitSettlement-only button)', () => {
+    const detail = readRepoFile('src/app/guide/settlements/[id]/page.tsx')
+    expect(detail).not.toContain('SubmitButton')
+    expect(detail).not.toContain('submitSettlement')
+    expect(detail).toContain('저장 후 제출')
+    expect(detail).toContain('/edit')
+  })
+
+  it('SettlementForm passes draft payload into submitSettlement', () => {
+    const form = readRepoFile('src/components/settlement/SettlementForm.tsx')
+    expect(form).toContain('toDraftPayload(useSettlementFormStore.getState())')
+    expect(form).toContain('submitSettlement(id, payload)')
+    expect(form).not.toMatch(/submitSettlement\(id\)\s*\)/)
+  })
+
+  it('submitSettlement persists draft before snapshot when payload provided', () => {
+    const source = readRepoFile('src/lib/actions/settlementActions.ts')
+    const fnMatch = source.match(/export async function submitSettlement[\s\S]*?\n\}/)
+    expect(fnMatch).toBeTruthy()
+    expect(fnMatch![0]).toContain('saveSettlementDraft')
+    expect(fnMatch![0]).toContain('save_before_submit_ok')
   })
 
   it('documents submit path including snapshot INSERT without base SELECT', () => {

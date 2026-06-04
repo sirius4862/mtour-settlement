@@ -142,7 +142,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
     return { ok: errors.length === 0, errors }
   }, [isAdminReview])
 
-  const handleSave = useCallback(async (): Promise<boolean> => {
+  const handleSave = useCallback(async (options?: { managePending?: boolean }): Promise<boolean> => {
     if (isPreview) return false
 
     const { ok, errors } = runValidation('draft')
@@ -152,7 +152,8 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
     }
 
     const state = useSettlementFormStore.getState()
-    setPending(true)
+    const managePending = options?.managePending !== false
+    if (managePending) setPending(true)
     setSaving()
 
     try {
@@ -183,7 +184,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       setSaveError('네트워크 오류가 발생했습니다.')
       return false
     } finally {
-      setPending(false)
+      if (managePending) setPending(false)
     }
   }, [isPreview, isAdminReview, runValidation, setSaving, markSaved, mergeServerSync, setSaveError])
 
@@ -221,7 +222,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
   }, [isPreview, isAdminReview, adminEdit, canSendForConfirmation, handleSave, router, setSaveError])
 
   const handleSubmit = useCallback(async () => {
-    if (isPreview) return
+    if (isPreview || isAdminReview) return
 
     const { ok, errors } = runValidation('submit')
     if (!ok) {
@@ -229,28 +230,37 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       return
     }
 
-    if (!window.confirm('정산서를 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.')) {
+    if (
+      !window.confirm(
+        '변경 내용을 저장한 뒤 정산서를 제출합니다.\n제출 후에는 수정할 수 없습니다. 계속하시겠습니까?',
+      )
+    ) {
       return
     }
 
-    const saved = await handleSave()
-    if (!saved) return
-
-    const id = useSettlementFormStore.getState().settlementId
-    if (!id) return
-
     setPending(true)
     try {
-      const result = await submitSettlement(id)
+      const id = useSettlementFormStore.getState().settlementId
+      if (!id) {
+        setSaveError('정산서 ID를 확인할 수 없습니다.')
+        return
+      }
+
+      const payload = toDraftPayload(useSettlementFormStore.getState())
+      const result = await submitSettlement(id, payload)
+
       if (result.ok) {
         router.push(`/guide/settlements/${id}`)
-      } else {
-        setSaveError(result.error ?? '제출 실패')
+        return
       }
+
+      setSaveError(result.error ?? '제출 실패')
+    } catch {
+      setSaveError('네트워크 오류가 발생했습니다.')
     } finally {
       setPending(false)
     }
-  }, [isPreview, handleSave, router, setSaveError])
+  }, [isPreview, isAdminReview, handleSave, router, runValidation, setSaveError])
 
   const title =
     isAdminReview ? '관리자 검토 수정'
@@ -500,6 +510,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
           hideSubmit={isAdminReview}
           showSendForConfirmation={canSendForConfirmation}
           saveLabel="임시저장"
+          submitLabel="저장 후 제출"
           sendForConfirmationLabel="가이드 검토 요청"
         />
       )}

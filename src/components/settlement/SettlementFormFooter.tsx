@@ -28,6 +28,7 @@ export function SettlementFormFooter({
   hideSubmit = false,
   showSendForConfirmation = false,
   saveLabel = '임시저장',
+  submitLabel = '저장 후 제출',
   sendForConfirmationLabel = '가이드 검토 요청',
 }: {
   calc: SettlementCalcResult
@@ -44,6 +45,7 @@ export function SettlementFormFooter({
   hideSubmit?: boolean
   showSendForConfirmation?: boolean
   saveLabel?: string
+  submitLabel?: string
   sendForConfirmationLabel?: string
 }) {
   const statusLabel =
@@ -164,7 +166,7 @@ export function SettlementFormFooter({
             disabled={pending}
             className="flex-1 min-h-12 py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
-            제출하기
+            {pending ? '저장 후 제출 중…' : submitLabel}
           </button>
           )}
         </div>

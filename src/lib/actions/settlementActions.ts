@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import {
   GUIDE_LINE_ITEM_TABLES,
+  explicitDeleteIdsFromDraft,
   persistGuideLineItemTable,
 } from '@/lib/settlement/guide-line-item-persist'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
@@ -606,16 +607,31 @@ export async function upsertSettlement(payload: {
 
 // ── 제출 ──────────────────────────────────────────────────────
 
-export async function submitSettlement(id: string): Promise<{ ok: boolean; error?: string }> {
+export async function submitSettlement(
+  id: string,
+  draft?: SettlementDraftPayload,
+): Promise<{ ok: boolean; error?: string }> {
   const logStep = (step: string, extra?: Record<string, unknown>) => {
     console.error('[submitSettlement]', step, { settlementId: id, ...extra })
   }
 
   try {
-    logStep('start')
+    logStep('start', { hasDraft: !!draft })
     const profile = await getProfile()
     if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
     if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
+
+    if (draft) {
+      if (draft.settlementId && draft.settlementId !== id) {
+        return { ok: false, error: '정산서 ID가 일치하지 않습니다.' }
+      }
+      const saveResult = await saveSettlementDraft({ ...draft, settlementId: id })
+      if (!saveResult.ok) {
+        logStep('save_before_submit_failed', { error: saveResult.error })
+        return { ok: false, error: saveResult.error ?? SAVE_SETTLEMENT_GENERIC_ERROR }
+      }
+      logStep('save_before_submit_ok')
+    }
 
     const supabase = await createClient()
 
@@ -801,17 +817,45 @@ async function persistSettlementLineItems(
 ): Promise<{ ok: boolean; error?: string }> {
   const rate = payload.exchange_rate
 
-  const itemTables: { table: (typeof GUIDE_LINE_ITEM_TABLES)[number]; rows: Record<string, unknown>[] }[] = [
-    { table: 'hotel_items', rows: buildHotelDbRows(payload.hotels, settlementId) },
-    { table: 'meal_items', rows: buildMealDbRows(payload.meals, settlementId) },
-    { table: 'entrance_items', rows: buildEntranceDbRows(payload.entrances, settlementId) },
-    { table: 'other_expense_items', rows: buildOtherDbRows(payload.others, settlementId) },
-    { table: 'shopping_items', rows: buildShoppingDbRows(payload.shoppings, settlementId) },
-    { table: 'option_items', rows: buildOptionDbRows(payload.options, settlementId, rate) },
+  const itemTables: {
+    table: (typeof GUIDE_LINE_ITEM_TABLES)[number]
+    rows: Record<string, unknown>[]
+    deleteIds: string[]
+  }[] = [
+    {
+      table: 'hotel_items',
+      rows: buildHotelDbRows(payload.hotels, settlementId),
+      deleteIds: explicitDeleteIdsFromDraft(payload.hotels),
+    },
+    {
+      table: 'meal_items',
+      rows: buildMealDbRows(payload.meals, settlementId),
+      deleteIds: explicitDeleteIdsFromDraft(payload.meals),
+    },
+    {
+      table: 'entrance_items',
+      rows: buildEntranceDbRows(payload.entrances, settlementId),
+      deleteIds: explicitDeleteIdsFromDraft(payload.entrances),
+    },
+    {
+      table: 'other_expense_items',
+      rows: buildOtherDbRows(payload.others, settlementId),
+      deleteIds: explicitDeleteIdsFromDraft(payload.others),
+    },
+    {
+      table: 'shopping_items',
+      rows: buildShoppingDbRows(payload.shoppings, settlementId),
+      deleteIds: explicitDeleteIdsFromDraft(payload.shoppings),
+    },
+    {
+      table: 'option_items',
+      rows: buildOptionDbRows(payload.options, settlementId, rate),
+      deleteIds: explicitDeleteIdsFromDraft(payload.options),
+    },
   ]
 
-  for (const { table, rows } of itemTables) {
-    const result = await persistGuideLineItemTable(supabase, table, settlementId, rows)
+  for (const { table, rows, deleteIds } of itemTables) {
+    const result = await persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)
     if (!result.ok) return result
   }
 

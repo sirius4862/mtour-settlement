@@ -149,6 +149,88 @@ export async function sendForConfirmation(
   if (!updated?.length) throw new Error('send-for-confirmation updated 0 rows')
 }
 
+export async function insertOtherExpenseItems(
+  client: SupabaseClient,
+  settlementId: string,
+  items: Array<{ description: string; amount_usd?: number; amount_vnd?: number }>,
+) {
+  const rows = items.map((item, i) => ({
+    id: randomUUID(),
+    settlement_id: settlementId,
+    description: item.description,
+    days: 0,
+    pax: 0,
+    unit_price_usd: 0,
+    unit_price_vnd: 0,
+    amount_usd: item.amount_usd ?? 10,
+    amount_vnd: item.amount_vnd ?? 0,
+    is_tip: false,
+    note: TEST_MARKER,
+    entry_mode: 'flat' as const,
+    sort_order: i,
+  }))
+  const { error } = await client.from('other_expense_items').insert(rows)
+  if (error) throw new Error(`other_expense_items: ${error.message}`)
+  return rows.map((r) => ({ id: r.id as string, description: r.description as string }))
+}
+
+/** True when guide DELETE RLS on other_expense_items is applied (workflow v1 P2a). */
+export async function guideCanDeleteOtherExpenseItem(
+  guideClient: SupabaseClient,
+  settlementId: string,
+): Promise<boolean> {
+  const id = randomUUID()
+  const { error: insErr } = await guideClient.from('other_expense_items').insert({
+    id,
+    settlement_id: settlementId,
+    description: `${TEST_MARKER}-delete-probe`,
+    days: 0,
+    pax: 0,
+    unit_price_usd: 0,
+    unit_price_vnd: 0,
+    amount_usd: 1,
+    amount_vnd: 0,
+    is_tip: false,
+    note: null,
+    entry_mode: 'flat' as const,
+    sort_order: 9999,
+  })
+  if (insErr) return false
+
+  const { error: delErr, count } = await guideClient
+    .from('other_expense_items')
+    .delete({ count: 'exact' })
+    .eq('id', id)
+    .eq('settlement_id', settlementId)
+
+  return !delErr && (count ?? 0) === 1
+}
+
+/** Mirrors admin 수정요청 (submitted → edit_requested) for E2E. */
+export async function adminRequestEdit(
+  adminClient: SupabaseClient,
+  settlementId: string,
+  adminId: string,
+  adminNote = 'E2E: please correct duplicate other expenses',
+) {
+  const now = new Date().toISOString()
+  const { data, error } = await adminClient
+    .from('settlements')
+    .update({
+      status: 'edit_requested',
+      edit_requested_at: now,
+      edit_requested_by: adminId,
+      admin_note: adminNote,
+      reviewed_by: adminId,
+      reviewed_at: now,
+    })
+    .eq('id', settlementId)
+    .eq('status', 'submitted')
+    .select('id')
+  if (error) throw new Error(error.message)
+  if (!data?.length) throw new Error('adminRequestEdit updated 0 rows')
+}
+
 export async function createWorkflowFixture(
   adminClient: SupabaseClient,
   guideClient: SupabaseClient,
@@ -156,7 +238,7 @@ export async function createWorkflowFixture(
   branchId: string,
   adminId: string,
   runId: string,
-  options?: { skipSendForConfirmation?: boolean },
+  options?: { skipSendForConfirmation?: boolean; skipGuideSubmit?: boolean },
 ): Promise<WorkflowFixture> {
   const tourId = randomUUID()
   const settlementId = randomUUID()
@@ -212,9 +294,11 @@ export async function createWorkflowFixture(
   })
   if (settErr) throw new Error(settErr.message)
 
-  await guideSubmit(guideClient, settlementId, guideId)
-  if (!options?.skipSendForConfirmation) {
-    await sendForConfirmation(adminClient, settlementId, adminId)
+  if (!options?.skipGuideSubmit) {
+    await guideSubmit(guideClient, settlementId, guideId)
+    if (!options?.skipSendForConfirmation) {
+      await sendForConfirmation(adminClient, settlementId, adminId)
+    }
   }
 
   return { runId, tourId, settlementId, tourCode }
@@ -301,12 +385,28 @@ export async function cleanupWorkflowFixture(
   }
 
   if (settlementId) {
-    await tryOp('clear FK', async () =>
-      adminClient
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await tryOp('clear FK', async () =>
+        adminClient
+          .from('settlements')
+          .update({
+            guide_submit_snapshot_id: null,
+            active_confirmation_id: null,
+            guide_confirmed_at: null,
+            guide_confirmed_by: null,
+          })
+          .eq('id', settlementId),
+      )
+      const { data: fkCheck } = await adminClient
         .from('settlements')
-        .update({ guide_submit_snapshot_id: null, active_confirmation_id: null })
-        .eq('id', settlementId),
-    )
+        .select('guide_submit_snapshot_id, active_confirmation_id')
+        .eq('id', settlementId)
+        .maybeSingle()
+      if (!fkCheck?.guide_submit_snapshot_id && !fkCheck?.active_confirmation_id) break
+      if (attempt === 1) {
+        errors.push('clear FK: guide_submit_snapshot_id or active_confirmation_id still set')
+      }
+    }
     await tryOp('field_changes', async () =>
       adminClient.from('settlement_field_changes').delete().eq('settlement_id', settlementId),
     )

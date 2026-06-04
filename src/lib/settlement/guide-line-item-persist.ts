@@ -18,20 +18,33 @@ export type GuideLineItemTable = (typeof GUIDE_LINE_ITEM_TABLES)[number]
  * Hardening removed guide SELECT on base line-item tables; upsert and
  * INSERT…RETURNING require SELECT and fail RLS on hotel/meal/etc.
  */
+/** Soft-deleted draft rows with DB ids — guides cannot SELECT base line-item tables (RLS). */
+export function explicitDeleteIdsFromDraft(
+  rows: Array<{ deleted?: boolean; id?: string }>,
+): string[] {
+  return rows.filter((r) => r.deleted && r.id).map((r) => r.id as string)
+}
+
 export async function persistGuideLineItemTable(
   supabase: SupabaseClient,
   table: GuideLineItemTable | string,
   settlementId: string,
   rows: Record<string, unknown>[],
+  explicitDeleteIds: string[] = [],
 ): Promise<{ ok: boolean; error?: string }> {
   const { keepIds, toInsert, toUpdate } = splitDbRowsForPersist(rows)
 
-  let deleteQuery = supabase.from(table).delete().eq('settlement_id', settlementId)
-  if (keepIds.length > 0) {
-    deleteQuery = deleteQuery.not('id', 'in', `(${keepIds.map((id) => `"${id}"`).join(',')})`)
+  for (const id of explicitDeleteIds) {
+    const { error: delErr, count } = await supabase
+      .from(table)
+      .delete({ count: 'exact' })
+      .eq('id', id)
+      .eq('settlement_id', settlementId)
+    if (delErr) return { ok: false, error: delErr.message }
+    if ((count ?? 0) < 1) {
+      return { ok: false, error: `line_item_delete_failed:${table}:${id}` }
+    }
   }
-  const { error: delErr } = await deleteQuery
-  if (delErr) return { ok: false, error: delErr.message }
 
   if (toInsert.length > 0) {
     const { error: insErr } = await supabase.from(table).insert(toInsert)

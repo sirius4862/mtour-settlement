@@ -170,6 +170,15 @@ describe('guide settlement history filters', () => {
     expect(dashboard).toContain('href="/guide/settlements"')
   })
 
+  it('always renders the 작성중 section with an empty state', () => {
+    const dashboard = readFileSync(join(ROOT, 'src/app/guide/page.tsx'), 'utf8')
+
+    expect(dashboard).not.toContain('{draftSettlements.length > 0 && (')
+    expect(dashboard).toContain('draftSettlements.length === 0 ? (')
+    expect(dashboard).toContain('작성중인 정산서가 없습니다.')
+    expect(dashboard).toContain('임시저장한 정산서가 있을 때 표시됩니다.')
+  })
+
   it('documents guide ownership enforcement in the server query', () => {
     const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
 

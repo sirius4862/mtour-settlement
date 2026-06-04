@@ -53,10 +53,16 @@ export default async function GuidePage() {
         )}
       </section>
 
-      {draftSettlements.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">작성중</h2>
-          {draftSettlements.map((s) => (
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-gray-700">작성중</h2>
+        {draftSettlements.length === 0 ? (
+          <p className="text-sm text-gray-400 bg-white rounded-xl border border-gray-100 px-4 py-6 text-center">
+            작성중인 정산서가 없습니다.
+            <br />
+            <span className="text-xs">임시저장한 정산서가 있을 때 표시됩니다.</span>
+          </p>
+        ) : (
+          draftSettlements.map((s) => (
             <Link
               key={s.id}
               href={`/guide/settlements/${s.id}/edit`}
@@ -73,9 +79,9 @@ export default async function GuidePage() {
               </div>
               <p className="text-xs text-blue-600 mt-2">이어 작성하기 →</p>
             </Link>
-          ))}
-        </section>
-      )}
+          ))
+        )}
+      </section>
 
       {editRequested.length > 0 && (
         <section className="space-y-2">

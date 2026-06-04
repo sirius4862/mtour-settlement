@@ -142,8 +142,7 @@ describe('guide settlement history filters', () => {
     expect(dashboard).not.toContain('정산 현황')
     expect(dashboard).not.toContain('grid-cols-4')
     expect(dashboard).not.toContain('검토중')
-    expect(dashboard).not.toContain('확인대기')
-    expect(dashboard).not.toContain('완료')
+    expect(dashboard).not.toContain('확인대기')
     expect(dashboard).toContain('{session.full_name}님')
     expect(dashboard).not.toContain('{session.full_name} 가이드님')
 

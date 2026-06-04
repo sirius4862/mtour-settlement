@@ -168,7 +168,7 @@ export default async function GuidePage() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">최근 정산서</h2>
             <Link href="/guide/settlements" className="text-xs text-blue-600">
-              전체 보기
+              전체 정산서 보기
             </Link>
           </div>
           {recent.map((s) => {

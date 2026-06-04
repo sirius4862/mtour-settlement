@@ -77,6 +77,15 @@ import {
   type AdminSettlementsPageResult,
 } from '@/lib/admin/settlement-list'
 import {
+  GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE,
+  expandGuideHistoryStatusFilter,
+  guideHistorySinceDate,
+  normalizeGuideHistoryPage,
+  parseGuideHistoryPeriod,
+  type GuideSettlementHistoryFilters,
+  type GuideSettlementHistoryResult,
+} from '@/lib/guide/settlement-history'
+import {
   logServerError,
   SAVE_SETTLEMENT_GENERIC_ERROR,
   SUBMIT_SETTLEMENT_GENERIC_ERROR,
@@ -280,6 +289,77 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
   return (data ?? []).map((row) =>
     sanitizeSettlementForGuide(row as SettlementWithTour),
   ) as SettlementWithTour[]
+}
+
+/** 가이드 본인 정산서 이력 검색 (소유권은 guide_id로 강제). */
+export async function getMySettlementHistory(
+  filters?: GuideSettlementHistoryFilters,
+): Promise<GuideSettlementHistoryResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const pageSize = filters?.pageSize ?? GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE
+  const page = normalizeGuideHistoryPage(filters?.page)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  if (!user) return { items: [], total: 0, page, pageSize, totalPages: 0 }
+
+  const period = parseGuideHistoryPeriod(filters?.period)
+  const since = guideHistorySinceDate(period)
+  const search = filters?.search?.trim()
+  let matchingTourIds: string[] | null = null
+
+  if (since || search) {
+    let tourQuery = supabase
+      .from('tours')
+      .select('id')
+      .eq('guide_id', user.id)
+
+    if (since) tourQuery = tourQuery.gte('start_date', since)
+    if (search) {
+      const pattern = `%${escapeIlikePattern(search)}%`
+      tourQuery = tourQuery.or(`pattern.ilike.${pattern},tour_code.ilike.${pattern}`)
+    }
+
+    const { data: tours, error } = await tourQuery
+    if (error) {
+      console.error('getMySettlementHistory tours:', error.message)
+      return { items: [], total: 0, page, pageSize, totalPages: 0 }
+    }
+
+    matchingTourIds = (tours ?? []).map((t) => t.id as string)
+    if (matchingTourIds.length === 0) {
+      return { items: [], total: 0, page, pageSize, totalPages: 0 }
+    }
+  }
+
+  const useGuideRead = await shouldUseGuideReadTables('guide')
+  let q = supabase
+    .from(tableForAudience('settlements', useGuideRead))
+    .select('*, tour:tours(*)', { count: 'exact' })
+    .eq('guide_id', user.id)
+    .order('created_at', { ascending: false })
+
+  const statuses = expandGuideHistoryStatusFilter(filters?.status)
+  if (statuses) q = statuses.length === 1 ? q.eq('status', statuses[0]) : q.in('status', statuses)
+  if (matchingTourIds) q = q.in('tour_id', matchingTourIds)
+
+  const { data, count, error } = await q.range(from, to)
+  if (error) {
+    console.error('getMySettlementHistory:', error.message)
+    return { items: [], total: 0, page, pageSize, totalPages: 0 }
+  }
+
+  const total = count ?? 0
+  return {
+    items: (data ?? []).map((row) =>
+      sanitizeSettlementForGuide(row as SettlementWithTour),
+    ) as SettlementWithTour[],
+    total,
+    page,
+    pageSize,
+    totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
+  }
 }
 
 /** Guide-facing settlement load — DB-redacted view + app-layer sanitize. */

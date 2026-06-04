@@ -136,6 +136,40 @@ describe('guide settlement history filters', () => {
     expect(historyPage).toContain('settlementHref')
   })
 
+  it('documents the guide dashboard work-queue layout', () => {
+    const dashboard = readFileSync(join(ROOT, 'src/app/guide/page.tsx'), 'utf8')
+
+    expect(dashboard).not.toContain('정산 현황')
+    expect(dashboard).not.toContain('grid-cols-4')
+    expect(dashboard).not.toContain('검토중')
+    expect(dashboard).not.toContain('확인대기')
+    expect(dashboard).not.toContain('완료')
+    expect(dashboard).toContain('{session.full_name}님')
+    expect(dashboard).not.toContain('{session.full_name} 가이드님')
+
+    const greeting = dashboard.indexOf('안녕하세요,')
+    const assignedTours = dashboard.indexOf('배정된 투어')
+    const draft = dashboard.indexOf('작성중')
+    const editRequested = dashboard.indexOf('수정 필요')
+    const pendingConfirmation = dashboard.indexOf('최종 확인 필요')
+    const recent = dashboard.indexOf('최근 정산서')
+
+    expect(greeting).toBeGreaterThan(-1)
+    expect(assignedTours).toBeGreaterThan(greeting)
+    expect(draft).toBeGreaterThan(assignedTours)
+    expect(editRequested).toBeGreaterThan(draft)
+    expect(pendingConfirmation).toBeGreaterThan(editRequested)
+    expect(recent).toBeGreaterThan(pendingConfirmation)
+
+    expect(dashboard).toContain("settlements.filter((s) => s.status === 'draft')")
+    expect(dashboard).toContain('이어 작성하기 →')
+    expect(dashboard).toContain('href={`/guide/settlements/${s.id}/edit`}')
+    expect(dashboard).toContain("s.status === 'pending_guide_confirmation' && s.guide_confirmed_at == null")
+    expect(dashboard).toContain('href={`/guide/settlements/${s.id}/confirm`}')
+    expect(dashboard).toContain('settlements.slice(0, 3)')
+    expect(dashboard).toContain('href="/guide/settlements"')
+  })
+
   it('documents guide ownership enforcement in the server query', () => {
     const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
 

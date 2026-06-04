@@ -111,7 +111,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       if (mode === 'edit' && initialFull) {
         // Server data must win over sessionStorage draft on edit reload
         useSettlementFormStore.persist.clearStorage()
-        const fullForRole = formRole === 'guide'
+        const fullForRole = role === 'guide'
           ? sanitizeSettlementFullForGuide(initialFull)
           : initialFull
         hydrateFromFull(fullForRole, guideName)
@@ -130,7 +130,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
     }
 
     return useSettlementFormStore.persist.onFinishHydration(bootstrap)
-  }, [mode, initialFull, guideName, formRole, hydrateFromFull, resetNew])
+  }, [mode, initialFull, guideName, role, hydrateFromFull, resetNew])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
     const actor = isAdminReview ? 'admin' : 'guide'

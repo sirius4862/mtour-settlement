@@ -14,6 +14,7 @@
     "test:prod-smoke": "playwright test -c e2e/playwright.config.ts",
     "test:staging-workflow": "node scripts/staging-workflow-v1-automation.mjs",
     "test:confirmation-integrity": "playwright test -c e2e/playwright.confirmation-integrity.config.ts",
+    "test:settlement-calculations": "playwright test -c e2e/playwright.settlement-calculations.config.ts",
     "db:migrate:admin-send-confirmation": "node scripts/apply-admin-send-confirmation-rpc.mjs",
     "test:workflow-staging": "node scripts/staging-workflow-v1-automation.mjs",
     "verify:deploy": "node scripts/verify-deploy.mjs",

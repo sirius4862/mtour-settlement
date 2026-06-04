@@ -60,6 +60,22 @@ export function canGuideRequestClarification(
   return canGuideConfirm(s, uid)
 }
 
+/**
+ * Detects the desynced confirmation state: the guide is still prompted to
+ * confirm (pending_guide_confirmation, guide_confirmed_at IS NULL) but no usable
+ * *pending* confirmation packet exists, so /confirm cannot render its buttons.
+ * Happens e.g. when the linked settlement_confirmations row was marked 'confirmed'
+ * while settlements.guide_confirmed_at was never written (see tour 260426).
+ */
+export function isStuckGuideConfirmation(
+  s: Pick<Settlement, 'status' | 'guide_confirmed_at' | 'active_confirmation_id'>,
+  linkedConfirmationStatus: string | null,
+): boolean {
+  if (s.status !== 'pending_guide_confirmation') return false
+  if (s.guide_confirmed_at != null) return false
+  return s.active_confirmation_id == null || linkedConfirmationStatus !== 'pending'
+}
+
 export function canAdminEditSettlement(status: SettlementStatus): boolean {
   return ADMIN_EDITABLE.includes(status)
 }

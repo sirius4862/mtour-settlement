@@ -19,8 +19,14 @@ const PERIOD_OPTIONS = [
   { value: 'all', label: '전체' },
 ] as const
 
-function settlementHref(s: { id: string; status: SettlementStatus }): string {
-  if (s.status === 'pending_guide_confirmation') return `/guide/settlements/${s.id}/confirm`
+function settlementHref(s: {
+  id: string
+  status: SettlementStatus
+  guide_confirmed_at?: string | null
+}): string {
+  if (s.status === 'pending_guide_confirmation' && s.guide_confirmed_at == null) {
+    return `/guide/settlements/${s.id}/confirm`
+  }
   if (s.status === 'draft' || s.status === 'rejected' || s.status === 'edit_requested') {
     return `/guide/settlements/${s.id}/edit`
   }
@@ -168,7 +174,7 @@ export default async function SettlementsPage({
                   </div>
                 )}
 
-                {s.status === 'pending_guide_confirmation' && (
+                {s.status === 'pending_guide_confirmation' && s.guide_confirmed_at == null && (
                   <p className="mt-2 text-xs text-orange-600">최종 확인 필요 →</p>
                 )}
 

@@ -12,6 +12,7 @@ import {
   canGuideEdit,
   canGuideRequestClarification,
   GUIDE_EDITABLE,
+  isStuckGuideConfirmation,
 } from './status-guards'
 import type { SettlementStatus } from '@/types'
 
@@ -63,6 +64,44 @@ describe('canGuideConfirm', () => {
         'guide-1',
       ),
     ).toBe(false)
+  })
+})
+
+describe('isStuckGuideConfirmation', () => {
+  const pending = {
+    status: 'pending_guide_confirmation' as SettlementStatus,
+    guide_confirmed_at: null as string | null,
+    active_confirmation_id: 'conf-1' as string | null,
+  }
+
+  it('is false for a healthy pending packet (guide can confirm normally)', () => {
+    expect(isStuckGuideConfirmation(pending, 'pending')).toBe(false)
+  })
+
+  it('detects 260426-style desync: confirmed packet but guide_confirmed_at is null', () => {
+    expect(isStuckGuideConfirmation(pending, 'confirmed')).toBe(true)
+  })
+
+  it('detects missing active confirmation packet', () => {
+    expect(
+      isStuckGuideConfirmation({ ...pending, active_confirmation_id: null }, null),
+    ).toBe(true)
+  })
+
+  it('is false once the guide has already confirmed (awaiting payment)', () => {
+    expect(
+      isStuckGuideConfirmation(
+        { ...pending, guide_confirmed_at: '2026-06-02T08:14:10Z' },
+        'confirmed',
+      ),
+    ).toBe(false)
+  })
+
+  it('is false for statuses other than pending_guide_confirmation', () => {
+    expect(
+      isStuckGuideConfirmation({ ...pending, status: 'submitted' }, 'confirmed'),
+    ).toBe(false)
+    expect(isStuckGuideConfirmation({ ...pending, status: 'paid' }, null)).toBe(false)
   })
 })
 

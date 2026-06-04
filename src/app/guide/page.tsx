@@ -26,7 +26,9 @@ export default async function GuidePage() {
     approved: thisMonth.filter((s) => ['approved', 'paid'].includes(s.status)).length,
   }
 
-  const pendingConfirmation = settlements.filter((s) => s.status === 'pending_guide_confirmation')
+  const pendingConfirmation = settlements.filter(
+    (s) => s.status === 'pending_guide_confirmation' && s.guide_confirmed_at == null,
+  )
 
   const needingAction = settlements.filter((s) => ACTION_STATUSES.includes(s.status))
   const rejectedOrEdit = settlements.filter((s) =>
@@ -174,7 +176,7 @@ export default async function GuidePage() {
           {recent.map((s) => {
             const meta = STATUS_META[s.status]
             const href =
-              s.status === 'pending_guide_confirmation'
+              s.status === 'pending_guide_confirmation' && s.guide_confirmed_at == null
                 ? `/guide/settlements/${s.id}/confirm`
                 : s.status === 'draft' || s.status === 'rejected' || s.status === 'edit_requested'
                 ? `/guide/settlements/${s.id}/edit`

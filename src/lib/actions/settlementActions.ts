@@ -473,11 +473,13 @@ export async function getAdminActionQueue(limit = 10): Promise<AdminSettlementLi
 }
 
 /** 대시보드 상태 집계 — scoped by admin region when assigned */
-export async function getAdminDashboardStats(): Promise<
+export async function getAdminDashboardStats(
+  filters?: Pick<AdminSettlementListFilters, 'regionId'>,
+): Promise<
   { status: SettlementStatus; count: number }[]
 > {
   const supabase = await createClient()
-  const regionId = await resolveSettlementRegionFilter()
+  const regionId = await resolveSettlementRegionFilter(filters)
 
   let q = supabase.from('settlements').select('status')
   if (regionId) q = q.eq('branch_id', regionId)

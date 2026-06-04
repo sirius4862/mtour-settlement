@@ -1,7 +1,6 @@
 import type { SettlementStatus } from '@/types'
 import type { GuideNameFields } from '@/lib/guide/display-name'
 import type { SettlementCalcSummaryJson } from '@/lib/settlement/calc-summary'
-import { WORKFLOW_STATUS_ORDER } from '@/lib/settlement/status-display'
 
 export const ADMIN_SETTLEMENT_PAGE_SIZE = 25
 
@@ -16,7 +15,13 @@ export const ACTION_NEEDED_STATUSES = [
 export type ActionNeededStatus = (typeof ACTION_NEEDED_STATUSES)[number]
 
 /** Five workflow statuses on admin dashboard cards. */
-export const DASHBOARD_STATUS_ORDER: SettlementStatus[] = [...WORKFLOW_STATUS_ORDER]
+export const DASHBOARD_STATUS_ORDER: SettlementStatus[] = [
+  'draft',
+  'submitted',
+  'edit_requested',
+  'pending_guide_confirmation',
+  'paid',
+]
 
 export function aggregateSettlementStatusCounts(
   rows: { status: string }[],

@@ -44,13 +44,14 @@ import {
   sanitizeSettlementForGuide,
   sanitizeSettlementSyncForGuide,
 } from '@/lib/settlement/snapshot'
-import type { SnapshotPayload } from '@/lib/settlement/snapshot'
+import type { FieldChangeDraft, SnapshotPayload } from '@/lib/settlement/snapshot'
 import { externalReceivableDbFields } from '@/lib/settlement/external-receivable'
 import {
   assertAdminReviewAction,
   assertAdminSaveSettlement,
   assertAdminSendForConfirmation,
   assertGuideConfirmAction,
+  canAdminSendForConfirmation,
 } from '@/lib/settlement/status-guards'
 import {
   canOperationalAdminReview,
@@ -74,6 +75,16 @@ import {
   type AdminSettlementListItem,
   type AdminSettlementsPageResult,
 } from '@/lib/admin/settlement-list'
+import {
+  logServerError,
+  SAVE_SETTLEMENT_GENERIC_ERROR,
+  SUBMIT_SETTLEMENT_GENERIC_ERROR,
+  SUBMIT_SETTLEMENT_VERIFY_ERROR,
+} from '@/lib/server/safe-errors'
+import {
+  validateSettlementDraftPayload,
+  validateSettlementItemsPayload,
+} from '@/lib/settlement/server-payload-validation'
 
 // ── 인증 헬퍼 ─────────────────────────────────────────────────
 
@@ -582,7 +593,10 @@ export async function upsertSettlement(payload: {
   }
 
   const writeResult = await writeSettlement(base)
-  if (writeResult.error) return { ok: false, error: writeResult.error.message }
+  if (writeResult.error) {
+    logServerError('[upsertSettlement] write failed', writeResult.error)
+    return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
+  }
   const settlementId = payload.id ?? writeResult.id
   if (!settlementId) return { ok: false, error: '정산서 ID를 확인할 수 없습니다.' }
 
@@ -592,56 +606,6 @@ export async function upsertSettlement(payload: {
 
 // ── 제출 ──────────────────────────────────────────────────────
 
-// TEMPORARY DIAGNOSTIC — remove after guide submit root cause is confirmed.
-function formatSubmitSettlementRpcDiagnosticError(error: {
-  code?: string | null
-  message?: string | null
-  details?: string | null
-  hint?: string | null
-}): string {
-  return [
-    '[TEMP DIAG] guide_submit_settlement RPC error',
-    `code: ${error.code ?? '(null)'}`,
-    `message: ${error.message ?? '(null)'}`,
-    `details: ${error.details ?? '(null)'}`,
-    `hint: ${error.hint ?? '(null)'}`,
-  ].join('\n')
-}
-
-// TEMPORARY DIAGNOSTIC — remove after guide submit root cause is confirmed.
-function formatSubmitSettlementVerifyDiagnosticError(params: {
-  verifyError?: {
-    code?: string | null
-    message?: string | null
-    details?: string | null
-    hint?: string | null
-  } | null
-  actualStatus?: string | null
-  rpcResult?: unknown
-}): string {
-  const lines = ['[TEMP DIAG] submitSettlement verify failed']
-  if (params.verifyError) {
-    lines.push(
-      `verify code: ${params.verifyError.code ?? '(null)'}`,
-      `verify message: ${params.verifyError.message ?? '(null)'}`,
-      `verify details: ${params.verifyError.details ?? '(null)'}`,
-      `verify hint: ${params.verifyError.hint ?? '(null)'}`,
-    )
-  } else {
-    lines.push('verify PostgREST error: (none)')
-  }
-  lines.push(`actualStatus: ${params.actualStatus ?? '(null)'}`)
-  lines.push(`rpcResult: ${params.rpcResult == null ? '(null)' : JSON.stringify(params.rpcResult)}`)
-  return lines.join('\n')
-}
-
-// TEMPORARY DIAGNOSTIC — deployment/bundle proof marker (remove after confirmed).
-const SUBMIT_SETTLEMENT_BUILD_MARKER = '[TEMP DIAG BUILD a8cce64]'
-
-function withSubmitSettlementBuildMarker(error: string): string {
-  return `${SUBMIT_SETTLEMENT_BUILD_MARKER}\n${error}`
-}
-
 export async function submitSettlement(id: string): Promise<{ ok: boolean; error?: string }> {
   const logStep = (step: string, extra?: Record<string, unknown>) => {
     console.error('[submitSettlement]', step, { settlementId: id, ...extra })
@@ -650,8 +614,8 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
   try {
     logStep('start')
     const profile = await getProfile()
-    if (!profile) return { ok: false, error: withSubmitSettlementBuildMarker('로그인이 필요합니다.') }
-    if (profile.role !== 'guide') return { ok: false, error: withSubmitSettlementBuildMarker('가이드 권한이 필요합니다.') }
+    if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
+    if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
 
     const supabase = await createClient()
 
@@ -663,11 +627,11 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
       .in('status', ['draft', 'rejected', 'edit_requested'])
       .maybeSingle()
 
-    if (!current) return { ok: false, error: withSubmitSettlementBuildMarker('제출할 수 없는 정산서입니다.') }
+    if (!current) return { ok: false, error: '제출할 수 없는 정산서입니다.' }
     logStep('precheck_ok', { status: current.status })
 
     const full = await getSettlementFull(id, { audience: 'guide' })
-    if (!full) return { ok: false, error: withSubmitSettlementBuildMarker('정산서를 찾을 수 없습니다.') }
+    if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
     logStep('load_ok')
 
     const payload = buildSnapshotPayload(full)
@@ -679,7 +643,8 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
     })
     if (!snap.ok) {
       logStep('snapshot_failed', { error: snap.error })
-      return { ok: false, error: withSubmitSettlementBuildMarker(snap.error) }
+      logServerError('[submitSettlement] snapshot insert failed', snap.error, { settlementId: id })
+      return { ok: false, error: SUBMIT_SETTLEMENT_GENERIC_ERROR }
     }
     logStep('snapshot_ok', { snapshotId: snap.id })
 
@@ -731,11 +696,10 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
         details: rpcError.details ?? null,
         hint: rpcError.hint ?? null,
       })
-      return {
-        ok: false,
-        // TEMPORARY DIAGNOSTIC — surface PostgREST RPC error in UI
-        error: withSubmitSettlementBuildMarker(formatSubmitSettlementRpcDiagnosticError(rpcError)),
-      }
+      logServerError('[submitSettlement] guide_submit_settlement RPC failed', rpcError, {
+        settlementId: id,
+      })
+      return { ok: false, error: SUBMIT_SETTLEMENT_GENERIC_ERROR }
     }
     logStep('settlements_update_ok', {
       via: 'rpc',
@@ -773,17 +737,12 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
         actualStatus: verified?.status ?? null,
         rpcResult: rpcResult ?? null,
       })
-      return {
-        ok: false,
-        // TEMPORARY DIAGNOSTIC — surface verify step details in UI
-        error: withSubmitSettlementBuildMarker(
-          formatSubmitSettlementVerifyDiagnosticError({
-            verifyError,
-            actualStatus: verified?.status ?? null,
-            rpcResult,
-          }),
-        ),
-      }
+      logServerError('[submitSettlement] post-RPC verify failed', verifyError ?? 'status mismatch', {
+        settlementId: id,
+        actualStatus: verified?.status ?? null,
+        rpcResult,
+      })
+      return { ok: false, error: SUBMIT_SETTLEMENT_VERIFY_ERROR }
     }
     logStep('verify_ok')
 
@@ -797,7 +756,8 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
     })
     if (!audit.ok) {
       logStep('audit_failed', { error: audit.error })
-      return { ok: false, error: withSubmitSettlementBuildMarker(audit.error ?? '감사 로그 저장 실패') }
+      logServerError('[submitSettlement] audit log failed', audit.error, { settlementId: id })
+      return { ok: false, error: SUBMIT_SETTLEMENT_GENERIC_ERROR }
     }
     logStep('audit_ok')
 
@@ -805,9 +765,11 @@ export async function submitSettlement(id: string): Promise<{ ok: boolean; error
     logStep('complete')
     return { ok: true }
   } catch (err) {
-    const message = err instanceof Error ? err.message : '제출 중 오류가 발생했습니다.'
-    logStep('unexpected_error', { message })
-    return { ok: false, error: withSubmitSettlementBuildMarker(message || '제출 중 오류가 발생했습니다.') }
+    logServerError('[submitSettlement] unexpected error', err, { settlementId: id })
+    logStep('unexpected_error', {
+      message: err instanceof Error ? err.message : String(err),
+    })
+    return { ok: false, error: SUBMIT_SETTLEMENT_GENERIC_ERROR }
   }
 }
 
@@ -893,6 +855,9 @@ export async function saveSettlementItems(
     'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options' | 'exchange_rate'
   >,
 ): Promise<{ ok: boolean; error?: string }> {
+  const monetary = validateSettlementItemsPayload(payload)
+  if (!monetary.ok) return monetary
+
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
   if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
@@ -902,7 +867,10 @@ export async function saveSettlementItems(
   if (!editable) return { ok: false, error: '수정할 수 없는 정산서입니다.' }
 
   const result = await persistSettlementLineItems(supabase, settlementId, payload)
-  if (!result.ok) return result
+  if (!result.ok) {
+    logServerError('[saveSettlementItems] persist failed', result.error, { settlementId })
+    return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
+  }
 
   await persistSettlementCalcSummary(supabase, settlementId)
 
@@ -925,6 +893,9 @@ export async function saveSettlementDraft(
   sync?: SettlementSyncPayload
   error?: string
 }> {
+  const monetary = validateSettlementDraftPayload(payload)
+  if (!monetary.ok) return monetary
+
   let payloadToSave = payload
   let preservedTourFeeUsd = 0
   const profile = await getProfile()
@@ -1004,6 +975,9 @@ export async function saveAdminSettlementEdits(
   sync?: SettlementSyncPayload
   error?: string
 }> {
+  const monetary = validateSettlementDraftPayload(payload)
+  if (!monetary.ok) return monetary
+
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
   if (!isAdminTier(profile.role)) {
@@ -1055,17 +1029,32 @@ export async function saveAdminSettlementEdits(
       .eq('status', currentStatus))
   }
 
-  if (headerErr) return { ok: false, error: headerErr.message }
+  if (headerErr) {
+    logServerError('[saveAdminSettlementEdits] header update failed', headerErr, {
+      settlementId: payload.settlementId,
+    })
+    return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
+  }
 
   const itemsResult = await persistSettlementLineItems(supabase, payload.settlementId, sanitized)
-  if (!itemsResult.ok) return { ok: false, error: itemsResult.error }
+  if (!itemsResult.ok) {
+    logServerError('[saveAdminSettlementEdits] line items failed', itemsResult.error, {
+      settlementId: payload.settlementId,
+    })
+    return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
+  }
 
   const companyResult = await persistCompanyExpenseItems(
     supabase,
     payload.settlementId,
     sanitized.companyExpenses ?? [],
   )
-  if (!companyResult.ok) return { ok: false, error: companyResult.error }
+  if (!companyResult.ok) {
+    logServerError('[saveAdminSettlementEdits] company expenses failed', companyResult.error, {
+      settlementId: payload.settlementId,
+    })
+    return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
+  }
 
   await persistSettlementCalcSummary(supabase, payload.settlementId)
 
@@ -1260,6 +1249,19 @@ async function resolveConfirmationBeforeSnapshotId(
   return (confirmedSnap?.id as string | undefined) ?? guideSubmitSnapshotId
 }
 
+function fieldChangesToRpcJson(changes: FieldChangeDraft[]): Record<string, unknown>[] {
+  return changes.map((c) => ({
+    field_path: c.field_path,
+    excel_ref: c.excel_ref,
+    label: c.label,
+    owner: c.owner,
+    old_value_json: c.old_value_json,
+    new_value_json: c.new_value_json,
+    old_display: c.old_display,
+    new_display: c.new_display,
+  }))
+}
+
 async function queuePendingGuideConfirmation(
   supabase: SupabaseClient,
   params: {
@@ -1296,127 +1298,111 @@ async function queuePendingGuideConfirmation(
   const allChanges = diffSnapshotPayloads(beforePayload, afterPayload)
   const changes = filterGuideConfirmationChanges(allChanges)
 
-  const afterSnap = await insertSnapshot(supabase, {
+  const { id: afterSnapshotId } = buildSnapshotInsertRow({
     settlementId: params.settlementId,
     kind: 'admin_pre_confirm',
     payload: afterPayload,
     createdBy: params.actorId,
   })
-  if (!afterSnap.ok) return { ok: false, error: afterSnap.error }
-
-  if (params.activeConfirmationId) {
-    await supabase
-      .from('settlement_confirmations')
-      .update({ status: 'superseded' })
-      .eq('id', params.activeConfirmationId)
-      .eq('status', 'pending')
-  }
-
-  const now = new Date().toISOString()
-
-  const { data: confirmation, error: confErr } = await supabase
-    .from('settlement_confirmations')
-    .insert({
-      settlement_id: params.settlementId,
-      snapshot_before_id: beforeSnapshotId,
-      snapshot_after_id: afterSnap.id,
-      status: 'pending',
-      sent_by: params.actorId,
-      sent_at: now,
-      r85_before: beforePayload.calc_summary.guide_settlement_usd,
-      r85_after: afterPayload.calc_summary.guide_settlement_usd,
-      r87_before: beforePayload.calc_summary.company_grand_total_usd,
-      r87_after: afterPayload.calc_summary.company_grand_total_usd,
-      change_count: changes.length,
-    })
-    .select('id')
-    .single()
-
-  if (confErr || !confirmation) {
-    return { ok: false, error: confErr?.message ?? '확인 요청 생성 실패' }
-  }
-
-  if (changes.length > 0) {
-    const { error: fcErr } = await supabase.from('settlement_field_changes').insert(
-      changes.map((c) => ({
-        settlement_id: params.settlementId,
-        confirmation_id: confirmation.id,
-        field_path: c.field_path,
-        excel_ref: c.excel_ref,
-        label: c.label,
-        owner: c.owner,
-        old_value_json: c.old_value_json,
-        new_value_json: c.new_value_json,
-        old_display: c.old_display,
-        new_display: c.new_display,
-      })),
-    )
-    if (fcErr) return { ok: false, error: fcErr.message }
-  }
-
-  const settlementUpdate: Record<string, unknown> = {
-    status: 'pending_guide_confirmation',
-    sent_for_confirmation_at: now,
-    sent_for_confirmation_by: params.actorId,
-    active_confirmation_id: confirmation.id,
-    admin_note: params.adminNote?.trim() || params.full.admin_note,
-    reviewed_at: now,
-    reviewed_by: params.actorId,
-    calc_summary_json: afterPayload.calc_summary,
-  }
-
-  if (params.clearGuideConfirmation) {
-    settlementUpdate.guide_confirmed_at = null
-    settlementUpdate.guide_confirmed_by = null
-  }
+  const confirmationId = randomUUID()
 
   const {
     data: { user: authUser },
   } = await supabase.auth.getUser()
 
-  console.error('[sendForConfirmation] before_settlements_update', {
+  console.error('[sendForConfirmation] before_admin_send_rpc', {
     settlementId: params.settlementId,
     fromStatus: params.fromStatus,
-    toStatus: 'pending_guide_confirmation',
     actorId: params.actorId,
     actorRole: params.actorRole,
     authUid: authUser?.id,
+    changeCount: changes.length,
+    confirmationId,
+    afterSnapshotId,
+    supersedeActiveId: params.activeConfirmationId,
   })
 
-  const { error: updErr } = await supabase
-    .from('settlements')
-    .update(settlementUpdate)
-    .eq('id', params.settlementId)
-    .eq('status', params.fromStatus)
+  const { data: rpcRes, error: rpcErr } = await supabase.rpc('admin_send_for_confirmation', {
+    p_settlement_id: params.settlementId,
+    p_from_status: params.fromStatus,
+    p_actor_id: params.actorId,
+    p_actor_role: params.actorRole,
+    p_before_snapshot_id: beforeSnapshotId,
+    p_after_snapshot_id: afterSnapshotId,
+    p_after_payload: afterPayload,
+    p_after_calc_summary: afterPayload.calc_summary,
+    p_confirmation_id: confirmationId,
+    p_field_changes: fieldChangesToRpcJson(changes),
+    p_change_count: changes.length,
+    p_admin_note: params.adminNote?.trim() || params.full.admin_note || null,
+    p_r85_before: beforePayload.calc_summary.guide_settlement_usd,
+    p_r85_after: afterPayload.calc_summary.guide_settlement_usd,
+    p_r87_before: beforePayload.calc_summary.company_grand_total_usd,
+    p_r87_after: afterPayload.calc_summary.company_grand_total_usd,
+    p_clear_guide_confirmation: params.clearGuideConfirmation ?? false,
+  })
 
-  if (updErr) {
-    console.error('[sendForConfirmation] settlements_update_failed', {
+  if (rpcErr) {
+    console.error('[sendForConfirmation] admin_send_for_confirmation_failed', {
       settlementId: params.settlementId,
       fromStatus: params.fromStatus,
-      error: updErr.message,
-      code: updErr.code,
-      isStatusLogsRls: /settlement_status_logs/i.test(updErr.message ?? ''),
+      error: rpcErr.message,
+      code: rpcErr.code,
     })
-    return { ok: false, error: updErr.message }
+    return { ok: false, error: rpcErr.message }
   }
 
-  console.error('[sendForConfirmation] settlements_update_ok', {
+  if (!rpcRes || typeof rpcRes !== 'object' || (rpcRes as { ok?: boolean }).ok !== true) {
+    return { ok: false, error: '확인 요청 생성에 실패했습니다.' }
+  }
+
+  console.error('[sendForConfirmation] admin_send_for_confirmation_ok', {
     settlementId: params.settlementId,
-    fromStatus: params.fromStatus,
+    confirmationId: (rpcRes as { confirmation_id?: string }).confirmation_id ?? confirmationId,
   })
 
-  await insertAuditEvent(supabase, {
-    settlementId: params.settlementId,
-    actorId: params.actorId,
-    actorRole: params.actorRole,
-    action: 'send_for_confirmation',
-    fromStatus: params.fromStatus,
-    toStatus: 'pending_guide_confirmation',
-    note: params.clearGuideConfirmation
-      ? 'master_admin_post_confirm_edit'
-      : params.adminNote?.trim() || null,
-  })
+  return { ok: true }
+}
 
+/** Persist admin note before send-for-confirmation (detail ReviewPanel path). */
+export async function saveAdminNoteBeforeConfirmation(
+  id: string,
+  adminNote?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getProfile()
+  if (!profile || !canOperationalAdminReview(profile.role)) {
+    return { ok: false, error: '관리자 권한이 필요합니다.' }
+  }
+
+  const supabase = await createClient()
+  const regionAccess = await requireAdminSettlementRegionAccess(supabase, id)
+  if (!regionAccess.ok) return { ok: false, error: regionAccess.error }
+
+  const { data: current } = await supabase
+    .from('settlements')
+    .select('id, status')
+    .eq('id', id)
+    .single()
+
+  if (!current) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+
+  const status = current.status as SettlementStatus
+  if (!canAdminSendForConfirmation(status, profile.role)) {
+    return { ok: false, error: '제출됨 상태에서만 최종확인을 보낼 수 있습니다.' }
+  }
+
+  const { error } = await supabase
+    .from('settlements')
+    .update({
+      admin_note: adminNote?.trim() || null,
+      reviewed_by: profile.id,
+    })
+    .eq('id', id)
+    .eq('status', status)
+
+  if (error) return { ok: false, error: error.message }
+
+  revalidateSettlementPaths(id)
   return { ok: true }
 }
 

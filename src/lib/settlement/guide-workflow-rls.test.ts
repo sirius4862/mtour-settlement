@@ -178,12 +178,40 @@ describe('guide workflow RLS regression', () => {
     expect(sql).toContain('auth_user_is_admin_tier()')
   })
 
-  it('sendForConfirmation logs settlements update errors including status_logs RLS', () => {
+  it('C3 master paid lock SQL hardens trigger and splits master RLS policies', () => {
+    const sql = readRepoFile('supabase/settlement_workflow_v1_c3_master_paid_lock.sql')
+    expect(sql).toContain('Master cannot modify paid settlement')
+    expect(sql).toContain('Master cannot transition paid settlement')
+    expect(sql).toContain('Master settlement status transition not allowed')
+    expect(sql).toContain('settlements_master_reopen_paid')
+    expect(sql).toContain("status = 'edit_requested'::public.settlement_status")
+    expect(sql).toContain('guide_confirmed_at IS NULL')
+  })
+
+  it('C3a hotfix blocks paid in-place edits before workflow no-op shortcut', () => {
+    const sql = readRepoFile('supabase/settlement_workflow_v1_c3a_paid_inplace_lock.sql')
+    expect(sql).toContain('Cannot modify paid settlement')
+    expect(sql).not.toMatch(/CREATE POLICY settlements_paid_inplace_deny/)
+    expect(sql).not.toMatch(/CREATE POLICY[\s\S]*OLD\.status/)
+    expect(sql).toMatch(
+      /IF OLD\.status = 'paid'::public\.settlement_status[\s\S]*RAISE EXCEPTION 'Cannot modify paid settlement'[\s\S]*IF OLD\.status IS NOT DISTINCT FROM NEW\.status/,
+    )
+  })
+
+  it('sendForConfirmation uses atomic admin_send_for_confirmation RPC', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
     const fnMatch = source.match(/async function queuePendingGuideConfirmation[\s\S]*?\n\}/)
     expect(fnMatch).toBeTruthy()
-    expect(fnMatch![0]).toContain('[sendForConfirmation] before_settlements_update')
-    expect(fnMatch![0]).toContain('isStatusLogsRls')
+    expect(fnMatch![0]).toContain('admin_send_for_confirmation')
+    expect(fnMatch![0]).toContain('[sendForConfirmation] before_admin_send_rpc')
+    expect(fnMatch![0]).not.toContain("from('settlement_confirmations').insert")
+  })
+
+  it('admin_send_for_confirmation RPC SQL exists', () => {
+    const sql = readRepoFile('supabase/settlement_workflow_v1_admin_send_confirmation_rpc.sql')
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.admin_send_for_confirmation')
+    expect(sql).toContain('settlement_field_changes')
+    expect(sql).toContain('IF v_rows <> 1 THEN')
   })
 
   it('guide submit SQL fix strengthens settlements update and audit policies', () => {
@@ -343,8 +371,9 @@ describe('guide workflow RLS regression', () => {
     expect(assertAdminReadOnlyAfterApproval('admin', 'submitted').ok).toBe(true)
   })
 
-  it('admin cannot mark paid', () => {
-    expect(canMarkSettlementPaid('admin')).toBe(false)
+  it('admin can mark paid in v1', () => {
+    expect(canMarkSettlementPaid('admin')).toBe(true)
+    expect(assertRoleCanMarkPaid('admin').ok).toBe(true)
   })
 
   it('master_admin can mark paid', () => {

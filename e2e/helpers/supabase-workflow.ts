@@ -22,18 +22,60 @@ export async function signInSupabase(
   return { client, userId: data.user.id }
 }
 
+/** Valid snapshot shape for send-for-confirmation diff (requires header + calc_summary). */
+export function buildGuideSubmitSnapshotPayload(vehicleFeeUsd = 0) {
+  return {
+    exchange_rate: 26000,
+    header: {
+      advance_vnd: 0,
+      ground_fee_usd: 0,
+      charming_other_usd: 0,
+      tip_received_usd: 0,
+      option_receivable_usd: 0,
+      tip_transfer_usd: 0,
+      option_credit_usd: 0,
+      vehicle_fee_usd: vehicleFeeUsd,
+      head_tax_usd: 0,
+      seoul_biz_fee_usd: 0,
+      tc_guide_usd: 0,
+      tc_company_usd: 0,
+      megugi_usd: 0,
+      guide_daily_fee_usd: 0,
+      settlement_ratio: 1,
+      guide_note: null,
+    },
+    hotels: [],
+    meals: [],
+    entrances: [],
+    others: [],
+    company_expenses: [],
+    shoppings: [],
+    options: [],
+    calc_summary: {
+      company_deposit_usd: 0,
+      guide_settlement_usd: 0,
+      guide_payout_usd: 0,
+      company_grand_total_usd: 0,
+    },
+    [TEST_MARKER]: true,
+  }
+}
+
 export async function guideSubmit(
   guideClient: SupabaseClient,
   settlementId: string,
   guideUserId: string,
+  options?: { vehicleFeeUsd?: number },
 ) {
+  const payload = buildGuideSubmitSnapshotPayload(options?.vehicleFeeUsd ?? 0)
   const snapId = randomUUID()
   const now = new Date().toISOString()
   const { error: snapErr } = await guideClient.from('settlement_snapshots').insert({
     id: snapId,
     settlement_id: settlementId,
     kind: 'guide_submit',
-    payload_json: { [TEST_MARKER]: true },
+    payload_json: payload,
+    calc_summary_json: payload.calc_summary,
     created_by: guideUserId,
   })
   if (snapErr) throw new Error(snapErr.message)
@@ -42,7 +84,7 @@ export async function guideSubmit(
     p_settlement_id: settlementId,
     p_snapshot_id: snapId,
     p_submitted_at: now,
-    p_calc_summary: { company_grand_total_usd: 0 },
+    p_calc_summary: payload.calc_summary,
   })
   if (rpcErr) throw new Error(rpcErr.message)
 }
@@ -114,6 +156,7 @@ export async function createWorkflowFixture(
   branchId: string,
   adminId: string,
   runId: string,
+  options?: { skipSendForConfirmation?: boolean },
 ): Promise<WorkflowFixture> {
   const tourId = randomUUID()
   const settlementId = randomUUID()
@@ -170,9 +213,57 @@ export async function createWorkflowFixture(
   if (settErr) throw new Error(settErr.message)
 
   await guideSubmit(guideClient, settlementId, guideId)
-  await sendForConfirmation(adminClient, settlementId, adminId)
+  if (!options?.skipSendForConfirmation) {
+    await sendForConfirmation(adminClient, settlementId, adminId)
+  }
 
   return { runId, tourId, settlementId, tourCode }
+}
+
+export async function assertConfirmationPacket(
+  adminClient: SupabaseClient,
+  settlementId: string,
+  options?: { requireFieldChanges?: boolean },
+) {
+  const { data: settlement, error: settErr } = await adminClient
+    .from('settlements')
+    .select('id, status, active_confirmation_id')
+    .eq('id', settlementId)
+    .single()
+  if (settErr || !settlement) throw new Error(settErr?.message ?? 'settlement not found')
+  if (settlement.status !== 'pending_guide_confirmation') {
+    throw new Error(`expected pending_guide_confirmation, got ${settlement.status}`)
+  }
+  if (!settlement.active_confirmation_id) {
+    throw new Error('active_confirmation_id is null')
+  }
+
+  const { data: confirmation, error: confErr } = await adminClient
+    .from('settlement_confirmations')
+    .select('id, status, change_count')
+    .eq('id', settlement.active_confirmation_id)
+    .single()
+  if (confErr || !confirmation) throw new Error(confErr?.message ?? 'confirmation not found')
+  if (confirmation.status !== 'pending') {
+    throw new Error(`expected confirmation pending, got ${confirmation.status}`)
+  }
+
+  const { count: fcCount, error: fcErr } = await adminClient
+    .from('settlement_field_changes')
+    .select('id', { count: 'exact', head: true })
+    .eq('confirmation_id', settlement.active_confirmation_id)
+  if (fcErr) throw new Error(fcErr.message)
+
+  if (options?.requireFieldChanges) {
+    if ((confirmation.change_count ?? 0) <= 0) {
+      throw new Error(`change_count must be > 0, got ${confirmation.change_count}`)
+    }
+    if ((fcCount ?? 0) <= 0) {
+      throw new Error(`settlement_field_changes must be > 0, got ${fcCount}`)
+    }
+  }
+
+  return { settlement, confirmation, fieldChangeCount: fcCount ?? 0 }
 }
 
 const LINE_ITEM_TABLES = [
@@ -216,6 +307,9 @@ export async function cleanupWorkflowFixture(
         .update({ guide_submit_snapshot_id: null, active_confirmation_id: null })
         .eq('id', settlementId),
     )
+    await tryOp('field_changes', async () =>
+      adminClient.from('settlement_field_changes').delete().eq('settlement_id', settlementId),
+    )
     await tryOp('confirmations', async () =>
       adminClient.from('settlement_confirmations').delete().eq('settlement_id', settlementId),
     )
@@ -225,6 +319,7 @@ export async function cleanupWorkflowFixture(
       )
     }
     for (const table of AUDIT_TABLES) {
+      if (table === 'settlement_field_changes' || table === 'settlement_confirmations') continue
       await tryOp(table, async () =>
         adminClient.from(table).delete().eq('settlement_id', settlementId),
       )

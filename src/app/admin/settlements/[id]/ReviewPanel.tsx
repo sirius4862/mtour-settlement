@@ -1,7 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { reviewSettlement, sendForConfirmation } from '@/lib/actions/settlementActions'
+import {
+  reviewSettlement,
+  saveAdminNoteBeforeConfirmation,
+  sendForConfirmation,
+} from '@/lib/actions/settlementActions'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -45,7 +49,13 @@ export function ReviewPanel({
   const handleSendForConfirmation = () => {
     setError('')
     start(async () => {
-      const res = await sendForConfirmation(settlementId, adminNote.trim() || undefined)
+      const note = adminNote.trim() || undefined
+      const saveRes = await saveAdminNoteBeforeConfirmation(settlementId, note)
+      if (!saveRes.ok) {
+        setError(saveRes.error ?? '메모 저장 실패')
+        return
+      }
+      const res = await sendForConfirmation(settlementId, note)
       if (res.ok) {
         router.refresh()
       } else {

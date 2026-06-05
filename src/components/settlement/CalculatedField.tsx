@@ -29,13 +29,11 @@ export function CalculatedField({
         : formatUsd(field.value)
   const label = labelOverride ?? field.label
   void formulaOverride
-
   if (compact) {
     return (
       <div className={`flex items-center justify-between gap-2 ${className}`}>
         <div className="min-w-0">
           <p className="text-xs text-gray-600 truncate">{label}</p>
-          <p className="text-[10px] font-mono text-gray-400">{field.excelRef}</p>
         </div>
         <span className="font-mono text-sm font-semibold text-gray-900 shrink-0">{display}</span>
       </div>
@@ -46,7 +44,6 @@ export function CalculatedField({
     <div className={`rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 ${className}`}>
       <div className="min-w-0">
         <p className="text-xs font-medium text-gray-700">{label}</p>
-        <p className="text-[10px] font-mono text-blue-600 mt-0.5">{field.excelRef}</p>
       </div>
       <p className="font-mono text-lg font-semibold text-gray-900 mt-1 text-right">{display}</p>
     </div>

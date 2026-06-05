@@ -57,9 +57,6 @@ export function SettlementAccordion({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-gray-800 text-sm">{section.title}</span>
-                  {section.excelRows && (
-                    <span className="text-[10px] font-mono text-gray-400">{section.excelRows}</span>
-                  )}
                   {section.badge && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
                       {section.badge}

@@ -153,7 +153,7 @@ function CompanyExpensesBlock() {
     <div className="mt-4">
       <p className="text-xs font-semibold text-red-800 mb-2">회사 비용 (admin)</p>
       <p className="text-[10px] text-gray-500 mb-2">
-        호텔 선결제·식당 보증금·차량 선금·티켓 선금·업체 결제 등 회사가 선지급한 비용. R87에만 반영됩니다.
+        호텔 선결제·식당 보증금·차량 선금·티켓 선금·업체 결제 등 회사가 선지급한 비용. 회사 수익에만 반영됩니다.
       </p>
       <DynamicRowList
         rows={rows}
@@ -276,12 +276,12 @@ export function FinalAdjustmentsSection() {
           <p className="text-xs text-gray-600">
             정산비율{' '}
             <span className="font-mono text-blue-600">
-              {Math.round(header.settlement_ratio * 100)}% (R77)
+              {Math.round(header.settlement_ratio * 100)}%
             </span>
             <span className="text-gray-400"> · 참고 전용</span>
           </p>
           <p className="text-[10px] text-gray-400 mt-1">
-            P85 계산에 반영되지 않습니다. 슬라이더는 비활성화되어 있습니다.
+            실제 지급액 계산에 반영되지 않습니다. 슬라이더는 비활성화되어 있습니다.
           </p>
         </div>
       </SectionCard>

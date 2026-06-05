@@ -2,7 +2,6 @@
 
 import type { AnnotatedNumber } from '@/lib/settlement/types-calc'
 import { CalculatedField, formatUsd, formatVnd } from './CalculatedField'
-
 export function SectionSubtotal({
   title = '섹션 소계',
   fields,
@@ -27,7 +26,6 @@ export function SectionSubtotal({
           <div key={f.excelRef + f.label} className="flex items-center justify-between gap-2 text-sm">
             <div className="min-w-0">
               <span className="text-slate-200">{f.label}</span>
-              <span className="ml-2 text-[10px] font-mono text-slate-500">{f.excelRef}</span>
             </div>
             <span className="font-mono font-semibold shrink-0">
               {f.label.includes('VND') || f.label.includes('₫')

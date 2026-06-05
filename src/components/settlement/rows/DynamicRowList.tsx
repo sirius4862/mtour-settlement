@@ -60,9 +60,6 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
             key={row.clientId}
             className="rounded-xl border border-gray-100 bg-gray-50/50 p-3 space-y-2"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono text-gray-400">#{index + 1}</span>
-            </div>
             {renderRow(row, index)}
           </div>
         ))

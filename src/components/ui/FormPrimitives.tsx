@@ -1,7 +1,6 @@
 'use client'
 
 import type { InputHTMLAttributes, ReactNode } from 'react'
-
 const baseInput =
   'w-full min-h-12 px-3 py-2.5 border rounded-xl text-gray-900 ' +
   'focus:outline-none focus:ring-2 disabled:bg-gray-50 disabled:text-gray-400'
@@ -43,16 +42,10 @@ export function ManualField({
   variant?: ManualFieldVariant
   hint?: string
 } & InputHTMLAttributes<HTMLInputElement>) {
+  void excelRef
   return (
     <div className={className}>
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <FieldLabel required={required}>{label}</FieldLabel>
-        {excelRef && (
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 shrink-0">
-            {excelRef}
-          </span>
-        )}
-      </div>
+      <FieldLabel required={required}>{label}</FieldLabel>
       {hint && (
         <p className={`text-[11px] mb-1.5 ${
           variant === 'companyReview' ? 'text-amber-700' : 'text-blue-600'
@@ -86,16 +79,10 @@ export function ReadOnlyField({
   excelRef?: string
   sub?: string
 }) {
+  void excelRef
   return (
     <div>
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-xs text-gray-500">{label}</span>
-        {excelRef && (
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">
-            {excelRef}
-          </span>
-        )}
-      </div>
+      <span className="text-xs text-gray-500">{label}</span>
       <p className="text-sm font-medium text-gray-800">{value}</p>
       {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
     </div>

@@ -417,7 +417,7 @@ export function OptionsSection() {
           onClick={addExtraVehicle}
           className="w-full min-h-11 text-xs font-medium text-amber-700 border border-amber-200 rounded-xl hover:bg-amber-50"
         >
-          + 추가차량비 (R71)
+          + 추가차량비
         </button>
       )}
     </div>

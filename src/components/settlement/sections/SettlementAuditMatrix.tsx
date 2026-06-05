@@ -1,5 +1,5 @@
 import type { AnnotatedNumber, SettlementCalcResult, SettlementMatrixRow } from '@/lib/settlement/types-calc'
-import { R77_REFERENCE_ONLY_NOTE, shouldShowMatrixRow } from '@/lib/settlement/display-labels'
+import { shouldShowMatrixRow } from '@/lib/settlement/display-labels'
 import { formatUsd } from '@/lib/settlement/format-currency'
 
 const COL_HEADERS = [
@@ -19,7 +19,6 @@ function MatrixCell({ field, highlight }: { field?: AnnotatedNumber; highlight?:
       <div className={`font-mono text-sm tabular-nums ${highlight ? 'font-bold' : 'font-semibold text-gray-900'}`}>
         {formatUsd(field.value)}
       </div>
-      <span className="text-[9px] font-mono text-blue-600/80">{field.excelRef}</span>
     </div>
   )
 }
@@ -41,7 +40,11 @@ function MatrixRowMobile({ row }: { row: SettlementMatrixRow }) {
       }
     >
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono font-bold text-gray-500 uppercase">{row.key.toUpperCase()}</span>
+        {(row.settlementLabel || row.incomeLabel) && (
+          <span className="text-[10px] font-bold text-gray-600">
+            {row.settlementLabel || row.incomeLabel}
+          </span>
+        )}
         {row.isSubtotal && (
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">소계</span>
         )}
@@ -66,8 +69,8 @@ function MatrixRowDesktop({ row }: { row: SettlementMatrixRow }) {
         (row.isHighlight ? 'bg-amber-50/90' : row.isSubtotal ? 'bg-slate-50/90' : 'bg-white')
       }
     >
-      <td className="px-2 py-2 text-[10px] font-mono font-bold text-gray-400 whitespace-nowrap align-top">
-        {row.key.toUpperCase()}
+      <td className="px-2 py-2 text-[10px] font-bold text-gray-600 whitespace-nowrap align-top">
+        {row.settlementLabel || row.incomeLabel || '—'}
       </td>
       <td className="px-2 py-2 align-top min-w-[100px]">
         {row.incomeLabel && <p className="text-[10px] text-gray-500 mb-0.5">{row.incomeLabel}</p>}
@@ -109,14 +112,15 @@ export function SettlementAuditMatrix({
         <span className="inline-flex items-center gap-2">
           <span className="text-gray-400 text-xs">▸</span>
           감사용 상세 계산
-          <span className="text-[10px] font-normal text-gray-400">(엑셀 R79–R87)</span>
         </span>
       </summary>
       <div className="px-4 pb-4 space-y-3 border-t border-gray-200 pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[10px] text-gray-500">{R77_REFERENCE_ONLY_NOTE}</p>
-          <span className="text-[10px] font-mono px-2 py-1 rounded bg-white text-slate-600 border border-slate-200">
-            R77 = {Math.round(settlementRatio * 100)}% · 참고 전용
+          <p className="text-[10px] text-gray-500">
+            정산비율은 참고 전용이며 실제 지급액 계산에 반영되지 않습니다.
+          </p>
+          <span className="text-[10px] px-2 py-1 rounded bg-white text-slate-600 border border-slate-200">
+            정산비율 {Math.round(settlementRatio * 100)}% · 참고 전용
           </span>
         </div>
 
@@ -131,11 +135,10 @@ export function SettlementAuditMatrix({
             <table className="w-full min-w-[720px] text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-2 py-2 text-[10px] font-mono text-gray-400 w-12">행</th>
+                  <th className="px-2 py-2 text-[10px] font-semibold text-gray-600 w-24">항목</th>
                   {COL_HEADERS.map((col) => (
                     <th key={col.key} className="px-2 py-2">
                       <div className="text-[10px] font-semibold text-gray-600">{col.label}</div>
-                      <div className="text-[9px] font-mono text-blue-600">{col.ref}열</div>
                     </th>
                   ))}
                 </tr>

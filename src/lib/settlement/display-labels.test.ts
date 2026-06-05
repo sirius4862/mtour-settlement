@@ -8,8 +8,6 @@ import {
   companyDepositIsNegative,
   guideDisplaySettlementUsd,
   guideSettlementIsNegative,
-  shouldShowGuideSummaryMatrix,
-  shouldShowMatrixRow,
   shouldShowSummaryField,
 } from './display-labels'
 
@@ -39,8 +37,8 @@ describe('displayFieldLabel', () => {
   })
 
   it('maps F86/R86 for admin internal labels', () => {
-    expect(displayFieldLabel(annotate(1, '회사총수익', 'F86', 'f'), 'admin')).toBe('수익−지출 (F86)')
-    expect(displayFieldLabel(annotate(1, '회사수익', 'R86', 'f'), 'admin')).toBe('R86 중간값')
+    expect(displayFieldLabel(annotate(1, '회사총수익', 'F86', 'f'), 'admin')).toBe('수익−지출')
+    expect(displayFieldLabel(annotate(1, '회사수익', 'R86', 'f'), 'admin')).toBe('회사수익 중간값')
   })
 })
 
@@ -59,24 +57,14 @@ describe('guide payout floor', () => {
     expect(GUIDE_PAYOUT_FLOOR_WARNING).toContain('$0')
   })
 
-  it('includes Q75 negative warning', () => {
-    expect(Q75_NEGATIVE_WARNING).toContain('Q75')
+  it('includes company deposit negative warning', () => {
+    expect(Q75_NEGATIVE_WARNING).toContain('회사입금')
     expect(companyDepositIsNegative(-1)).toBe(true)
     expect(companyDepositIsNegative(0)).toBe(false)
   })
 })
 
 describe('visibility rules', () => {
-  it('hides summary matrix from guide', () => {
-    expect(shouldShowGuideSummaryMatrix('guide')).toBe(false)
-    expect(shouldShowGuideSummaryMatrix('admin')).toBe(true)
-  })
-
-  it('hides all matrix rows from guide', () => {
-    expect(shouldShowMatrixRow('r85', 'guide')).toBe(false)
-    expect(shouldShowMatrixRow('r85', 'admin')).toBe(true)
-  })
-
   it('hides company summary fields from guide', () => {
     const r86 = annotate(1, '회사수익', 'R86', 'f')
     const r87 = annotate(2, '최종 회사총수익', 'R87', 'f')

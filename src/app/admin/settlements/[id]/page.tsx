@@ -119,25 +119,25 @@ export default async function AdminSettlementDetailPage({
           <p className="text-xs font-semibold text-amber-700 mb-2">정산 결과</p>
           <div className="space-y-1 text-xs">
             <p className={`${q75IsNegative ? 'text-red-700 font-semibold' : 'text-gray-600'}`}>
-              회사입금 (Q75): <span className="font-mono">{fmt2(companyDeposit)}</span>
+              회사입금: <span className="font-mono">{fmt2(companyDeposit)}</span>
             </p>
             {q75IsNegative && (
               <p className="text-red-700 text-[10px]">{Q75_NEGATIVE_WARNING}</p>
             )}
             <p className="text-gray-600">
-              가이드 수익풀 (D84): <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
+              가이드 수익풀: <span className="font-mono">{fmt2(summary.income_total_usd.value)}</span>
             </p>
             <p className="text-gray-600">
               회사 수익 합계: <span className="font-mono">{fmt2(summary.admin_income_usd.value)}</span>
             </p>
             <p className="text-gray-600">
-              회사 지출 (H85): <span className="font-mono">{fmt2(summary.expense_total_usd.value)}</span>
+              회사 지출: <span className="font-mono">{fmt2(summary.expense_total_usd.value)}</span>
             </p>
             <p className={`font-semibold ${payoutIsFloored ? 'text-red-700' : 'text-amber-700'}`}>
-              계산상 가이드정산 (R85): <span className="font-mono">{fmt2(guideSettlement)}</span>
+              계산상 가이드정산: <span className="font-mono">{fmt2(guideSettlement)}</span>
             </p>
             <p className="text-amber-700 font-semibold">
-              실제 지급액 (P85): <span className="font-mono">{fmt2(guidePayout)}</span>
+              실제 지급액: <span className="font-mono">{fmt2(guidePayout)}</span>
             </p>
             {payoutIsFloored && (
               <p className="text-amber-700 text-[10px]">
@@ -145,7 +145,7 @@ export default async function AdminSettlementDetailPage({
               </p>
             )}
             <p className="text-emerald-700 font-semibold">
-              회사수익 (R87): <span className="font-mono">{fmt2(companyProfit)}</span>
+              회사수익: <span className="font-mono">{fmt2(companyProfit)}</span>
             </p>
           </div>
         </div>

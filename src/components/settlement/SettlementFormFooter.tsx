@@ -68,7 +68,7 @@ export function SettlementFormFooter({
             <>
               <div>
                 <p className="text-[10px] text-gray-400 uppercase">
-                  {displayFieldLabel(companyDeposit, 'admin')} · {companyDeposit.excelRef}
+                  {displayFieldLabel(companyDeposit, 'admin')}
                 </p>
                 <p className="font-mono font-bold text-blue-700">
                   {formatUsd(companyDeposit.value)}
@@ -76,7 +76,7 @@ export function SettlementFormFooter({
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-gray-400 uppercase">
-                  {displayFieldLabel(guideSettlement, 'admin')} · {guideSettlement.excelRef}
+                  {displayFieldLabel(guideSettlement, 'admin')}
                 </p>
                 <p className={`font-mono font-bold ${payoutIsFloored ? 'text-red-600' : 'text-amber-700'}`}>
                   {formatUsd(guideSettlement.value)}
@@ -84,7 +84,7 @@ export function SettlementFormFooter({
               </div>
               <div className="text-right border-l border-gray-100 pl-3">
                 <p className="text-[10px] text-gray-400 uppercase">
-                  {displayFieldLabel(guidePayout, 'admin')} · {guidePayout.excelRef}
+                  {displayFieldLabel(guidePayout, 'admin')}
                 </p>
                 <p className="font-mono font-bold text-amber-700">
                   {formatUsd(guidePayout.value)}
@@ -92,7 +92,7 @@ export function SettlementFormFooter({
               </div>
               <div className="text-right border-l border-gray-100 pl-3">
                 <p className="text-[10px] text-gray-400 uppercase">
-                  {displayFieldLabel(companyProfit, 'admin')} · {companyProfit.excelRef}
+                  {displayFieldLabel(companyProfit, 'admin')}
                 </p>
                 <p className="font-mono font-bold text-emerald-700">
                   {formatUsd(companyProfit.value)}

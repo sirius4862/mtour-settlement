@@ -4,6 +4,39 @@ import type { SettlementCalcSummaryJson } from '@/lib/settlement/calc-summary'
 
 export const ADMIN_SETTLEMENT_PAGE_SIZE = 25
 
+export const ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE =
+  '상태 카드를 선택하면 해당 정산서가 표시됩니다.'
+
+export const ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE = '상태 미선택'
+
+export type AdminSettlementListMode = 'none' | 'status' | 'all'
+
+export function resolveAdminSettlementListMode(params: {
+  status?: string
+  view?: string
+}): AdminSettlementListMode {
+  if (params.status) return 'status'
+  if (params.view === 'all') return 'all'
+  return 'none'
+}
+
+export function shouldFetchAdminSettlementRows(params: {
+  status?: string
+  view?: string
+}): boolean {
+  return resolveAdminSettlementListMode(params) !== 'none'
+}
+
+export function buildAdminSettlementListSubtitle(params: {
+  regionLabel: string
+  statusLabel?: string
+  view?: string
+}): string {
+  if (params.statusLabel) return `${params.regionLabel} · ${params.statusLabel}`
+  if (params.view === 'all') return `${params.regionLabel} · 전체 보기`
+  return ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE
+}
+
 /** Admin action queue — includes legacy DB statuses until migrated. */
 export const ACTION_NEEDED_STATUSES = [
   'submitted',
@@ -101,6 +134,27 @@ export function sortActionNeededSettlements<T extends { status: string; updated_
     const p = actionNeededStatusPriority(a.status) - actionNeededStatusPriority(b.status)
     if (p !== 0) return p
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  })
+}
+
+export function sortAdminSettlementsByTourDate<
+  T extends {
+    id: string
+    tour: { start_date: string | null; tour_code: string | null } | null
+  },
+>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const dateA = a.tour?.start_date ?? ''
+    const dateB = b.tour?.start_date ?? ''
+    const dateCompare = dateA.localeCompare(dateB)
+    if (dateCompare !== 0) return dateCompare
+
+    const codeA = a.tour?.tour_code ?? ''
+    const codeB = b.tour?.tour_code ?? ''
+    const codeCompare = codeA.localeCompare(codeB)
+    if (codeCompare !== 0) return codeCompare
+
+    return a.id.localeCompare(b.id)
   })
 }
 

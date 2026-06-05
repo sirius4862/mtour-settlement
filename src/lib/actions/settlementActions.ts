@@ -73,6 +73,7 @@ import {
   aggregateSettlementStatusCounts,
   escapeIlikePattern,
   expandWorkflowStatusFilter,
+  sortAdminSettlementsByTourDate,
   sortActionNeededSettlements,
   type AdminSettlementListFilters,
   type AdminSettlementListItem,
@@ -473,7 +474,6 @@ export async function getAdminSettlements(
   let q = supabase
     .from('settlements')
     .select(ADMIN_SETTLEMENT_SELECT, { count: 'exact' })
-    .order('updated_at', { ascending: false })
 
   const regionId = await resolveSettlementRegionFilter(filters)
   if (regionId) q = q.eq('branch_id', regionId)
@@ -512,7 +512,7 @@ export async function getAdminSettlements(
     q = q.or(orParts.join(','))
   }
 
-  const { data, count, error } = await q.range(from, to)
+  const { data, count, error } = await q
   if (error) {
     console.error('getAdminSettlements:', error.message)
     return { items: [], total: 0, page, pageSize, totalPages: 0 }
@@ -522,7 +522,9 @@ export async function getAdminSettlements(
   const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
 
   return {
-    items: (data ?? []) as unknown as AdminSettlementListItem[],
+    items: sortAdminSettlementsByTourDate(
+      (data ?? []) as unknown as AdminSettlementListItem[],
+    ).slice(from, to + 1),
     total,
     page,
     pageSize,
@@ -555,9 +557,7 @@ export async function getAdminActionQueue(limit = 10): Promise<AdminSettlementLi
 }
 
 /** 대시보드 상태 집계 — scoped by admin region when assigned */
-export async function getAdminDashboardStats(
-  filters?: Pick<AdminSettlementListFilters, 'regionId'>,
-): Promise<
+export async function getAdminDashboardStats(filters?: AdminSettlementListFilters): Promise<
   { status: SettlementStatus; count: number }[]
 > {
   const supabase = await createClient()
@@ -565,6 +565,7 @@ export async function getAdminDashboardStats(
 
   let q = supabase.from('settlements').select('status')
   if (regionId) q = q.eq('branch_id', regionId)
+  if (filters?.yearMonth) q = q.eq('year_month', filters.yearMonth)
 
   const { data, error } = await q
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MTOUR_REGION_CODES, type MtourRegionCode } from './regions'
 import {
   ADMIN_SETTLEMENT_REGION_DENIED,
   assertAdminCanAccessSettlementBranch,
@@ -69,5 +70,55 @@ describe('admin settlement region gate (settlements.branch_id)', () => {
     expect(assertAdminCanAccessSettlementBranch(danangAdminScope, operatingNhatrang).ok).toBe(
       false,
     )
+  })
+})
+
+// All-region conversion: the settlement region gate must enforce the same rule
+// for every registered MTour region (including GRAND_ACE), not Da Nang only.
+function otherRegion(region: MtourRegionCode): MtourRegionCode {
+  const other = MTOUR_REGION_CODES.find((c) => c !== region)
+  if (!other) throw new Error('Region list must contain more than one region')
+  return other
+}
+
+describe.each(MTOUR_REGION_CODES)('admin settlement region gate for %s', (region) => {
+  const other = otherRegion(region)
+  const adminHere = { role: 'admin' as const, assignedRegionId: region }
+  const master = { role: 'master_admin' as const, assignedRegionId: null }
+
+  it(`${region} admin can read/mutate a ${region} settlement`, () => {
+    expect(
+      evaluateAdminSettlementReadAccess({
+        scope: adminHere,
+        settlementBranchId: region,
+        callerRole: 'admin',
+      }),
+    ).toBe('allow')
+    expect(assertAdminCanAccessSettlementBranch(adminHere, region)).toEqual({ ok: true })
+  })
+
+  it(`${region} admin cannot read/mutate a ${other} settlement`, () => {
+    expect(
+      evaluateAdminSettlementReadAccess({
+        scope: adminHere,
+        settlementBranchId: other,
+        callerRole: 'admin',
+      }),
+    ).toBe('deny')
+    expect(assertAdminCanAccessSettlementBranch(adminHere, other)).toEqual({
+      ok: false,
+      error: ADMIN_SETTLEMENT_REGION_DENIED,
+    })
+  })
+
+  it(`master_admin can access a ${region} settlement`, () => {
+    expect(
+      evaluateAdminSettlementReadAccess({
+        scope: master,
+        settlementBranchId: region,
+        callerRole: 'master_admin',
+      }),
+    ).toBe('allow')
+    expect(assertAdminCanAccessSettlementBranch(master, region)).toEqual({ ok: true })
   })
 })

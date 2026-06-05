@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MTOUR_REGION_CODES, type MtourRegionCode } from '@/lib/region/regions'
 import {
   filterAdminToursByRegionScope,
   filterGuidesForTourAssignment,
@@ -99,5 +100,61 @@ describe('guide assignment across regions', () => {
       { role: 'master_admin', assignedRegionId: DANANG },
     )
     expect(tours).toHaveLength(2)
+  })
+})
+
+// All-region conversion: the same assignment rules must hold for every
+// registered MTour region code (including GRAND_ACE), not Da Nang / Nha Trang only.
+function otherRegion(region: MtourRegionCode): MtourRegionCode {
+  const other = MTOUR_REGION_CODES.find((c) => c !== region)
+  if (!other) throw new Error('Region list must contain more than one region')
+  return other
+}
+
+describe.each(MTOUR_REGION_CODES)('guide assignment for region %s', (region) => {
+  const other = otherRegion(region)
+  const adminHere = { role: 'admin' as const, assignedRegionId: region }
+  const guide = { id: 'g1', role: 'guide', is_active: true, branch_id: other }
+
+  it(`admin can create a tour in ${region} with a guide whose home is ${other}`, () => {
+    expect(
+      validateTourGuideAssignment({ adminScope: adminHere, tourBranchId: region, guide }),
+    ).toBeNull()
+  })
+
+  it(`admin scoped to ${region} cannot create a tour in ${other}`, () => {
+    expect(
+      validateTourGuideAssignment({ adminScope: adminHere, tourBranchId: other, guide }),
+    ).toBe('담당 지역 밖의 투어는 생성할 수 없습니다.')
+  })
+
+  it(`tour list for the ${region} admin keeps ${region} and drops ${other}`, () => {
+    const tours = filterAdminToursByRegionScope(
+      [
+        { branch_id: region, id: 'here' },
+        { branch_id: other, id: 'there' },
+      ],
+      adminHere,
+    )
+    expect(tours.map((t) => t.id)).toEqual(['here'])
+  })
+
+  it(`settlement for a ${region} tour inherits ${region} as operating branch`, () => {
+    const tour = { guide_id: guide.id, branch_id: region }
+    expect(isGuideAssignedToTour(tour, guide.id)).toBe(true)
+    expect(resolveSettlementOperatingBranchId(tour, guide.id)).toEqual({
+      ok: true,
+      branchId: region,
+    })
+  })
+
+  it(`master_admin can assign any guide to a ${region} tour`, () => {
+    expect(
+      validateTourGuideAssignment({
+        adminScope: { role: 'master_admin', assignedRegionId: null },
+        tourBranchId: region,
+        guide,
+      }),
+    ).toBeNull()
   })
 })

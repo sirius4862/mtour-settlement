@@ -17,7 +17,8 @@ VALUES
   (gen_random_uuid(), 'Da Nang', 'DANANG', now()),
   (gen_random_uuid(), 'Nha Trang', 'NHATRANG', now()),
   (gen_random_uuid(), 'Ho Chi Minh', 'HCM', now()),
-  (gen_random_uuid(), 'Phu Quoc', 'PHUQUOC', now())
+  (gen_random_uuid(), 'Phu Quoc', 'PHUQUOC', now()),
+  (gen_random_uuid(), 'Grand Ace', 'GRAND_ACE', now())
 ON CONFLICT (code) DO UPDATE SET
   name = EXCLUDED.name;
 

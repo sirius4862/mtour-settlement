@@ -5,6 +5,7 @@ export const MTOUR_REGION_CODES = [
   'NHATRANG',
   'HCM',
   'PHUQUOC',
+  'GRAND_ACE',
 ] as const
 
 export type MtourRegionCode = (typeof MTOUR_REGION_CODES)[number]
@@ -15,6 +16,7 @@ export const MTOUR_REGION_LABELS: Record<MtourRegionCode, string> = {
   NHATRANG: 'Nha Trang',
   HCM: 'Ho Chi Minh',
   PHUQUOC: 'Phu Quoc',
+  GRAND_ACE: 'Grand Ace',
 }
 
 export function isMtourRegionCode(code: string): code is MtourRegionCode {

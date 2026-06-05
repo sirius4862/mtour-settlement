@@ -10,6 +10,10 @@ export const ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE =
 
 export const ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE = '상태 미선택'
 
+export const ADMIN_DASHBOARD_PROGRESS_ALL_LABEL = '진행 전체 보기'
+
+export const ADMIN_DASHBOARD_PAID_HISTORY_LABEL = '지급완료 내역'
+
 export const ADMIN_DASHBOARD_STATUS_ORDER: SettlementStatus[] = [
   'draft',
   'submitted',
@@ -51,8 +55,12 @@ export function buildAdminDashboardListSubtitle(params: {
   view?: string
 }): string {
   if (params.statusLabel) return `${params.regionLabel} · ${params.statusLabel}`
-  if (params.view === 'all') return `${params.regionLabel} · 전체 보기`
+  if (params.view === 'all') return `${params.regionLabel} · ${ADMIN_DASHBOARD_PROGRESS_ALL_LABEL}`
   return `${params.regionLabel} · ${ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE}`
+}
+
+export function isAdminDashboardProgressStatus(status: string): boolean {
+  return ADMIN_DASHBOARD_STATUS_ORDER.includes(normalizeStatusForDashboard(status))
 }
 
 /** Admin action queue — includes legacy DB statuses until migrated. */

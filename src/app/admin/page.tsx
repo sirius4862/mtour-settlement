@@ -8,9 +8,12 @@ import { formatRegionLabel } from '@/lib/region/regions'
 import { isMasterAdmin } from '@/lib/auth/permissions'
 import { STATUS_META } from '@/types'
 import {
+  ADMIN_DASHBOARD_PAID_HISTORY_LABEL,
+  ADMIN_DASHBOARD_PROGRESS_ALL_LABEL,
   ADMIN_DASHBOARD_STATUS_ORDER,
   ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
   buildAdminDashboardListSubtitle,
+  isAdminDashboardProgressStatus,
   shouldFetchAdminSettlementRows,
 } from '@/lib/admin/settlement-list'
 import {
@@ -87,6 +90,10 @@ export default async function AdminPage({
     view,
   })
   const statsByStatus = new Map(stats.map((s) => [s.status, s.count]))
+  const displayItems =
+    view === 'all'
+      ? settlements.items.filter((s) => isAdminDashboardProgressStatus(s.status))
+      : settlements.items
 
   return (
     <div className="space-y-6">
@@ -102,49 +109,6 @@ export default async function AdminPage({
         <Link href="/admin/tours/new" className="text-sm text-blue-600 mt-2 inline-block">
           + 투어 등록 (가이드 정산 테스트용)
         </Link>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-700">상태별 정산서</h2>
-          <p className="text-xs text-gray-400 mt-0.5">
-            카드를 선택하면 해당 상태의 정산서만 표시됩니다.
-          </p>
-        </div>
-        <Link
-          href={buildDashboardUrl({ regionId, view: 'all' })}
-          className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
-            view === 'all'
-              ? 'bg-gray-900 text-white border-gray-900'
-              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          전체 보기
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {ADMIN_DASHBOARD_STATUS_ORDER.map((status) => {
-          const meta = STATUS_META[status]
-          const isActive = activeStatus === status
-          return (
-            <Link
-              key={status}
-              href={buildDashboardUrl({ status, regionId })}
-              aria-current={isActive ? 'page' : undefined}
-              className={`rounded-2xl p-4 border text-center transition-colors ${
-                isActive
-                  ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-100'
-                  : 'bg-white border-gray-100 hover:border-blue-200 hover:bg-blue-50/40'
-              }`}
-            >
-              <p className="text-2xl font-bold text-gray-800">{statsByStatus.get(status) ?? 0}</p>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${meta.bg} ${meta.text} mt-1 inline-block`}>
-                {meta.label}
-              </span>
-            </Link>
-          )
-        })}
       </div>
 
       {isMasterAdmin(session.role) && (
@@ -175,8 +139,10 @@ export default async function AdminPage({
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-gray-700">정산서 목록</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{listSubtitle}</p>
+            <h2 className="text-sm font-semibold text-gray-700">상태별 정산서</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              카드를 선택하면 해당 상태의 정산서만 표시됩니다.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Link
@@ -187,31 +153,63 @@ export default async function AdminPage({
                   : 'border-gray-200 bg-white text-blue-600 hover:bg-gray-50'
               }`}
             >
-              전체 보기
+              {ADMIN_DASHBOARD_PROGRESS_ALL_LABEL}
             </Link>
             <Link
               href={`/admin/settlements?status=paid${regionId ? `&regionId=${regionId}` : ''}`}
               className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
             >
-              지급완료 내역
+              {ADMIN_DASHBOARD_PAID_HISTORY_LABEL}
             </Link>
-            <span className="text-xs text-gray-400">
-              {shouldFetchRows
-                ? `${settlements.total}건 · ${settlements.page}/${Math.max(settlements.totalPages, 1)}페이지`
-                : '상태 미선택'}
-            </span>
           </div>
         </div>
 
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {ADMIN_DASHBOARD_STATUS_ORDER.map((status) => {
+            const meta = STATUS_META[status]
+            const isActive = activeStatus === status
+            return (
+              <Link
+                key={status}
+                href={buildDashboardUrl({ status, regionId })}
+                aria-current={isActive ? 'page' : undefined}
+                className={`rounded-2xl p-4 border text-center transition-colors ${
+                  isActive
+                    ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-100'
+                    : 'bg-white border-gray-100 hover:border-blue-200 hover:bg-blue-50/40'
+                }`}
+              >
+                <p className="text-2xl font-bold text-gray-800">{statsByStatus.get(status) ?? 0}</p>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${meta.bg} ${meta.text} mt-1 inline-block`}>
+                  {meta.label}
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700">정산서 목록</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{listSubtitle}</p>
+          </div>
+          <span className="text-xs text-gray-400">
+            {shouldFetchRows
+              ? `${displayItems.length}건 · ${settlements.page}/${Math.max(settlements.totalPages, 1)}페이지`
+              : '상태 미선택'}
+          </span>
+        </div>
         {!shouldFetchRows ? (
           <p className="text-sm text-gray-400 py-12 text-center">
             {ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE}
           </p>
-        ) : settlements.items.length === 0 ? (
+        ) : displayItems.length === 0 ? (
           <p className="text-sm text-gray-400 py-12 text-center">조회 결과가 없습니다.</p>
         ) : (
           <>
-            <AdminSettlementTable items={settlements.items} />
+            <AdminSettlementTable items={displayItems} />
             {settlements.totalPages > 1 && (
               <div className="flex items-center justify-center gap-3 pt-2">
                 {page > 1 ? (

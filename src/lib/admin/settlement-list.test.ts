@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   ACTION_NEEDED_STATUSES,
   ADMIN_DASHBOARD_STATUS_ORDER,
+  ADMIN_DASHBOARD_PAID_HISTORY_LABEL,
+  ADMIN_DASHBOARD_PROGRESS_ALL_LABEL,
   ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
   ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE,
   actionNeededStatusPriority,
@@ -11,6 +14,7 @@ import {
   countActionNeededFromRows,
   countActionNeededFromStats,
   expandWorkflowStatusFilter,
+  isAdminDashboardProgressStatus,
   resolveAdminSettlementListMode,
   shouldFetchAdminSettlementRows,
   sortAdminSettlementsByTourDate,
@@ -217,7 +221,35 @@ describe('main admin dashboard settlement list behavior', () => {
     expect(shouldFetchAdminSettlementRows({ view: 'all' })).toBe(true)
     expect(
       buildAdminDashboardListSubtitle({ regionLabel: '다낭', view: 'all' }),
-    ).toBe('다낭 · 전체 보기')
+    ).toBe('다낭 · 진행 전체 보기')
+  })
+
+  it('uses dashboard-level action labels and keeps paid out of progress rows', () => {
+    expect(ADMIN_DASHBOARD_PROGRESS_ALL_LABEL).toBe('진행 전체 보기')
+    expect(ADMIN_DASHBOARD_PAID_HISTORY_LABEL).toBe('지급완료 내역')
+    expect(isAdminDashboardProgressStatus('draft')).toBe(true)
+    expect(isAdminDashboardProgressStatus('submitted')).toBe(true)
+    expect(isAdminDashboardProgressStatus('edit_requested')).toBe(true)
+    expect(isAdminDashboardProgressStatus('pending_guide_confirmation')).toBe(true)
+    expect(isAdminDashboardProgressStatus('paid')).toBe(false)
+    expect(isAdminDashboardProgressStatus('approved')).toBe(true)
+  })
+
+  it('places dashboard view actions in the status header, not the list header', () => {
+    const source = readFileSync('src/app/admin/page.tsx', 'utf8')
+    const statusHeader = source.indexOf('상태별 정산서')
+    const listHeader = source.indexOf('정산서 목록')
+    const progressAction = source.indexOf('ADMIN_DASHBOARD_PROGRESS_ALL_LABEL', statusHeader)
+    const paidAction = source.indexOf('ADMIN_DASHBOARD_PAID_HISTORY_LABEL', statusHeader)
+
+    expect(statusHeader).toBeGreaterThan(-1)
+    expect(listHeader).toBeGreaterThan(statusHeader)
+    expect(progressAction).toBeGreaterThan(statusHeader)
+    expect(progressAction).toBeLessThan(listHeader)
+    expect(paidAction).toBeGreaterThan(statusHeader)
+    expect(paidAction).toBeLessThan(listHeader)
+    expect(source.slice(listHeader)).not.toContain('ADMIN_DASHBOARD_PROGRESS_ALL_LABEL')
+    expect(source.slice(listHeader)).not.toContain('ADMIN_DASHBOARD_PAID_HISTORY_LABEL')
   })
 })
 

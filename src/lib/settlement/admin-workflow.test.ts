@@ -147,7 +147,7 @@ describe('admin draft save payload', () => {
 })
 
 describe('guide confirmation diff visibility', () => {
-  it('hides ground_fee_usd, KB, and company profit from guide-visible changes', () => {
+  it('hides ground_fee_usd, vehicle fee, KB, and company profit from guide-visible changes', () => {
     const shop = {
       id: 'shop-1',
       settlement_id: 'settlement-1',
@@ -168,11 +168,15 @@ describe('guide confirmation diff visibility', () => {
       vehicle_fee_usd: before.header.vehicle_fee_usd as number + 1,
     })
 
-    const visible = filterGuideConfirmationChanges(diffSnapshotPayloads(before, after))
+    const allChanges = diffSnapshotPayloads(before, after)
+    const visible = filterGuideConfirmationChanges(allChanges)
 
     expect(visible.some((c) => c.field_path === 'header.ground_fee_usd')).toBe(false)
     expect(visible.some((c) => c.field_path.includes('kb_usd'))).toBe(false)
     expect(visible.some((c) => c.field_path === 'calc_summary.company_grand_total_usd')).toBe(false)
-    expect(visible.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
+    // Vehicle fee is an admin/company internal cost — hidden from the guide list,
+    // but still present in the raw diff so admin/master visibility is unchanged.
+    expect(visible.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(false)
+    expect(allChanges.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
   })
 })

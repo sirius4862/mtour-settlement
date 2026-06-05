@@ -64,10 +64,22 @@ const CONFIRM_DIFF_CALC_KEYS: (keyof SnapshotCalcSummary)[] = [
   'guide_payout_usd',
 ]
 
+/**
+ * Admin/company-internal cost header fields that do not affect what the guide
+ * must confirm. Hidden from the guide confirmation diff (key-based, not label).
+ * Admin/master views read settlement data directly and are unaffected.
+ */
+export const GUIDE_HIDDEN_ADMIN_COST_FIELD_PATHS = [
+  'header.vehicle_fee_usd', // 차량비 (O79)
+  'header.head_tax_usd', // 인두세 (O80)
+  'header.seoul_biz_fee_usd', // 서울영업비 (O81)
+] as const
+
 /** Never shown on guide confirm UI or in guide-facing change lists. */
 export const GUIDE_HIDDEN_CONFIRM_FIELD_PATHS = [
   'calc_summary.company_grand_total_usd',
   'header.ground_fee_usd',
+  ...GUIDE_HIDDEN_ADMIN_COST_FIELD_PATHS,
 ] as const
 
 export const SHOPPING_KB_LABEL = 'KB (회사 전용 수익)'

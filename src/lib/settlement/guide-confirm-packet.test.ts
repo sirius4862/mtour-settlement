@@ -164,6 +164,80 @@ describe('guide confirm packet policy', () => {
   })
 })
 
+describe('H-guide: admin/company cost fields hidden from guide confirmation diff', () => {
+  it('hides 차량비 (vehicle fee) from the guide list but keeps it in the raw diff for admin', () => {
+    const before = buildSnapshotPayload(minimalSettlementFull({ vehicle_fee_usd: 25 }))
+    const after = buildSnapshotPayload(minimalSettlementFull({ vehicle_fee_usd: 125 }))
+
+    const allChanges = diffSnapshotPayloads(before, after)
+    // Admin/master visibility (raw diff) retains the field.
+    expect(allChanges.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
+
+    const visible = filterGuideConfirmationChanges(allChanges)
+    expect(visible.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(false)
+    expect(visible.some((c) => c.label === '차량비')).toBe(false)
+  })
+
+  it('hides 인두세 (head tax) from the guide list but keeps it in the raw diff for admin', () => {
+    const before = buildSnapshotPayload(minimalSettlementFull({ head_tax_usd: 8 }))
+    const after = buildSnapshotPayload(minimalSettlementFull({ head_tax_usd: 80 }))
+
+    const allChanges = diffSnapshotPayloads(before, after)
+    expect(allChanges.some((c) => c.field_path === 'header.head_tax_usd')).toBe(true)
+
+    const visible = filterGuideConfirmationChanges(allChanges)
+    expect(visible.some((c) => c.field_path === 'header.head_tax_usd')).toBe(false)
+    expect(visible.some((c) => c.label === '인두세')).toBe(false)
+  })
+
+  it('hides 서울영업비 (Seoul business fee) from the guide list but keeps it in the raw diff for admin', () => {
+    const before = buildSnapshotPayload(minimalSettlementFull({ seoul_biz_fee_usd: 5 }))
+    const after = buildSnapshotPayload(minimalSettlementFull({ seoul_biz_fee_usd: 55 }))
+
+    const allChanges = diffSnapshotPayloads(before, after)
+    expect(allChanges.some((c) => c.field_path === 'header.seoul_biz_fee_usd')).toBe(true)
+
+    const visible = filterGuideConfirmationChanges(allChanges)
+    expect(visible.some((c) => c.field_path === 'header.seoul_biz_fee_usd')).toBe(false)
+    expect(visible.some((c) => c.label === '서울영업비')).toBe(false)
+  })
+
+  it('keeps T/C settlement-related changes visible to the guide', () => {
+    const before = buildSnapshotPayload(minimalSettlementFull({ tc_company_usd: 8 }))
+    const after = buildSnapshotPayload(minimalSettlementFull({ tc_company_usd: 48 }))
+
+    const visible = filterGuideConfirmationChanges(diffSnapshotPayloads(before, after))
+    expect(visible.some((c) => c.field_path === 'header.tc_company_usd')).toBe(true)
+
+    // Direct field-level guard for TC fields (guide income impact).
+    expect(isGuideHiddenConfirmChange({ field_path: 'header.tc_company_usd', label: 'T/C 회사분' })).toBe(false)
+    expect(isGuideHiddenConfirmChange({ field_path: 'header.tc_guide_usd', label: 'T/C 가이드분' })).toBe(false)
+  })
+
+  it('keeps calculated and final guide settlement amounts visible to the guide', () => {
+    const calculated = { field_path: 'calc_summary.guide_settlement_usd', excel_ref: 'R85', label: '계산상 가이드 정산금액' }
+    const finalPayout = { field_path: 'calc_summary.guide_payout_usd', excel_ref: 'P85', label: '가이드 정산금액' }
+
+    expect(isGuideHiddenConfirmChange(calculated)).toBe(false)
+    expect(isGuideHiddenConfirmChange(finalPayout)).toBe(false)
+    expect(filterGuideConfirmationChanges([calculated, finalPayout])).toEqual([calculated, finalPayout])
+  })
+
+  it('admin/master raw diff retains all three cost fields together (no reduced visibility)', () => {
+    const before = buildSnapshotPayload(
+      minimalSettlementFull({ vehicle_fee_usd: 10, head_tax_usd: 2, seoul_biz_fee_usd: 1 }),
+    )
+    const after = buildSnapshotPayload(
+      minimalSettlementFull({ vehicle_fee_usd: 90, head_tax_usd: 20, seoul_biz_fee_usd: 10 }),
+    )
+
+    const allChanges = diffSnapshotPayloads(before, after)
+    expect(allChanges.some((c) => c.field_path === 'header.vehicle_fee_usd')).toBe(true)
+    expect(allChanges.some((c) => c.field_path === 'header.head_tax_usd')).toBe(true)
+    expect(allChanges.some((c) => c.field_path === 'header.seoul_biz_fee_usd')).toBe(true)
+  })
+})
+
 describe('guide confirm page source', () => {
   it('does not render 회사수익 or R87 summary labels', () => {
     const source = readFileSync(

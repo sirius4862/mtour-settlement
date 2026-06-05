@@ -6,6 +6,11 @@ import {
   canMarkSettlementPaidForRole,
   canMasterAdminEditSettlement,
 } from './status-guards'
+import {
+  ADMIN_SETTLEMENT_REGION_DENIED,
+  assertAdminCanAccessSettlementBranch,
+} from '@/lib/region/settlement-access'
+import type { AdminRegionScope } from '@/lib/region/permissions'
 
 const base = {
   guide_confirmed_at: null as string | null,
@@ -50,7 +55,7 @@ describe('canAdminOrMasterAdminEditSettlement', () => {
 })
 
 describe('canMarkSettlementPaidForRole', () => {
-  it('requires master_admin and approved guide-confirmed settlement', () => {
+  it('allows admin tier on a guide-confirmed payable settlement', () => {
     expect(
       canMarkSettlementPaidForRole('master_admin', {
         ...base,
@@ -65,12 +70,22 @@ describe('canMarkSettlementPaidForRole', () => {
         status: 'approved',
         guide_confirmed_at: '2026-05-27T00:00:00Z',
       }),
+    ).toBe(true)
+  })
+
+  it('never allows a guide to pay', () => {
+    expect(
+      canMarkSettlementPaidForRole('guide', {
+        ...base,
+        status: 'pending_guide_confirmation',
+        guide_confirmed_at: '2026-05-27T00:00:00Z',
+      }),
     ).toBe(false)
   })
 })
 
 describe('assertAdminReviewAction pay', () => {
-  it('blocks admin pay even when settlement is payable', () => {
+  it('allows admin pay when settlement is payable', () => {
     const result = assertAdminReviewAction(
       {
         ...base,
@@ -80,7 +95,7 @@ describe('assertAdminReviewAction pay', () => {
       'pay',
       'admin',
     )
-    expect(result.ok).toBe(false)
+    expect(result.ok).toBe(true)
   })
 
   it('allows master_admin pay after guide confirmation', () => {
@@ -94,5 +109,46 @@ describe('assertAdminReviewAction pay', () => {
       'master_admin',
     )
     expect(result.ok).toBe(true)
+  })
+
+  it('blocks admin pay before guide final confirmation', () => {
+    const result = assertAdminReviewAction(
+      {
+        ...base,
+        status: 'pending_guide_confirmation',
+        guide_submit_snapshot_id: 'snap-1',
+      },
+      'pay',
+      'admin',
+    )
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe('admin pay remains region-scoped', () => {
+  const payable = {
+    ...base,
+    status: 'pending_guide_confirmation' as const,
+    guide_confirmed_at: '2026-05-27T00:00:00Z',
+  }
+  const adminScope: AdminRegionScope = { role: 'admin', assignedRegionId: 'region-A' }
+
+  it('lets an admin pay a payable settlement inside their region', () => {
+    expect(assertAdminReviewAction(payable, 'pay', 'admin').ok).toBe(true)
+    expect(assertAdminCanAccessSettlementBranch(adminScope, 'region-A').ok).toBe(true)
+  })
+
+  it('blocks an admin from paying a settlement outside their region', () => {
+    // Role + eligibility guard passes, but the region guard denies the row.
+    expect(assertAdminReviewAction(payable, 'pay', 'admin').ok).toBe(true)
+    const region = assertAdminCanAccessSettlementBranch(adminScope, 'region-B')
+    expect(region.ok).toBe(false)
+    expect(region.ok ? null : region.error).toBe(ADMIN_SETTLEMENT_REGION_DENIED)
+  })
+
+  it('lets master_admin pay across regions', () => {
+    const masterScope: AdminRegionScope = { role: 'master_admin', assignedRegionId: null }
+    expect(assertAdminReviewAction(payable, 'pay', 'master_admin').ok).toBe(true)
+    expect(assertAdminCanAccessSettlementBranch(masterScope, 'region-B').ok).toBe(true)
   })
 })

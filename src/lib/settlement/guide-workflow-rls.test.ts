@@ -394,9 +394,9 @@ describe('guide workflow RLS regression', () => {
     expect(assertAdminReadOnlyAfterApproval('admin', 'submitted').ok).toBe(true)
   })
 
-  it('admin cannot mark paid (master_admin only)', () => {
-    expect(canMarkSettlementPaid('admin')).toBe(false)
-    expect(assertRoleCanMarkPaid('admin').ok).toBe(false)
+  it('admin can mark paid (admin tier)', () => {
+    expect(canMarkSettlementPaid('admin')).toBe(true)
+    expect(assertRoleCanMarkPaid('admin').ok).toBe(true)
   })
 
   it('master_admin can mark paid', () => {

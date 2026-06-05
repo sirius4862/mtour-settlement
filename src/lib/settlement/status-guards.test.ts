@@ -224,7 +224,7 @@ describe('assertAdminReviewAction', () => {
     expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'admin').ok).toBe(false)
   })
 
-  it('allows only master_admin to pay from pending_guide_confirmation after guide confirmation', () => {
+  it('allows admin and master_admin to pay from pending_guide_confirmation after guide confirmation', () => {
     expect(
       assertAdminReviewAction(
         {
@@ -235,7 +235,7 @@ describe('assertAdminReviewAction', () => {
         'pay',
         'admin',
       ).ok,
-    ).toBe(false)
+    ).toBe(true)
     expect(
       assertAdminReviewAction(
         {
@@ -261,6 +261,20 @@ describe('assertAdminReviewAction', () => {
 
   it('blocks admin mutations after payment', () => {
     expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'request_edit', 'admin').ok).toBe(false)
+  })
+
+  it('keeps paid settlements locked from re-pay (admin and master)', () => {
+    expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'pay', 'admin').ok).toBe(false)
+    expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'pay', 'master_admin').ok).toBe(false)
+  })
+
+  it('never allows a guide to pay', () => {
+    const confirmed = {
+      ...base,
+      status: 'pending_guide_confirmation' as const,
+      guide_confirmed_at: '2026-05-27T00:00:00Z',
+    }
+    expect(assertAdminReviewAction(confirmed, 'pay', 'guide').ok).toBe(false)
   })
 
   it('allows master reopen from paid', () => {

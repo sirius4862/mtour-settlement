@@ -99,7 +99,7 @@ export default async function GuidePage() {
             />
           ) : (
             availableTours.map((t) => (
-              <Link key={t.id} href="/guide/settlements/new" className={cardBase}>
+              <Link key={t.id} href={`/guide/settlements/new?tourId=${t.id}`} className={cardBase}>
                 <p className="text-[15px] font-bold leading-6 tracking-[-0.01em] text-[#2B2118]">{tourLabel(t)}</p>
                 <p className={`mt-1 ${mutedText}`}>
                   {t.agency_name} · {t.start_date} ~ {t.end_date} · {t.pax_count}명

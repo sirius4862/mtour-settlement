@@ -11,6 +11,7 @@ import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
   shouldShowAdminSettlementSections,
 } from '@/lib/settlement/settlement-form-sections'
+import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
 import {
   firstErrorSection,
   validateSettlementForm,
@@ -47,6 +48,8 @@ interface Props {
   guideName: string
   mode: SettlementFormMode
   initialFull?: SettlementFull
+  /** New mode: assigned tour selected on the dashboard to bind/prefill. */
+  initialTourId?: string
   /** Who may edit admin-owned fields. Defaults to guide. */
   formRole?: SettlementFormRole
   /** Admin review edit — save admin fields only, no submit. */
@@ -55,7 +58,7 @@ interface Props {
   }
 }
 
-export function SettlementForm({ tours, guideName, mode, initialFull, formRole = 'guide', adminEdit }: Props) {
+export function SettlementForm({ tours, guideName, mode, initialFull, initialTourId, formRole = 'guide', adminEdit }: Props) {
   const router = useRouter()
   const hydrated = useRef(false)
   const [pending, setPending] = useState(false)
@@ -64,6 +67,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
 
   const hydrateFromFull = useSettlementFormStore((s) => s.hydrateFromFull)
   const resetNew = useSettlementFormStore((s) => s.resetNew)
+  const setTour = useSettlementFormStore((s) => s.setTour)
   const setSaving = useSettlementFormStore((s) => s.setSaving)
   const markSaved = useSettlementFormStore((s) => s.markSaved)
   const mergeServerSync = useSettlementFormStore((s) => s.mergeServerSync)
@@ -120,8 +124,15 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       }
 
       const s = useSettlementFormStore.getState()
-      if (s.guideName !== guideName) {
-        resetNew(guideName)
+      const decision = resolveNewSettlementBinding(
+        { settlementId: s.settlementId, tourId: s.tourId, guideName: s.guideName },
+        initialTourId ?? null,
+        guideName,
+      )
+      if (decision.reset) resetNew(guideName)
+      if (decision.bindTourId) {
+        const tour = tours.find((t) => t.id === decision.bindTourId)
+        if (tour) setTour(tour)
       }
     }
 
@@ -131,7 +142,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
     }
 
     return useSettlementFormStore.persist.onFinishHydration(bootstrap)
-  }, [mode, initialFull, guideName, formRole, hydrateFromFull, resetNew])
+  }, [mode, initialFull, guideName, formRole, initialTourId, tours, hydrateFromFull, resetNew, setTour])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
     const actor = isAdminReview ? 'admin' : 'guide'

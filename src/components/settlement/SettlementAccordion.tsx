@@ -18,10 +18,12 @@ export function SettlementAccordion({
   sections,
   openId: controlledOpenId,
   onOpenIdChange,
+  showSectionMeta = true,
 }: {
   sections: AccordionSection[]
   openId?: string
   onOpenIdChange?: (id: string) => void
+  showSectionMeta?: boolean
 }) {
   const [internalOpenId, setInternalOpenId] = useState<string>(sections[0]?.id ?? '')
   const openId = controlledOpenId ?? internalOpenId
@@ -57,7 +59,7 @@ export function SettlementAccordion({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-gray-800 text-sm">{section.title}</span>
-                  {section.badge && (
+                  {showSectionMeta && section.badge && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
                       {section.badge}
                     </span>

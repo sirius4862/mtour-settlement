@@ -91,6 +91,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
   const role: SettlementFormRole = isPreview ? 'readOnly' : (isAdminReview ? 'admin' : formRole)
   const audience = summaryAudienceFromRole(role)
   const isAdmin = role === 'admin'
+  const showSectionMeta = isAdmin || isAdminReview || isPreview
   const showAdminSections = shouldShowAdminSettlementSections(isAdmin, isAdminReview)
   const canSendForConfirmation = isAdminReview
     && !!settlementStatus
@@ -111,7 +112,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
       if (mode === 'edit' && initialFull) {
         // Server data must win over sessionStorage draft on edit reload
         useSettlementFormStore.persist.clearStorage()
-        const fullForRole = role === 'guide'
+        const fullForRole = formRole === 'guide'
           ? sanitizeSettlementFullForGuide(initialFull)
           : initialFull
         hydrateFromFull(fullForRole, guideName)
@@ -130,7 +131,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
     }
 
     return useSettlementFormStore.persist.onFinishHydration(bootstrap)
-  }, [mode, initialFull, guideName, role, hydrateFromFull, resetNew])
+  }, [mode, initialFull, guideName, formRole, hydrateFromFull, resetNew])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
     const actor = isAdminReview ? 'admin' : 'guide'
@@ -465,11 +466,13 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
               <h1 className="font-semibold text-gray-800 truncate">{title}</h1>
               {isPreview && <MockBadge />}
             </div>
-            <p className="text-[11px] text-gray-400">
-              {isPreview ? 'mock 데이터 · calcSettlement() live'
-                : isAdminReview ? '회사 전용 필드만 저장 · calcSettlement()'
-                : 'Excel 양식 · calcSettlement()'}
-            </p>
+            {showSectionMeta && (
+              <p className="text-[11px] text-gray-400">
+                {isPreview ? 'mock 데이터 · calcSettlement() live'
+                  : isAdminReview ? '회사 전용 필드만 저장 · calcSettlement()'
+                  : 'Excel 양식 · calcSettlement()'}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -485,6 +488,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, formRole =
           sections={accordionSections}
           openId={openSectionId}
           onOpenIdChange={setOpenSectionId}
+          showSectionMeta={showSectionMeta}
         />
       </div>
 

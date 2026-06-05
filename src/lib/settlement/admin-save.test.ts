@@ -18,11 +18,11 @@ describe('assertAdminSaveSettlement', () => {
     expect(assertAdminSaveSettlement('admin', 'clarification_requested').ok).toBe(true)
   })
 
-  it('allows admin tier pre-confirm edits and master_admin approved edits only', () => {
+  it('allows admin tier pre-confirm edits only; no post-confirm approved edits in v1', () => {
     expect(assertAdminSaveSettlement('admin', 'submitted').ok).toBe(true)
     expect(assertAdminSaveSettlement('master_admin', 'submitted').ok).toBe(true)
     expect(assertAdminSaveSettlement('master_admin', 'clarification_requested').ok).toBe(true)
-    expect(assertAdminSaveSettlement('master_admin', 'approved').ok).toBe(true)
+    expect(assertAdminSaveSettlement('master_admin', 'approved').ok).toBe(false)
     expect(assertAdminSaveSettlement('admin', 'approved').ok).toBe(false)
   })
 
@@ -34,18 +34,18 @@ describe('assertAdminSaveSettlement', () => {
 })
 
 describe('canMasterAdminEditSettlement', () => {
-  it('allows approved only', () => {
-    expect(canMasterAdminEditSettlement('approved')).toBe(true)
+  it('has no post-confirm edit path in v1', () => {
+    expect(canMasterAdminEditSettlement('approved')).toBe(false)
     expect(canMasterAdminEditSettlement('paid')).toBe(false)
   })
 })
 
 describe('canAdminOrMasterAdminEditSettlement', () => {
-  it('combines pre-confirm admin tier and post-confirm master_admin access', () => {
+  it('allows admin tier only during pre-confirm review (no approved edits in v1)', () => {
     expect(canAdminOrMasterAdminEditSettlement('submitted', 'admin')).toBe(true)
     expect(canAdminOrMasterAdminEditSettlement('submitted', 'master_admin')).toBe(true)
     expect(canAdminOrMasterAdminEditSettlement('approved', 'admin')).toBe(false)
-    expect(canAdminOrMasterAdminEditSettlement('approved', 'master_admin')).toBe(true)
+    expect(canAdminOrMasterAdminEditSettlement('approved', 'master_admin')).toBe(false)
   })
 })
 

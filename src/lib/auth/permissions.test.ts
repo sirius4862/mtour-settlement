@@ -33,10 +33,10 @@ describe('permissions', () => {
     expect(homePathForRole('master_admin')).toBe('/admin')
   })
 
-  it('allows admin and master_admin to mark paid', () => {
+  it('allows only master_admin to mark paid', () => {
     expect(canMarkSettlementPaid('master_admin')).toBe(true)
-    expect(canMarkSettlementPaid('admin')).toBe(true)
-    expect(assertRoleCanMarkPaid('admin').ok).toBe(true)
+    expect(canMarkSettlementPaid('admin')).toBe(false)
+    expect(assertRoleCanMarkPaid('admin').ok).toBe(false)
     expect(assertRoleCanMarkPaid('master_admin').ok).toBe(true)
     expect(assertRoleCanMarkPaid('guide').ok).toBe(false)
   })

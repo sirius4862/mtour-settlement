@@ -239,11 +239,14 @@ describe('guide workflow RLS regression', () => {
     expect(detail).toContain('/edit')
   })
 
-  it('SettlementForm passes draft payload into submitSettlement', () => {
+  it('SettlementForm submits via submitCurrentSettlement without losing the current draft', () => {
     const form = readRepoFile('src/components/settlement/SettlementForm.tsx')
+    // Existing settlement: submit with the latest draft payload in one call.
     expect(form).toContain('toDraftPayload(useSettlementFormStore.getState())')
-    expect(form).toContain('submitSettlement(id, payload)')
-    expect(form).not.toMatch(/submitSettlement\(id\)\s*\)/)
+    expect(form).toContain('submitWithDraft')
+    // Never-saved settlement: save the draft first, then submit the new id (H3).
+    expect(form).toContain('submitCurrentSettlement')
+    expect(form).toContain('saveDraft')
   })
 
   it('submitSettlement persists draft before snapshot when payload provided', () => {
@@ -391,9 +394,9 @@ describe('guide workflow RLS regression', () => {
     expect(assertAdminReadOnlyAfterApproval('admin', 'submitted').ok).toBe(true)
   })
 
-  it('admin can mark paid in v1', () => {
-    expect(canMarkSettlementPaid('admin')).toBe(true)
-    expect(assertRoleCanMarkPaid('admin').ok).toBe(true)
+  it('admin cannot mark paid (master_admin only)', () => {
+    expect(canMarkSettlementPaid('admin')).toBe(false)
+    expect(assertRoleCanMarkPaid('admin').ok).toBe(false)
   })
 
   it('master_admin can mark paid', () => {

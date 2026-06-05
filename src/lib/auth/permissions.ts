@@ -37,9 +37,9 @@ export function canPerformGuideMutation(role: UserRole): boolean {
   return isGuide(role)
 }
 
-/** Admin and master_admin may mark 지급완료. */
+/** Only master_admin may mark 지급완료 (matches DB/RLS paid lock). */
 export function canMarkSettlementPaid(role: UserRole): boolean {
-  return isAdminTier(role)
+  return isMasterAdmin(role)
 }
 
 /** After payment, plain admin users are read-only. */
@@ -125,7 +125,7 @@ export function assertRoleCanMarkPaid(
   role: UserRole,
 ): { ok: true } | { ok: false; error: string } {
   if (!canMarkSettlementPaid(role)) {
-    return { ok: false, error: '지급 처리는 관리자 권한이 필요합니다.' }
+    return { ok: false, error: '지급 처리는 마스터 관리자만 할 수 있습니다.' }
   }
   return { ok: true }
 }

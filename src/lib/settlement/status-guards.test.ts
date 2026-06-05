@@ -224,7 +224,7 @@ describe('assertAdminReviewAction', () => {
     expect(assertAdminReviewAction({ ...base, status: 'submitted' }, 'reject', 'admin').ok).toBe(false)
   })
 
-  it('allows admin pay from pending_guide_confirmation after guide confirmation', () => {
+  it('allows only master_admin to pay from pending_guide_confirmation after guide confirmation', () => {
     expect(
       assertAdminReviewAction(
         {
@@ -235,7 +235,7 @@ describe('assertAdminReviewAction', () => {
         'pay',
         'admin',
       ).ok,
-    ).toBe(true)
+    ).toBe(false)
     expect(
       assertAdminReviewAction(
         {

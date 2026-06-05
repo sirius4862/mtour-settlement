@@ -102,6 +102,48 @@ describe('resolveNewSettlementBinding', () => {
   })
 })
 
+describe('H1: switching assigned-tour create links rebinds safely', () => {
+  it('changing initialTourId from tour A to tour B binds B and inherits no stale settlementId', () => {
+    // Form was previously bound to tour A as a clean unsaved new draft.
+    const afterBindingA = resolveNewSettlementBinding(
+      { settlementId: null, tourId: TOUR_260426GA, guideName: GUIDE },
+      TOUR_260426GA,
+      GUIDE,
+    )
+    expect(afterBindingA).toEqual({ reset: false, bindTourId: TOUR_260426GA })
+
+    // Guide clicks the second assigned-tour create link (?tourId=B).
+    const switchToB = resolveNewSettlementBinding(
+      { settlementId: null, tourId: TOUR_260426GA, guideName: GUIDE },
+      TOUR_260417GAA,
+      GUIDE,
+    )
+    expect(switchToB.reset).toBe(true)
+    expect(switchToB.bindTourId).toBe(TOUR_260417GAA)
+    expect(switchToB.bindTourId).not.toBe(TOUR_260426GA)
+  })
+
+  it('switching tours resets even if a settlementId somehow lingered (no stale leak)', () => {
+    const decision = resolveNewSettlementBinding(
+      { settlementId: 'stale-A', tourId: TOUR_260426GA, guideName: GUIDE },
+      TOUR_260417GAA,
+      GUIDE,
+    )
+    // reset:true means the store is cleared to an empty draft (settlementId null)
+    // before binding B, so the prior settlementId cannot be inherited.
+    expect(decision.reset).toBe(true)
+    expect(decision.bindTourId).toBe(TOUR_260417GAA)
+  })
+
+  it('new settlement page keys SettlementForm by initialTourId to force remount on tour switch', () => {
+    const newPage = readFileSync(
+      join(ROOT, 'src/app/guide/settlements/new/page.tsx'),
+      'utf8',
+    )
+    expect(newPage).toContain('key={initialTourId ?? ')
+  })
+})
+
 describe('resolveRequestedTourId (guide-scoped)', () => {
   const tours = [{ id: TOUR_260426GA }, { id: TOUR_260417GAA }]
 

@@ -12,6 +12,7 @@ import {
   shouldShowAdminSettlementSections,
 } from '@/lib/settlement/settlement-form-sections'
 import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
+import { submitCurrentSettlement } from '@/lib/settlement/submit-flow'
 import {
   firstErrorSection,
   validateSettlementForm,
@@ -252,16 +253,16 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
     setPending(true)
     try {
-      const id = useSettlementFormStore.getState().settlementId
-      if (!id) {
-        setSaveError('정산서 ID를 확인할 수 없습니다.')
-        return
-      }
-
-      const payload = toDraftPayload(useSettlementFormStore.getState())
-      const result = await submitSettlement(id, payload)
+      const result = await submitCurrentSettlement({
+        getSettlementId: () => useSettlementFormStore.getState().settlementId,
+        saveDraft: () => handleSave({ managePending: false }),
+        submitWithDraft: (id) =>
+          submitSettlement(id, toDraftPayload(useSettlementFormStore.getState())),
+        submitSaved: (id) => submitSettlement(id),
+      })
 
       if (result.ok) {
+        const id = useSettlementFormStore.getState().settlementId
         router.push(`/guide/settlements/${id}`)
         return
       }

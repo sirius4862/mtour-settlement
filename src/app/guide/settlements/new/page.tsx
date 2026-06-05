@@ -18,6 +18,7 @@ export default async function NewSettlementPage({
 
   return (
     <SettlementForm
+      key={initialTourId ?? 'new'}
       tours={tours}
       guideName={session.full_name}
       mode="new"

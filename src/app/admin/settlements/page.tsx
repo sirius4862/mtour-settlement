@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
-import { getAdminDashboardStats, getAdminSettlements } from '@/lib/actions/settlementActions'
+import { getAdminSettlements } from '@/lib/actions/settlementActions'
 import { getBranches } from '@/lib/actions/tourActions'
 import { AdminSettlementTable } from '@/components/admin/AdminSettlementTable'
 import { adminRegionScopeLabel } from '@/lib/region/permissions'
@@ -8,27 +8,27 @@ import { formatRegionLabel } from '@/lib/region/regions'
 import { isMasterAdmin } from '@/lib/auth/permissions'
 import { STATUS_META, WORKFLOW_STATUS_ORDER } from '@/types'
 import {
-  ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
-  buildAdminSettlementListSubtitle,
-  shouldFetchAdminSettlementRows,
+  buildAdminSettlementSearchSubtitle,
+  defaultAdminSettlementDateRange,
+  validateAdminSettlementDateRange,
 } from '@/lib/admin/settlement-list'
 
 export const dynamic = 'force-dynamic'
 
 function buildListUrl(params: {
-  yearMonth: string
+  startDate: string
+  endDate: string
   status: string
   search: string
   regionId: string
-  view: string
   page: number
 }): string {
   const q = new URLSearchParams()
-  if (params.yearMonth) q.set('yearMonth', params.yearMonth)
+  if (params.startDate) q.set('startDate', params.startDate)
+  if (params.endDate) q.set('endDate', params.endDate)
   if (params.status) q.set('status', params.status)
   if (params.search) q.set('search', params.search)
   if (params.regionId) q.set('regionId', params.regionId)
-  if (params.view) q.set('view', params.view)
   if (params.page > 1) q.set('page', String(params.page))
   const s = q.toString()
   return s ? `/admin/settlements?${s}` : '/admin/settlements'
@@ -41,12 +41,11 @@ export default async function AdminSettlementsPage({
   const params = await searchParams
   const regions = await getBranches()
 
-  const now = new Date()
-  const defaultYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const yearMonth = params.yearMonth || defaultYM
+  const defaultRange = defaultAdminSettlementDateRange()
+  const startDate = params.startDate || defaultRange.startDate
+  const endDate = params.endDate || defaultRange.endDate
   const status = params.status || ''
   const search = params.search || ''
-  const view = params.view === 'all' && !status ? 'all' : ''
   const page = Math.max(1, parseInt(params.page || '1', 10) || 1)
   const regionId =
     params.regionId ||
@@ -59,31 +58,30 @@ export default async function AdminSettlementsPage({
   const regionLabel = selectedRegion
     ? formatRegionLabel(selectedRegion.code, selectedRegion.name)
     : '전체 지역'
-  const selectedStatusLabel = status ? STATUS_META[status as keyof typeof STATUS_META]?.label : undefined
-  const listSubtitle = buildAdminSettlementListSubtitle({
+  const selectedStatusLabel = status
+    ? STATUS_META[status as keyof typeof STATUS_META]?.label
+    : '전체 상태'
+  const listSubtitle = buildAdminSettlementSearchSubtitle({
+    startDate,
+    endDate,
     regionLabel,
     statusLabel: selectedStatusLabel,
-    view,
+    search,
   })
-  const shouldFetchRows = shouldFetchAdminSettlementRows({ status, view })
+  const dateRangeValidation = validateAdminSettlementDateRange({ startDate, endDate })
 
-  const [stats, result] = await Promise.all([
-    getAdminDashboardStats({
-      yearMonth,
-      regionId: regionId || undefined,
-    }),
-    shouldFetchRows
-      ? getAdminSettlements({
-          yearMonth,
-          status: status || undefined,
-          search: search || undefined,
-          regionId: regionId || undefined,
-          page,
-        })
-      : Promise.resolve({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 }),
-  ])
+  const result = dateRangeValidation.ok
+    ? await getAdminSettlements({
+        startDate,
+        endDate,
+        status: status || undefined,
+        search: search || undefined,
+        regionId: regionId || undefined,
+        page,
+      })
+    : { items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 }
 
-  const listParams = { yearMonth, status, search, regionId, view, page: 1 }
+  const listParams = { startDate, endDate, status, search, regionId, page: 1 }
 
   return (
     <div className="space-y-4">
@@ -98,19 +96,31 @@ export default async function AdminSettlementsPage({
           </p>
         </div>
         <span className="text-xs text-gray-400">
-          {shouldFetchRows
+          {dateRangeValidation.ok
             ? `${result.total}건 · ${result.page}/${Math.max(result.totalPages, 1)}페이지`
-            : '상태 미선택'}
+            : '조회 조건 확인 필요'}
         </span>
       </div>
 
       <form className="flex flex-wrap gap-2">
-        <input
-          type="month"
-          name="yearMonth"
-          defaultValue={yearMonth}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-        />
+        <label className="flex items-center gap-1 text-xs text-gray-500">
+          시작일
+          <input
+            type="date"
+            name="startDate"
+            defaultValue={startDate}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700"
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-gray-500">
+          종료일
+          <input
+            type="date"
+            name="endDate"
+            defaultValue={endDate}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700"
+          />
+        </label>
         {isMasterAdmin(session.role) ? (
           <select
             name="regionId"
@@ -129,8 +139,16 @@ export default async function AdminSettlementsPage({
             <input type="hidden" name="regionId" value={assignedRegion.id} />
           )
         )}
-        {status && <input type="hidden" name="status" value={status} />}
-        {view && <input type="hidden" name="view" value={view} />}
+        <select
+          name="status"
+          defaultValue={status}
+          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+        >
+          <option value="">전체 상태</option>
+          {WORKFLOW_STATUS_ORDER.map((v) => (
+            <option key={v} value={v}>{STATUS_META[v].label}</option>
+          ))}
+        </select>
         <input
           type="search"
           name="search"
@@ -146,66 +164,21 @@ export default async function AdminSettlementsPage({
         </button>
       </form>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {stats.map(({ status: cardStatus, count }) => {
-          const meta = STATUS_META[cardStatus]
-          const active = status === cardStatus
-          return (
-            <Link
-              key={cardStatus}
-              href={buildListUrl({
-                yearMonth,
-                status: cardStatus,
-                search,
-                regionId,
-                view: '',
-                page: 1,
-              })}
-              className={`rounded-2xl p-4 border text-center transition-colors ${
-                active
-                  ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-100'
-                  : 'bg-white border-gray-100 hover:border-blue-100'
-              }`}
-            >
-              <p className="text-2xl font-bold text-gray-800">{count}</p>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${meta.bg} ${meta.text} mt-1 inline-block`}>
-                {meta.label}
-              </span>
-            </Link>
-          )
-        })}
-      </div>
-
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-sm font-semibold text-gray-700">정산서 목록</h2>
+          <h2 className="text-sm font-semibold text-gray-700">검색 결과</h2>
           <p className="text-xs text-gray-500 mt-0.5">{listSubtitle}</p>
         </div>
-        <Link
-          href={buildListUrl({
-            yearMonth,
-            status: '',
-            search,
-            regionId,
-            view: 'all',
-            page: 1,
-          })}
-          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-            view === 'all'
-              ? 'border-blue-200 bg-blue-50 text-blue-700'
-              : 'border-gray-200 bg-white text-blue-600 hover:bg-gray-50'
-          }`}
-        >
-          전체 보기
-        </Link>
       </div>
 
-      {!shouldFetchRows ? (
-        <p className="text-sm text-gray-400 py-12 text-center">
-          {ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE}
+      {!dateRangeValidation.ok ? (
+        <p className="text-sm text-rose-500 py-12 text-center">
+          {dateRangeValidation.message}
         </p>
       ) : result.items.length === 0 ? (
-        <p className="text-sm text-gray-400 py-12 text-center">조회 결과가 없습니다.</p>
+        <p className="text-sm text-gray-400 py-12 text-center">
+          조회 조건에 맞는 정산서가 없습니다.
+        </p>
       ) : (
         <>
           <AdminSettlementTable items={result.items} />

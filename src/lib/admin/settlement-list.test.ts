@@ -5,20 +5,27 @@ import {
   ADMIN_DASHBOARD_STATUS_ORDER,
   ADMIN_DASHBOARD_PAID_HISTORY_LABEL,
   ADMIN_DASHBOARD_PROGRESS_ALL_LABEL,
+  ADMIN_SETTLEMENT_DATE_ORDER_ERROR,
+  ADMIN_SETTLEMENT_DATE_RANGE_MAX_ERROR,
   ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
   ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE,
   actionNeededStatusPriority,
   aggregateSettlementStatusCounts,
   buildAdminDashboardListSubtitle,
+  buildAdminSettlementSearchSubtitle,
   buildAdminSettlementListSubtitle,
   countActionNeededFromRows,
   countActionNeededFromStats,
+  defaultAdminSettlementDateRange,
   expandWorkflowStatusFilter,
+  filterAdminSettlementRowsForList,
   isAdminDashboardProgressStatus,
+  matchesAdminSettlementSearch,
   resolveAdminSettlementListMode,
   shouldFetchAdminSettlementRows,
   sortAdminSettlementsByTourDate,
   sortActionNeededSettlements,
+  validateAdminSettlementDateRange,
 } from './settlement-list'
 
 describe('ACTION_NEEDED_STATUSES', () => {
@@ -173,6 +180,153 @@ describe('admin settlement list dashboard behavior', () => {
     expect(buildAdminSettlementListSubtitle({ regionLabel: '전체 지역', view: 'all' })).toBe(
       '전체 지역 · 전체 보기',
     )
+  })
+})
+
+const listRows = [
+  {
+    id: 'late-submitted',
+    status: 'submitted',
+    branch_id: 'danang',
+    tour: { start_date: '2026-06-20', tour_code: 'B-200', pattern: 'Ba Na Hills' },
+    guide: {
+      full_name: 'Alice Guide',
+      korean_name: '앨리스',
+      vietnamese_name: 'An',
+      email: 'alice@example.com',
+    },
+  },
+  {
+    id: 'early-draft',
+    status: 'draft',
+    branch_id: 'danang',
+    tour: { start_date: '2026-06-01', tour_code: 'A-100', pattern: 'Hoi An Morning' },
+    guide: {
+      full_name: 'Bob Guide',
+      korean_name: '밥',
+      vietnamese_name: 'Binh',
+      email: 'bob@example.com',
+    },
+  },
+  {
+    id: 'same-date-paid',
+    status: 'paid',
+    branch_id: 'hanoi',
+    tour: { start_date: '2026-06-10', tour_code: 'C-300', pattern: 'Hanoi Food' },
+    guide: {
+      full_name: 'Carol Guide',
+      korean_name: '캐롤',
+      vietnamese_name: 'Chi',
+      email: 'carol@example.com',
+    },
+  },
+  {
+    id: 'same-date-edit',
+    status: 'edit_requested',
+    branch_id: 'danang',
+    tour: { start_date: '2026-06-10', tour_code: 'A-050', pattern: 'Marble Mountain' },
+    guide: {
+      full_name: 'Daisy Guide',
+      korean_name: '데이지',
+      vietnamese_name: 'Dung',
+      email: 'daisy@example.com',
+    },
+  },
+  {
+    id: 'out-of-range',
+    status: 'pending_guide_confirmation',
+    branch_id: 'danang',
+    tour: { start_date: '2026-07-01', tour_code: 'Z-900', pattern: 'July Tour' },
+    guide: {
+      full_name: 'Evan Guide',
+      korean_name: '에반',
+      vietnamese_name: 'Em',
+      email: 'evan@example.com',
+    },
+  },
+]
+
+describe('/admin/settlements search list behavior', () => {
+  it('defaults to current month and 전체 상태 subtitle', () => {
+    const range = defaultAdminSettlementDateRange(new Date(Date.UTC(2026, 5, 15)))
+    expect(range).toEqual({ startDate: '2026-06-01', endDate: '2026-06-30' })
+    expect(
+      buildAdminSettlementSearchSubtitle({
+        ...range,
+        regionLabel: '전체 지역',
+        statusLabel: '전체 상태',
+      }),
+    ).toBe('2026-06-01 ~ 2026-06-30 · 전체 지역 · 전체 상태')
+  })
+
+  it('validates date range order and max one-year range', () => {
+    expect(
+      validateAdminSettlementDateRange({
+        startDate: '2026-06-30',
+        endDate: '2026-06-01',
+      }),
+    ).toEqual({ ok: false, message: ADMIN_SETTLEMENT_DATE_ORDER_ERROR })
+    expect(
+      validateAdminSettlementDateRange({
+        startDate: '2026-01-01',
+        endDate: '2027-01-01',
+      }),
+    ).toEqual({ ok: false, message: ADMIN_SETTLEMENT_DATE_RANGE_MAX_ERROR })
+    expect(
+      validateAdminSettlementDateRange({
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+      }),
+    ).toEqual({ ok: true })
+  })
+
+  it('date range filters by tour.start_date and 전체 includes all statuses', () => {
+    const filtered = filterAdminSettlementRowsForList(listRows, {
+      startDate: '2026-06-01',
+      endDate: '2026-06-30',
+    })
+
+    expect(filtered.map((r) => r.id)).toEqual([
+      'early-draft',
+      'same-date-edit',
+      'same-date-paid',
+      'late-submitted',
+    ])
+    expect(filtered.map((r) => r.status)).toEqual([
+      'draft',
+      'edit_requested',
+      'paid',
+      'submitted',
+    ])
+  })
+
+  it('status-specific filtering still works', () => {
+    const filtered = filterAdminSettlementRowsForList(listRows, {
+      startDate: '2026-06-01',
+      endDate: '2026-06-30',
+      status: 'submitted',
+    })
+
+    expect(filtered.map((r) => r.id)).toEqual(['late-submitted'])
+  })
+
+  it('search works by tour name, tour code, guide name, and guide email', () => {
+    expect(matchesAdminSettlementSearch(listRows[0], 'ba na')).toBe(true)
+    expect(matchesAdminSettlementSearch(listRows[1], 'A-100')).toBe(true)
+    expect(matchesAdminSettlementSearch(listRows[2], 'Carol')).toBe(true)
+    expect(matchesAdminSettlementSearch(listRows[3], 'daisy@example.com')).toBe(true)
+  })
+
+  it('region + date range + status + search work together', () => {
+    const filtered = filterAdminSettlementRowsForList(listRows, {
+      startDate: '2026-06-01',
+      endDate: '2026-06-30',
+      regionId: 'danang',
+      status: 'edit_requested',
+      search: 'marble',
+    })
+
+    expect(filtered.map((r) => r.id)).toEqual(['same-date-edit'])
   })
 })
 

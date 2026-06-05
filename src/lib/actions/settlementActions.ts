@@ -478,7 +478,27 @@ export async function getAdminSettlements(
   const regionId = await resolveSettlementRegionFilter(filters)
   if (regionId) q = q.eq('branch_id', regionId)
 
-  if (filters?.yearMonth) q = q.eq('year_month', filters.yearMonth)
+  if (filters?.startDate && filters?.endDate) {
+    const { data: toursInRange, error: toursInRangeError } = await supabase
+      .from('tours')
+      .select('id')
+      .gte('start_date', filters.startDate)
+      .lte('start_date', filters.endDate)
+
+    if (toursInRangeError) {
+      console.error('getAdminSettlements tours date range:', toursInRangeError.message)
+      return { items: [], total: 0, page, pageSize, totalPages: 0 }
+    }
+
+    const tourIdsInRange = (toursInRange ?? []).map((t) => t.id as string)
+    if (tourIdsInRange.length === 0) {
+      return { items: [], total: 0, page, pageSize, totalPages: 0 }
+    }
+    q = q.in('tour_id', tourIdsInRange)
+  } else if (filters?.yearMonth) {
+    q = q.eq('year_month', filters.yearMonth)
+  }
+
   if (filters?.status) {
     const statuses = expandWorkflowStatusFilter(filters.status)
     q = statuses.length === 1 ? q.eq('status', statuses[0]) : q.in('status', [...statuses])

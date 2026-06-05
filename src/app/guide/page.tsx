@@ -82,14 +82,11 @@ export default async function GuidePage() {
     <div className={pageShell} style={{ fontFamily: fontStack }}>
       <div className={contentShell}>
         <header className="rounded-[22px] border border-[#E9DED2] bg-[#FFFDF9] px-5 py-4 shadow-[0_4px_18px_rgba(43,33,24,0.03)]">
-          <p className="text-[15px] font-medium leading-snug text-[#8B7B6E]">안녕하세요,</p>
+          <p className="text-base font-medium leading-snug text-[#8B7B6E]">안녕하세요</p>
           <div className="mt-2 flex justify-end">
-            <div className="flex min-w-0 max-w-[72%] flex-col items-end">
-              <h1 className="text-right text-[22px] font-bold leading-tight tracking-[-0.02em] text-[#2B2118] break-words">
-                {session.full_name}님
-              </h1>
-              <div className="mt-1 h-[2px] w-7 rounded-full bg-[#F37021]/85" aria-hidden="true" />
-            </div>
+            <h1 className="min-w-0 max-w-[72%] text-right text-[22px] font-bold leading-tight tracking-[-0.02em] text-[#2B2118] break-words">
+              {session.full_name}님
+            </h1>
           </div>
         </header>
 

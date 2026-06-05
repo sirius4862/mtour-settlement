@@ -283,4 +283,8 @@ export {
   canAdminSendForConfirmation,
   assertGuideConfirmAction,
   assertAdminSendForConfirmation,
+  canRecallSettlement,
+  assertCanRecallSettlement,
+  RECALL_ELIGIBLE_STATUSES,
+  RECALL_TARGET_STATUS,
 } from '@/lib/settlement/status-guards'

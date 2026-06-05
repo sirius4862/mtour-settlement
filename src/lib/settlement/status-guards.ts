@@ -170,6 +170,66 @@ export function canMarkSettlementPaidForRole(
   return canMarkSettlementPaid(role) && canAdminPaySettlement(s)
 }
 
+/**
+ * Statuses an admin may recall (회수) — the settlement was already sent to the
+ * guide as an actionable item (최종확인 or 수정요청) but is not finalized or paid.
+ */
+export const RECALL_ELIGIBLE_STATUSES: SettlementStatus[] = [
+  'pending_guide_confirmation',
+  'edit_requested',
+]
+
+/**
+ * Recall returns the settlement to this existing admin-editable status.
+ * `submitted` is admin-editable (ADMIN_EDITABLE) and NOT guide-actionable
+ * (guide cannot edit/confirm it), so the recalled row leaves the guide's
+ * 최종확인/수정요청 lists while preserving every field value.
+ * Note: `draft` is unsuitable as a target because it is guide-editable here.
+ */
+export const RECALL_TARGET_STATUS: SettlementStatus = 'submitted'
+
+export interface SettlementRecallGuardInput {
+  status: SettlementStatus
+  guide_confirmed_at: string | null
+}
+
+/**
+ * Admin tier (admin + master_admin) may recall a settlement they sent to the
+ * guide, before the guide gives final confirmation and never once paid. Guides
+ * may never recall. Region scope (admin) is enforced separately
+ * (requireAdminSettlementRegionAccess), as it is for every other admin action.
+ */
+export function canRecallSettlement(
+  s: SettlementRecallGuardInput,
+  role: UserRole,
+): boolean {
+  if (!canOperationalAdminReview(role)) return false
+  if (!RECALL_ELIGIBLE_STATUSES.includes(s.status)) return false
+  if (s.status === 'pending_guide_confirmation' && s.guide_confirmed_at != null) {
+    return false
+  }
+  return true
+}
+
+export function assertCanRecallSettlement(
+  s: SettlementRecallGuardInput,
+  role: UserRole,
+): { ok: true } | { ok: false; error: string } {
+  if (!canOperationalAdminReview(role)) {
+    return { ok: false, error: '회수는 관리자 권한이 필요합니다.' }
+  }
+  if (s.status === 'paid') {
+    return { ok: false, error: '지급 완료된 정산서는 회수할 수 없습니다.' }
+  }
+  if (s.status === 'pending_guide_confirmation' && s.guide_confirmed_at != null) {
+    return { ok: false, error: '가이드가 이미 최종확인한 정산서는 회수할 수 없습니다.' }
+  }
+  if (!canRecallSettlement(s, role)) {
+    return { ok: false, error: '현재 상태에서는 회수할 수 없습니다.' }
+  }
+  return { ok: true }
+}
+
 export type AdminReviewAction = 'approve' | 'reject' | 'request_edit' | 'pay' | 'reopen'
 
 export function assertAdminReviewAction(

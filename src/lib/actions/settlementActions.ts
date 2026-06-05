@@ -51,8 +51,10 @@ import {
   assertAdminReviewAction,
   assertAdminSaveSettlement,
   assertAdminSendForConfirmation,
+  assertCanRecallSettlement,
   assertGuideConfirmAction,
   canAdminSendForConfirmation,
+  RECALL_TARGET_STATUS,
 } from '@/lib/settlement/status-guards'
 import {
   canOperationalAdminReview,
@@ -1353,6 +1355,73 @@ export async function reviewSettlement(params: {
   })
 
   revalidateSettlementPaths(params.id)
+  return { ok: true }
+}
+
+/**
+ * Recall (회수) — admin/master pulls back a settlement that was sent to the
+ * guide, returning it to admin review (submitted) before final confirmation.
+ *
+ * Surgical and status-only: it never touches monetary fields, paid_at, or guide
+ * confirmation flags, so calculations, payout, and company-profit values are
+ * preserved exactly. Region scope (admin) and the paid lock are enforced by the
+ * same guards used elsewhere. master_admin may recall across regions.
+ */
+export async function recallSettlement(
+  id: string,
+  reason?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getProfile()
+  if (!profile || !isAdminTier(profile.role)) {
+    return { ok: false, error: '관리자 권한이 필요합니다.' }
+  }
+
+  const supabase = await createClient()
+
+  const regionAccess = await requireAdminSettlementRegionAccess(supabase, id)
+  if (!regionAccess.ok) return { ok: false, error: regionAccess.error }
+
+  const { data: current } = await supabase
+    .from('settlements')
+    .select('id, status, guide_confirmed_at')
+    .eq('id', id)
+    .single()
+
+  if (!current) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+
+  const fromStatus = current.status as SettlementStatus
+  const guard = assertCanRecallSettlement(
+    { status: fromStatus, guide_confirmed_at: current.guide_confirmed_at as string | null },
+    profile.role,
+  )
+  if (!guard.ok) return { ok: false, error: guard.error }
+
+  const trimmedReason = reason?.trim() || null
+
+  // Status-only transition. admin_note is intentionally NOT overwritten so
+  // admin-entered notes are preserved; the recall reason lives in the audit log.
+  const { error } = await supabase
+    .from('settlements')
+    .update({ status: RECALL_TARGET_STATUS, reviewed_by: profile.id })
+    .eq('id', id)
+    .eq('status', fromStatus)
+
+  if (error) {
+    logServerError('[recallSettlement] update failed', error, { settlementId: id })
+    return { ok: false, error: '정산서를 회수할 수 없습니다. 잠시 후 다시 시도해주세요.' }
+  }
+
+  await insertAuditEvent(supabase, {
+    settlementId: id,
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: 'status_change',
+    fromStatus,
+    toStatus: RECALL_TARGET_STATUS,
+    note: trimmedReason ? `admin_recall: ${trimmedReason}` : 'admin_recall',
+  })
+
+  revalidateSettlementPaths(id)
   return { ok: true }
 }
 

@@ -165,7 +165,7 @@ export default async function AdminSettlementDetailPage({
 
       {shoppings.length > 0 && <ItemTable title="쇼핑 수익" rows={shoppings.map(sh => [
         sh.shop_name, sh.visit_date ?? '', fmt2(sh.sale_usd), fmt2(sh.com_usd), fmt2(sh.kb_usd)
-      ])} headers={['샵명', '날짜', 'SALE (참고)', 'COM (수익)', 'KB (회사 전용 수익)']} />}
+      ])} headers={['샵명', '날짜', 'SALE', 'COM', 'KB (회사 전용 수익)']} />}
 
       {options.length > 0 && <ItemTable title="옵션 수익" rows={options.map(op => [
         op.is_extra_vehicle ? '🚌 추가차량비' : op.option_name,

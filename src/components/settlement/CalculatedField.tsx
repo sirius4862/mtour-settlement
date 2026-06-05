@@ -2,8 +2,6 @@
 
 import type { AnnotatedNumber } from '@/lib/settlement/types-calc'
 import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
-import { FormulaHint } from './FormulaHint'
-
 export { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 
 export function CalculatedField({
@@ -29,8 +27,8 @@ export function CalculatedField({
       : currency === 'ratio'
         ? `${Math.round(field.value * 100)}%`
         : formatUsd(field.value)
-  const formulaLabel = formulaOverride ?? field.formula
   const label = labelOverride ?? field.label
+  void formulaOverride
 
   if (compact) {
     return (
@@ -39,27 +37,18 @@ export function CalculatedField({
           <p className="text-xs text-gray-600 truncate">{label}</p>
           <p className="text-[10px] font-mono text-gray-400">{field.excelRef}</p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="font-mono text-sm font-semibold text-gray-900">{display}</span>
-          <FormulaHint formula={formulaLabel} excelRef={field.excelRef} />
-        </div>
+        <span className="font-mono text-sm font-semibold text-gray-900 shrink-0">{display}</span>
       </div>
     )
   }
 
   return (
     <div className={`rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 ${className}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-gray-700">{label}</p>
-          <p className="text-[10px] font-mono text-blue-600 mt-0.5">{field.excelRef}</p>
-        </div>
-        <FormulaHint formula={formulaLabel} excelRef={field.excelRef} />
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-gray-700">{label}</p>
+        <p className="text-[10px] font-mono text-blue-600 mt-0.5">{field.excelRef}</p>
       </div>
       <p className="font-mono text-lg font-semibold text-gray-900 mt-1 text-right">{display}</p>
-      <p className="text-[10px] text-gray-400 mt-1 truncate" title={formulaLabel}>
-        {formulaLabel}
-      </p>
     </div>
   )
 }

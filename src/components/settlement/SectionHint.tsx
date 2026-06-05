@@ -1,13 +1,7 @@
 'use client'
 
-export function SectionHint({ excelRows, hint }: { excelRows: string; hint: string }) {
-  return (
-    <div className="rounded-xl bg-blue-50/90 border border-blue-100 px-3 py-2.5 text-xs text-blue-900 leading-relaxed">
-      <span className="font-mono font-semibold text-blue-700">{excelRows}</span>
-      <span className="mx-1.5 text-blue-300">|</span>
-      {hint}
-    </div>
-  )
+export function SectionHint(_props: { excelRows: string; hint: string }) {
+  return null
 }
 
 export function ValidationBanner({

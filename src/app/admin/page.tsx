@@ -8,12 +8,32 @@ import { formatRegionLabel } from '@/lib/region/regions'
 import { isMasterAdmin } from '@/lib/auth/permissions'
 import { STATUS_META } from '@/types'
 import {
-  buildAdminDashboardUrl,
+  ADMIN_DASHBOARD_STATUS_ORDER,
+  ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
+  buildAdminDashboardListSubtitle,
+  shouldFetchAdminSettlementRows,
+} from '@/lib/admin/settlement-list'
+import {
   parseDashboardStatusFilter,
   resolveDashboardRegionFilter,
 } from '@/lib/admin/dashboard-filter'
 
 export const dynamic = 'force-dynamic'
+
+function buildDashboardUrl(params: {
+  status?: string
+  regionId?: string
+  view?: string
+  page?: number
+}): string {
+  const q = new URLSearchParams()
+  if (params.status) q.set('status', params.status)
+  if (params.regionId) q.set('regionId', params.regionId)
+  if (params.view) q.set('view', params.view)
+  if (params.page && params.page > 1) q.set('page', String(params.page))
+  const s = q.toString()
+  return s ? `/admin?${s}` : '/admin'
+}
 
 export default async function AdminPage({
   searchParams,
@@ -23,27 +43,50 @@ export default async function AdminPage({
   const session = await requireAdmin()
   const params = await searchParams
   const regions = await getBranches()
-  const activeStatus = parseDashboardStatusFilter(params.status)
+  const parsedStatus = parseDashboardStatusFilter(params.status)
+  const activeStatus = parsedStatus && ADMIN_DASHBOARD_STATUS_ORDER.includes(parsedStatus)
+    ? parsedStatus
+    : ''
+  const view = params.view === 'all' && !activeStatus ? 'all' : ''
   const regionId = resolveDashboardRegionFilter({
     role: session.role,
     assignedRegionId: session.branch_id,
     requestedRegionId: params.regionId,
   })
   const page = Math.max(1, parseInt(params.page || '1', 10) || 1)
+  const shouldFetchRows = shouldFetchAdminSettlementRows({
+    status: activeStatus,
+    view,
+  })
 
   const [stats, settlements] = await Promise.all([
     getAdminDashboardStats({ regionId: regionId || undefined }),
-    getAdminSettlements({
-      status: activeStatus || undefined,
-      regionId: regionId || undefined,
-      page,
-    }),
+    shouldFetchRows
+      ? getAdminSettlements({
+          status: activeStatus || undefined,
+          regionId: regionId || undefined,
+          page,
+        })
+      : Promise.resolve({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 }),
   ])
 
   const scope = { role: session.role, assignedRegionId: session.branch_id }
   const assignedRegion = regions.find((r) => r.id === session.branch_id)
   const currentRegion = regions.find((r) => r.id === regionId)
+  const regionLabel = currentRegion
+    ? formatRegionLabel(currentRegion.code, currentRegion.name)
+    : isMasterAdmin(session.role)
+      ? '전체 지역'
+      : assignedRegion
+        ? formatRegionLabel(assignedRegion.code, assignedRegion.name)
+        : '지역 미지정'
   const activeMeta = activeStatus ? STATUS_META[activeStatus] : null
+  const listSubtitle = buildAdminDashboardListSubtitle({
+    regionLabel,
+    statusLabel: activeMeta?.label,
+    view,
+  })
+  const statsByStatus = new Map(stats.map((s) => [s.status, s.count]))
 
   return (
     <div className="space-y-6">
@@ -69,25 +112,25 @@ export default async function AdminPage({
           </p>
         </div>
         <Link
-          href={buildAdminDashboardUrl({ regionId })}
+          href={buildDashboardUrl({ regionId, view: 'all' })}
           className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
-            activeStatus
-              ? 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-              : 'bg-gray-900 text-white border-gray-900'
+            view === 'all'
+              ? 'bg-gray-900 text-white border-gray-900'
+              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
           }`}
         >
           전체 보기
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {stats.map(({ status, count }) => {
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {ADMIN_DASHBOARD_STATUS_ORDER.map((status) => {
           const meta = STATUS_META[status]
           const isActive = activeStatus === status
           return (
             <Link
               key={status}
-              href={buildAdminDashboardUrl({ status, regionId })}
+              href={buildDashboardUrl({ status, regionId })}
               aria-current={isActive ? 'page' : undefined}
               className={`rounded-2xl p-4 border text-center transition-colors ${
                 isActive
@@ -95,7 +138,7 @@ export default async function AdminPage({
                   : 'bg-white border-gray-100 hover:border-blue-200 hover:bg-blue-50/40'
               }`}
             >
-              <p className="text-2xl font-bold text-gray-800">{count}</p>
+              <p className="text-2xl font-bold text-gray-800">{statsByStatus.get(status) ?? 0}</p>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${meta.bg} ${meta.text} mt-1 inline-block`}>
                 {meta.label}
               </span>
@@ -107,6 +150,7 @@ export default async function AdminPage({
       {isMasterAdmin(session.role) && (
         <form className="flex items-center gap-2">
           {activeStatus && <input type="hidden" name="status" value={activeStatus} />}
+          {view && <input type="hidden" name="view" value={view} />}
           <select
             name="regionId"
             defaultValue={regionId}
@@ -132,22 +176,38 @@ export default async function AdminPage({
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h2 className="text-sm font-semibold text-gray-700">정산서 목록</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {currentRegion
-                ? formatRegionLabel(currentRegion.code, currentRegion.name)
-                : isMasterAdmin(session.role)
-                  ? '전체 지역'
-                  : assignedRegion
-                    ? formatRegionLabel(assignedRegion.code, assignedRegion.name)
-                    : '지역 미지정'}
-              {activeMeta ? ` · ${activeMeta.label}` : ' · 전체 상태'}
-            </p>
+            <p className="text-xs text-gray-400 mt-0.5">{listSubtitle}</p>
           </div>
-          <span className="text-xs text-gray-400">
-            {settlements.total}건 · {settlements.page}/{Math.max(settlements.totalPages, 1)}페이지
-          </span>
+          <div className="flex items-center gap-2">
+            <Link
+              href={buildDashboardUrl({ regionId, view: 'all' })}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                view === 'all'
+                  ? 'border-blue-200 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 bg-white text-blue-600 hover:bg-gray-50'
+              }`}
+            >
+              전체 보기
+            </Link>
+            <Link
+              href={`/admin/settlements?status=paid${regionId ? `&regionId=${regionId}` : ''}`}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            >
+              지급완료 내역
+            </Link>
+            <span className="text-xs text-gray-400">
+              {shouldFetchRows
+                ? `${settlements.total}건 · ${settlements.page}/${Math.max(settlements.totalPages, 1)}페이지`
+                : '상태 미선택'}
+            </span>
+          </div>
         </div>
-        {settlements.items.length === 0 ? (
+
+        {!shouldFetchRows ? (
+          <p className="text-sm text-gray-400 py-12 text-center">
+            {ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE}
+          </p>
+        ) : settlements.items.length === 0 ? (
           <p className="text-sm text-gray-400 py-12 text-center">조회 결과가 없습니다.</p>
         ) : (
           <>
@@ -156,9 +216,10 @@ export default async function AdminPage({
               <div className="flex items-center justify-center gap-3 pt-2">
                 {page > 1 ? (
                   <Link
-                    href={buildAdminDashboardUrl({
+                    href={buildDashboardUrl({
                       status: activeStatus,
                       regionId,
+                      view,
                       page: page - 1,
                     })}
                     className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
@@ -173,9 +234,10 @@ export default async function AdminPage({
                 </span>
                 {page < settlements.totalPages ? (
                   <Link
-                    href={buildAdminDashboardUrl({
+                    href={buildDashboardUrl({
                       status: activeStatus,
                       regionId,
+                      view,
                       page: page + 1,
                     })}
                     className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"

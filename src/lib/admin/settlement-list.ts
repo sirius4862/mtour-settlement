@@ -1,6 +1,7 @@
 import type { SettlementStatus } from '@/types'
 import type { GuideNameFields } from '@/lib/guide/display-name'
 import type { SettlementCalcSummaryJson } from '@/lib/settlement/calc-summary'
+import { WORKFLOW_STATUS_ORDER } from '@/lib/settlement/status-display'
 
 export const ADMIN_SETTLEMENT_PAGE_SIZE = 25
 
@@ -8,6 +9,13 @@ export const ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE =
   '상태 카드를 선택하면 해당 정산서가 표시됩니다.'
 
 export const ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE = '상태 미선택'
+
+export const ADMIN_DASHBOARD_STATUS_ORDER: SettlementStatus[] = [
+  'draft',
+  'submitted',
+  'edit_requested',
+  'pending_guide_confirmation',
+]
 
 export type AdminSettlementListMode = 'none' | 'status' | 'all'
 
@@ -37,6 +45,16 @@ export function buildAdminSettlementListSubtitle(params: {
   return ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE
 }
 
+export function buildAdminDashboardListSubtitle(params: {
+  regionLabel: string
+  statusLabel?: string
+  view?: string
+}): string {
+  if (params.statusLabel) return `${params.regionLabel} · ${params.statusLabel}`
+  if (params.view === 'all') return `${params.regionLabel} · 전체 보기`
+  return `${params.regionLabel} · ${ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE}`
+}
+
 /** Admin action queue — includes legacy DB statuses until migrated. */
 export const ACTION_NEEDED_STATUSES = [
   'submitted',
@@ -47,14 +65,8 @@ export const ACTION_NEEDED_STATUSES = [
 
 export type ActionNeededStatus = (typeof ACTION_NEEDED_STATUSES)[number]
 
-/** Five workflow statuses on admin dashboard cards. */
-export const DASHBOARD_STATUS_ORDER: SettlementStatus[] = [
-  'draft',
-  'submitted',
-  'edit_requested',
-  'pending_guide_confirmation',
-  'paid',
-]
+/** Five workflow statuses available to the full admin list. */
+export const DASHBOARD_STATUS_ORDER: SettlementStatus[] = [...WORKFLOW_STATUS_ORDER]
 
 export function aggregateSettlementStatusCounts(
   rows: { status: string }[],

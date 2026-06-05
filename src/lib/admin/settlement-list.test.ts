@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   ACTION_NEEDED_STATUSES,
+  ADMIN_DASHBOARD_STATUS_ORDER,
   ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
   ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE,
   actionNeededStatusPriority,
   aggregateSettlementStatusCounts,
+  buildAdminDashboardListSubtitle,
   buildAdminSettlementListSubtitle,
   countActionNeededFromRows,
   countActionNeededFromStats,
@@ -167,6 +169,55 @@ describe('admin settlement list dashboard behavior', () => {
     expect(buildAdminSettlementListSubtitle({ regionLabel: '전체 지역', view: 'all' })).toBe(
       '전체 지역 · 전체 보기',
     )
+  })
+})
+
+describe('main admin dashboard settlement list behavior', () => {
+  it('shows only active work-status cards and excludes 지급완료 from main cards', () => {
+    expect(ADMIN_DASHBOARD_STATUS_ORDER).toEqual([
+      'draft',
+      'submitted',
+      'edit_requested',
+      'pending_guide_confirmation',
+    ])
+    expect(ADMIN_DASHBOARD_STATUS_ORDER).not.toContain('paid')
+  })
+
+  it('does not render settlement rows by default and shows region-aware empty subtitle', () => {
+    expect(resolveAdminSettlementListMode({})).toBe('none')
+    expect(shouldFetchAdminSettlementRows({})).toBe(false)
+    expect(buildAdminDashboardListSubtitle({ regionLabel: '전체 지역' })).toBe(
+      '전체 지역 · 상태 미선택',
+    )
+    expect(ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE).toBe(
+      '상태 카드를 선택하면 해당 정산서가 표시됩니다.',
+    )
+  })
+
+  it('clicking active status cards enables status-scoped dashboard rows', () => {
+    for (const [status, label] of [
+      ['draft', '미제출'],
+      ['submitted', '제출됨'],
+      ['edit_requested', '수정요청'],
+      ['pending_guide_confirmation', '최종확인'],
+    ] as const) {
+      expect(shouldFetchAdminSettlementRows({ status })).toBe(true)
+      expect(
+        buildAdminDashboardListSubtitle({
+          regionLabel: '전체 지역',
+          statusLabel: label,
+        }),
+      ).toBe(`전체 지역 · ${label}`)
+    }
+  })
+
+  it('keeps region-only dashboard filtering empty until status or 전체 보기 is selected', () => {
+    expect(shouldFetchAdminSettlementRows({})).toBe(false)
+    expect(shouldFetchAdminSettlementRows({ status: 'submitted' })).toBe(true)
+    expect(shouldFetchAdminSettlementRows({ view: 'all' })).toBe(true)
+    expect(
+      buildAdminDashboardListSubtitle({ regionLabel: '다낭', view: 'all' }),
+    ).toBe('다낭 · 전체 보기')
   })
 })
 

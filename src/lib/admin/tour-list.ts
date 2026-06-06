@@ -2,6 +2,8 @@ import type { SettlementStatus } from '@/types'
 
 /** Settlement status labels as shown on the admin tour-management screen. */
 export const TOUR_SETTLEMENT_NONE_LABEL = '정산서 미작성'
+export const ADMIN_TOUR_EARLY_VIEW_SUBTITLE = '정산서 미작성/작성중 투어'
+export const ADMIN_TOUR_ALL_VIEW_SUBTITLE = '전체 투어'
 
 export type TourSettlementStatusLabel =
   | typeof TOUR_SETTLEMENT_NONE_LABEL
@@ -37,6 +39,24 @@ export function tourSettlementStatusLabel(
     default:
       return TOUR_SETTLEMENT_NONE_LABEL
   }
+}
+
+export type AdminTourListView = 'early' | 'all'
+
+export interface AdminTourSettlementState {
+  settlement?: { status: SettlementStatus } | null
+}
+
+export function isAdminTourEarlyAssignmentStage(tour: AdminTourSettlementState): boolean {
+  return !tour.settlement || tour.settlement.status === 'draft'
+}
+
+export function filterAdminToursForView<T extends SortableTour & AdminTourSettlementState>(
+  tours: T[],
+  view: AdminTourListView,
+): T[] {
+  const rows = view === 'all' ? tours : tours.filter(isAdminTourEarlyAssignmentStage)
+  return sortAdminToursForList(rows)
 }
 
 export interface SortableTour {

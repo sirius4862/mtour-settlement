@@ -1,42 +1,66 @@
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getAdminTours } from '@/lib/actions/tourActions'
-import { tourSettlementStatusLabel } from '@/lib/admin/tour-list'
+import {
+  ADMIN_TOUR_ALL_VIEW_SUBTITLE,
+  ADMIN_TOUR_EARLY_VIEW_SUBTITLE,
+  filterAdminToursForView,
+  tourSettlementStatusLabel,
+} from '@/lib/admin/tour-list'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminToursPage() {
+export default async function AdminToursPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>
+}) {
   await requireAdmin()
   const tours = await getAdminTours()
+  const params = await searchParams
+  const view = params.view === 'all' ? 'all' : 'early'
+  const visibleTours = filterAdminToursForView(tours, view)
+  const subtitle =
+    view === 'all' ? ADMIN_TOUR_ALL_VIEW_SUBTITLE : ADMIN_TOUR_EARLY_VIEW_SUBTITLE
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-gray-900">투어 관리</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{tours.length}건 · 가이드 정산용</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {visibleTours.length}건 · {subtitle}
+          </p>
         </div>
-        <Link
-          href="/admin/tours/new"
-          className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 2v10M2 7h10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          투어 등록
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={view === 'all' ? '/admin/tours' : '/admin/tours?view=all'}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium text-blue-600 hover:bg-gray-50"
+          >
+            {view === 'all' ? '미작성/작성중 보기' : '전체 투어 보기'}
+          </Link>
+          <Link
+            href="/admin/tours/new"
+            className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 2v10M2 7h10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            투어 등록
+          </Link>
+        </div>
       </div>
 
-      {tours.length === 0 ? (
+      {visibleTours.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center">
-          <p className="text-gray-500 text-sm">등록된 투어가 없습니다.</p>
+          <p className="text-gray-500 text-sm">표시할 투어가 없습니다.</p>
           <Link href="/admin/tours/new" className="text-sm text-blue-600 mt-2 inline-block">
             첫 투어 등록하기 →
           </Link>
         </div>
       ) : (
         <div className="space-y-2">
-          {tours.map((t) => {
+          {visibleTours.map((t) => {
             const settlementLabel = tourSettlementStatusLabel(t.settlement?.status)
             return (
               <div

@@ -7,6 +7,7 @@ import type { Branch } from '@/types'
 import type { GuideOption } from '@/lib/actions/tourActions'
 import { createTour } from '@/lib/actions/tourActions'
 import { calcTourNights } from '@/lib/tour/nights'
+import { TOUR_REGISTRATION_TEXT_MAX_LENGTH } from '@/lib/tour/create-tour-validation'
 import { FieldLabel, SectionCard } from '@/components/ui/FormPrimitives'
 import { formatGuideAssignmentLabel } from '@/lib/guide/display-name'
 import { formatRegionLabel } from '@/lib/region/regions'
@@ -83,6 +84,7 @@ export function CreateTourForm({ branches, guides }: Props) {
               className={inputClass}
               value={tourCode}
               onChange={(e) => setTourCode(e.target.value)}
+              maxLength={TOUR_REGISTRATION_TEXT_MAX_LENGTH}
               placeholder="DN-2026-0501"
               required
             />
@@ -93,6 +95,7 @@ export function CreateTourForm({ branches, guides }: Props) {
               className={inputClass}
               value={agencyName}
               onChange={(e) => setAgencyName(e.target.value)}
+              maxLength={TOUR_REGISTRATION_TEXT_MAX_LENGTH}
               placeholder="M투어"
               required
             />
@@ -103,6 +106,7 @@ export function CreateTourForm({ branches, guides }: Props) {
               className={inputClass}
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
+              maxLength={TOUR_REGISTRATION_TEXT_MAX_LENGTH}
               placeholder="다낭(3N), 호이안"
               required
             />

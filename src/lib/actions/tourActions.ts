@@ -10,6 +10,7 @@ import {
 import type { AdminRegionScope } from '@/lib/region/permissions'
 import { filterMtourRegionBranches } from '@/lib/region/regions'
 import { sortAdminToursForList } from '@/lib/admin/tour-list'
+import { validateCreateTourTextLengths } from '@/lib/tour/create-tour-validation'
 import { createClient } from '@/lib/supabase/server'
 import type { Branch, SettlementStatus, Tour } from '@/types'
 
@@ -158,6 +159,8 @@ export async function createTour(
   if (!tour_code) return { ok: false, error: '투어코드를 입력해주세요.' }
   if (!agency_name) return { ok: false, error: '여행사명을 입력해주세요.' }
   if (!pattern) return { ok: false, error: '패턴을 입력해주세요.' }
+  const textLengthValidation = validateCreateTourTextLengths({ tour_code, agency_name, pattern })
+  if (!textLengthValidation.ok) return textLengthValidation
   if (!input.start_date || !input.end_date) return { ok: false, error: '기간을 입력해주세요.' }
   if (input.end_date < input.start_date) {
     return { ok: false, error: '종료일은 시작일 이후여야 합니다.' }

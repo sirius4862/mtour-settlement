@@ -77,4 +77,22 @@ describe('/admin/tours card UI source', () => {
     expect(source).toContain('정산서: {settlementLabel}')
     expect(source).toContain('/admin/settlements/${t.settlement.id}')
   })
+
+  it('does not introduce display truncation for tour names', () => {
+    expect(source).not.toContain('truncate')
+    expect(source).toContain('break-words')
+  })
+})
+
+describe('/admin/tours/new form source', () => {
+  const source = readFileSync('src/app/admin/tours/new/CreateTourForm.tsx', 'utf8')
+
+  it('caps the three main registration text fields at 20 characters', () => {
+    expect(source.match(/maxLength=\{TOUR_REGISTRATION_TEXT_MAX_LENGTH\}/g)).toHaveLength(3)
+  })
+
+  it('does not add visible 20-character warning copy', () => {
+    expect(source).not.toContain('20자')
+    expect(source).not.toContain('20 characters')
+  })
 })

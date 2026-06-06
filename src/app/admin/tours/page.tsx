@@ -45,7 +45,7 @@ export default async function AdminToursPage() {
               >
                 <div className="flex justify-between items-start gap-3 mb-2">
                   <div className="min-w-0">
-                    <p className="font-medium text-gray-800 truncate">{t.pattern}</p>
+                    <p className="font-medium text-gray-800 break-words">{t.pattern}</p>
                     <p className="text-xs text-gray-400 font-mono mt-0.5">{t.tour_code}</p>
                   </div>
                   <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">

@@ -75,6 +75,9 @@ export async function getAdminTours(): Promise<AdminTourListItem[]> {
   const { data } = await ctx.supabase
     .from('tours')
     .select('*, guide:profiles!guide_id(id, full_name, email)')
+    .order('start_date', { ascending: true })
+    .order('tour_code', { ascending: true })
+    .order('id', { ascending: true })
     .limit(200)
 
   const tours = filterAdminToursByRegionScope(

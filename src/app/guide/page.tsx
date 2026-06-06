@@ -39,6 +39,9 @@ function statusBadge(status: SettlementStatus): { label: string; className: stri
       return { label: '확인 이의', className: 'border-[#F7CFC9] bg-[#FCEAE7] text-[#B42318]' }
     case 'rejected':
       return { label: '반려됨', className: 'border-[#F7CFC9] bg-[#FCEAE7] text-[#B42318]' }
+    case 'recalled':
+      // Recalled assignments are filtered out of guide views; badge kept for type safety.
+      return { label: '배정회수', className: 'border-[#DAD3C9] bg-[#F0ECE6] text-[#6B6157]' }
   }
 }
 

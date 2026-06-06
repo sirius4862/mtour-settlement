@@ -4,7 +4,10 @@ import type { SettlementStatus } from '@/types'
 import {
   ADMIN_TOUR_ALL_VIEW_SUBTITLE,
   ADMIN_TOUR_EARLY_VIEW_SUBTITLE,
+  TOUR_ASSIGNMENT_RECALLED_LABEL,
   TOUR_SETTLEMENT_NONE_LABEL,
+  adminTourDisplayLabel,
+  canRecallAdminTour,
   filterAdminToursForView,
   sortAdminToursForList,
   tourSettlementStatusLabel,
@@ -138,6 +141,68 @@ describe('filterAdminToursForView', () => {
   })
 })
 
+describe('admin tour assignment recall (배정회수)', () => {
+  const recalledNoSettlement = {
+    id: 'recalled-none',
+    start_date: '2026-06-02',
+    tour_code: 'R-100',
+    assignment_status: 'recalled' as const,
+    settlement: null,
+  }
+  const recalledWithSettlement = {
+    id: 'recalled-draft',
+    start_date: '2026-06-03',
+    tour_code: 'R-200',
+    assignment_status: 'recalled' as const,
+    settlement: { status: 'recalled' as SettlementStatus },
+  }
+
+  it('excludes recalled tours from the default early view', () => {
+    const rows = [...tourRows, recalledNoSettlement, recalledWithSettlement]
+    const ids = filterAdminToursForView(rows, 'early').map((t) => t.id)
+    expect(ids).not.toContain('recalled-none')
+    expect(ids).not.toContain('recalled-draft')
+    expect(ids).toEqual(['no-settlement', 'draft'])
+  })
+
+  it('includes recalled tours in the full view', () => {
+    const rows = [recalledNoSettlement, recalledWithSettlement]
+    const ids = filterAdminToursForView(rows, 'all').map((t) => t.id)
+    expect(ids).toContain('recalled-none')
+    expect(ids).toContain('recalled-draft')
+  })
+
+  it('labels recalled tours 배정회수 regardless of residual settlement status', () => {
+    expect(adminTourDisplayLabel(recalledNoSettlement)).toBe(TOUR_ASSIGNMENT_RECALLED_LABEL)
+    expect(adminTourDisplayLabel(recalledWithSettlement)).toBe(TOUR_ASSIGNMENT_RECALLED_LABEL)
+    expect(TOUR_ASSIGNMENT_RECALLED_LABEL).toBe('배정회수')
+  })
+
+  it('shows the recall button only for eligible (미작성/작성중/제출됨) tours', () => {
+    expect(canRecallAdminTour({ assignment_status: 'assigned', settlement: null })).toBe(true)
+    expect(
+      canRecallAdminTour({ assignment_status: 'assigned', settlement: { status: 'draft' } }),
+    ).toBe(true)
+    expect(
+      canRecallAdminTour({ assignment_status: 'assigned', settlement: { status: 'submitted' } }),
+    ).toBe(true)
+    // ineligible
+    expect(
+      canRecallAdminTour({ assignment_status: 'assigned', settlement: { status: 'edit_requested' } }),
+    ).toBe(false)
+    expect(
+      canRecallAdminTour({
+        assignment_status: 'assigned',
+        settlement: { status: 'pending_guide_confirmation' },
+      }),
+    ).toBe(false)
+    expect(
+      canRecallAdminTour({ assignment_status: 'assigned', settlement: { status: 'paid' } }),
+    ).toBe(false)
+    expect(canRecallAdminTour(recalledNoSettlement)).toBe(false)
+  })
+})
+
 describe('/admin/tours card UI source', () => {
   const source = readFileSync('src/app/admin/tours/page.tsx', 'utf8')
 
@@ -145,7 +210,12 @@ describe('/admin/tours card UI source', () => {
     expect(source).not.toContain('가이드 배정됨')
     expect(source).not.toContain('가이드 선택 가능')
     expect(source).not.toContain('가이드 변경')
-    expect(source).not.toContain('배정회수')
+  })
+
+  it('wires the assignment-recall button for eligible tours only', () => {
+    expect(source).toContain('canRecallAdminTour')
+    expect(source).toContain('RecallAssignmentButton')
+    expect(source).toContain('recallable && <RecallAssignmentButton')
   })
 
   it('keeps the guide name line, settlement status badge, and settlement detail link', () => {

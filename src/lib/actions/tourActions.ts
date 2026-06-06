@@ -11,8 +11,10 @@ import type { AdminRegionScope } from '@/lib/region/permissions'
 import { filterMtourRegionBranches } from '@/lib/region/regions'
 import { sortAdminToursForList } from '@/lib/admin/tour-list'
 import { validateCreateTourTextLengths } from '@/lib/tour/create-tour-validation'
+import { assertCanRecallTourAssignment } from '@/lib/tour/assignment-recall'
+import { assertAdminCanAccessSettlementBranch } from '@/lib/region/settlement-access'
 import { createClient } from '@/lib/supabase/server'
-import type { Branch, SettlementStatus, Tour } from '@/types'
+import type { Branch, SettlementStatus, Tour, TourAssignmentStatus } from '@/types'
 
 export interface GuideOption {
   id: string
@@ -29,7 +31,7 @@ export interface TourWithGuide extends Tour {
 
 export interface AdminTourListItem extends TourWithGuide {
   /** Settlement created by the assigned guide for this tour, if any. */
-  settlement: { id: string; status: SettlementStatus } | null
+  settlement: { id: string; status: SettlementStatus; guide_confirmed_at: string | null } | null
 }
 
 export interface CreateTourInput {
@@ -88,19 +90,32 @@ export async function getAdminTours(): Promise<AdminTourListItem[]> {
   const sorted = sortAdminToursForList(tours)
 
   const tourIds = sorted.map((t) => t.id)
-  const settlementByTourId = new Map<string, { id: string; status: SettlementStatus }>()
+  const settlementByTourId = new Map<
+    string,
+    { id: string; status: SettlementStatus; guide_confirmed_at: string | null }
+  >()
   if (tourIds.length > 0) {
     const { data: settlements } = await ctx.supabase
       .from('settlements')
-      .select('id, tour_id, guide_id, status')
+      .select('id, tour_id, guide_id, status, guide_confirmed_at')
       .in('tour_id', tourIds)
 
     for (const row of settlements ?? []) {
-      const r = row as { id: string; tour_id: string; guide_id: string; status: SettlementStatus }
+      const r = row as {
+        id: string
+        tour_id: string
+        guide_id: string
+        status: SettlementStatus
+        guide_confirmed_at: string | null
+      }
       // Show the assigned guide's settlement for this tour.
       const tour = sorted.find((t) => t.id === r.tour_id)
       if (tour && r.guide_id === tour.guide_id && !settlementByTourId.has(r.tour_id)) {
-        settlementByTourId.set(r.tour_id, { id: r.id, status: r.status })
+        settlementByTourId.set(r.tour_id, {
+          id: r.id,
+          status: r.status,
+          guide_confirmed_at: r.guide_confirmed_at,
+        })
       }
     }
   }
@@ -225,4 +240,83 @@ export async function createTour(
   revalidatePath('/guide/settlements')
 
   return { ok: true, id: data.id }
+}
+
+/**
+ * 배정회수 — recall a wrong guide assignment. Status-only / assignment-only change:
+ * the tour is marked `recalled` and any draft/submitted settlement moves to
+ * `recalled`. Never deletes records, never touches monetary fields, paid_at,
+ * guide_confirmed_at/by, or receipts; guide_id is preserved for traceability.
+ * Guide change is NOT supported and is never performed here.
+ */
+export async function recallTourAssignment(
+  tourId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await requireAdminProfile()
+  if (!ctx) return { ok: false, error: '관리자 권한이 필요합니다.' }
+
+  const { data: tour } = await ctx.supabase
+    .from('tours')
+    .select('id, branch_id, guide_id, assignment_status')
+    .eq('id', tourId)
+    .maybeSingle()
+  if (!tour) return { ok: false, error: '투어를 찾을 수 없습니다.' }
+
+  const regionGuard = assertAdminCanAccessSettlementBranch(
+    adminRegionScope(ctx),
+    tour.branch_id as string,
+  )
+  if (!regionGuard.ok) return { ok: false, error: regionGuard.error }
+
+  const { data: settlement } = await ctx.supabase
+    .from('settlements')
+    .select('id, status, guide_confirmed_at')
+    .eq('tour_id', tourId)
+    .eq('guide_id', tour.guide_id as string)
+    .maybeSingle()
+
+  const guard = assertCanRecallTourAssignment({
+    role: ctx.role,
+    assignmentStatus: (tour.assignment_status ?? 'assigned') as TourAssignmentStatus,
+    settlementStatus: (settlement?.status ?? null) as SettlementStatus | null,
+    guideConfirmedAt: (settlement?.guide_confirmed_at ?? null) as string | null,
+  })
+  if (!guard.ok) return { ok: false, error: guard.error }
+
+  const now = new Date().toISOString()
+
+  // Recall the tour first so the guide immediately loses visibility — tours RLS and
+  // the guide settlement read view both key off tours.assignment_status = 'recalled'.
+  const { error: tourError } = await ctx.supabase
+    .from('tours')
+    .update({ assignment_status: 'recalled', recalled_at: now, recalled_by: ctx.id })
+    .eq('id', tourId)
+    .eq('assignment_status', 'assigned')
+  if (tourError) {
+    return { ok: false, error: '배정을 회수할 수 없습니다. 잠시 후 다시 시도해주세요.' }
+  }
+
+  // Status-only transition for an existing draft/submitted settlement. The workflow
+  // trigger authorizes only draft/submitted → recalled for admin tier.
+  if (settlement) {
+    const fromStatus = settlement.status as SettlementStatus
+    const { error: settlementError } = await ctx.supabase
+      .from('settlements')
+      .update({ status: 'recalled' })
+      .eq('id', settlement.id as string)
+      .eq('status', fromStatus)
+    if (settlementError) {
+      return {
+        ok: false,
+        error: '배정은 회수되었으나 정산서 상태 갱신에 실패했습니다. 다시 시도해주세요.',
+      }
+    }
+  }
+
+  revalidatePath('/admin/tours')
+  revalidatePath('/guide')
+  revalidatePath('/guide/settlements')
+  revalidatePath('/guide/settlements/new')
+
+  return { ok: true }
 }

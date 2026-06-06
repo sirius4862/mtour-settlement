@@ -7,6 +7,10 @@ export type SettlementStatus =
   | 'draft' | 'submitted' | 'approved'
   | 'rejected' | 'edit_requested' | 'paid'
   | 'pending_guide_confirmation' | 'clarification_requested'
+  | 'recalled'
+
+/** tours.assignment_status — whether the guide assignment is active or recalled (배정회수). */
+export type TourAssignmentStatus = 'assigned' | 'recalled'
 
 export type SettlementSnapshotKind =
   | 'guide_submit' | 'admin_pre_confirm' | 'guide_confirmed'
@@ -53,6 +57,10 @@ export interface Tour {
   agency_name: string; start_date: string; end_date: string
   nights: number; pax_count: number; vehicle_type: string | null
   guide_id: string; tc_name: string | null; branch_id: string
+  /** 배정회수 — `assigned` by default; `recalled` hides the tour from the guide. */
+  assignment_status: TourAssignmentStatus
+  recalled_at: string | null
+  recalled_by: string | null
   created_by: string; created_at: string; updated_at: string
 }
 
@@ -246,6 +254,8 @@ export const STATUS_META: Record<SettlementStatus, { label: string; bg: string; 
   pending_guide_confirmation: { label: '최종확인', bg: 'bg-orange-100', text: 'text-orange-700' },
   edit_requested: { label: '수정요청',     bg: 'bg-blue-100',    text: 'text-blue-700'    },
   paid:           { label: '지급완료',     bg: 'bg-purple-100',  text: 'text-purple-700'  },
+  /** 배정회수 — wrong assignment recalled by admin; hidden from guide, archived for admin. */
+  recalled:       { label: '배정회수',     bg: 'bg-slate-200',   text: 'text-slate-600'   },
   /** @deprecated legacy DB rows — hidden from admin filters; mapped in status-display */
   clarification_requested:    { label: '확인 이의',     bg: 'bg-rose-100',   text: 'text-rose-700'   },
   approved:       { label: '최종확인', bg: 'bg-orange-100', text: 'text-orange-700' },
@@ -288,3 +298,11 @@ export {
   RECALL_ELIGIBLE_STATUSES,
   RECALL_TARGET_STATUS,
 } from '@/lib/settlement/status-guards'
+
+export {
+  ASSIGNMENT_RECALLED_STATUS,
+  ASSIGNMENT_RECALL_ELIGIBLE_SETTLEMENT_STATUSES,
+  isAssignmentRecallEligible,
+  assertCanRecallTourAssignment,
+  type AssignmentRecallInput,
+} from '@/lib/tour/assignment-recall'

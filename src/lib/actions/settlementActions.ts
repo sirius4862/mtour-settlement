@@ -238,6 +238,7 @@ export async function getAvailableTours(): Promise<Tour[]> {
   const { data: tours } = await supabase
     .from('tours').select('*')
     .eq('guide_id', user.id)
+    .neq('assignment_status', 'recalled')
     .gte('start_date', since)
     .order('start_date', { ascending: false })
 
@@ -630,10 +631,13 @@ export async function upsertSettlement(payload: {
 
   const { data: tour } = await supabase
     .from('tours')
-    .select('start_date, branch_id, guide_id')
+    .select('start_date, branch_id, guide_id, assignment_status')
     .eq('id', payload.tour_id)
     .single()
   if (!tour) return { ok: false, error: '투어를 찾을 수 없습니다.' }
+  if (tour.assignment_status === 'recalled') {
+    return { ok: false, error: '배정이 회수된 투어입니다. 정산서를 작성할 수 없습니다.' }
+  }
 
   const branchResult = resolveSettlementOperatingBranchId(
     {

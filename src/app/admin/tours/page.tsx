@@ -4,9 +4,11 @@ import { getAdminTours } from '@/lib/actions/tourActions'
 import {
   ADMIN_TOUR_ALL_VIEW_SUBTITLE,
   ADMIN_TOUR_EARLY_VIEW_SUBTITLE,
+  adminTourDisplayLabel,
+  canRecallAdminTour,
   filterAdminToursForView,
-  tourSettlementStatusLabel,
 } from '@/lib/admin/tour-list'
+import { RecallAssignmentButton } from './RecallAssignmentButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +63,8 @@ export default async function AdminToursPage({
       ) : (
         <div className="space-y-2">
           {visibleTours.map((t) => {
-            const settlementLabel = tourSettlementStatusLabel(t.settlement?.status)
+            const settlementLabel = adminTourDisplayLabel(t)
+            const recallable = canRecallAdminTour(t)
             return (
               <div
                 key={t.id}
@@ -86,14 +89,19 @@ export default async function AdminToursPage({
                     {t.pax_count}명 · {t.vehicle_type ?? '—'} · TC {t.tc_name ?? '—'}
                   </span>
                 </div>
-                {t.settlement && (
-                  <div className="mt-3 pt-3 border-t border-gray-50">
-                    <Link
-                      href={`/admin/settlements/${t.settlement.id}`}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                    >
-                      정산서 보기 →
-                    </Link>
+                {(t.settlement || recallable) && (
+                  <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between gap-3">
+                    {t.settlement ? (
+                      <Link
+                        href={`/admin/settlements/${t.settlement.id}`}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        정산서 보기 →
+                      </Link>
+                    ) : (
+                      <span />
+                    )}
+                    {recallable && <RecallAssignmentButton tourId={t.id} />}
                   </div>
                 )}
               </div>

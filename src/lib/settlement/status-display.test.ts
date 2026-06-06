@@ -46,4 +46,10 @@ describe('getSettlementStatusDisplay', () => {
     const display = getSettlementStatusDisplay('clarification_requested', null)
     expect(display.label).toBe('수정요청')
   })
+
+  it('labels a recalled (배정회수) settlement', () => {
+    const display = getSettlementStatusDisplay('recalled', null)
+    expect(display.label).toBe('배정회수')
+    expect(display.payReadyBadge).toBeUndefined()
+  })
 })

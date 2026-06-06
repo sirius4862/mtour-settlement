@@ -1,16 +1,18 @@
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getAdminTours } from '@/lib/actions/tourActions'
+import {
+  TOUR_GUIDE_ASSIGNED_LABEL,
+  TOUR_GUIDE_UNASSIGNED_LABEL,
+  isTourGuideAssigned,
+  tourSettlementStatusLabel,
+} from '@/lib/admin/tour-list'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminToursPage() {
   await requireAdmin()
   const tours = await getAdminTours()
-
-  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10)
 
   return (
     <div className="space-y-4">
@@ -40,7 +42,8 @@ export default async function AdminToursPage() {
       ) : (
         <div className="space-y-2">
           {tours.map((t) => {
-            const guideVisible = t.start_date >= since
+            const assigned = isTourGuideAssigned(t)
+            const settlementLabel = tourSettlementStatusLabel(t.settlement?.status)
             return (
               <div
                 key={t.id}
@@ -51,15 +54,20 @@ export default async function AdminToursPage() {
                     <p className="font-medium text-gray-800 truncate">{t.pattern}</p>
                     <p className="text-xs text-gray-400 font-mono mt-0.5">{t.tour_code}</p>
                   </div>
-                  {guideVisible ? (
-                    <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                      가이드 선택 가능
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {assigned ? (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                        {TOUR_GUIDE_ASSIGNED_LABEL}
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                        {TOUR_GUIDE_UNASSIGNED_LABEL}
+                      </span>
+                    )}
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                      정산서: {settlementLabel}
                     </span>
-                  ) : (
-                    <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                      90일 지남
-                    </span>
-                  )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs text-gray-500">
                   <span>가이드: {t.guide?.full_name ?? '—'}</span>
@@ -71,6 +79,16 @@ export default async function AdminToursPage() {
                     {t.pax_count}명 · {t.vehicle_type ?? '—'} · TC {t.tc_name ?? '—'}
                   </span>
                 </div>
+                {t.settlement && (
+                  <div className="mt-3 pt-3 border-t border-gray-50">
+                    <Link
+                      href={`/admin/settlements/${t.settlement.id}`}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      정산서 보기 →
+                    </Link>
+                  </div>
+                )}
               </div>
             )
           })}

@@ -9,8 +9,9 @@ import {
 } from '@/lib/guide/assignment'
 import type { AdminRegionScope } from '@/lib/region/permissions'
 import { filterMtourRegionBranches } from '@/lib/region/regions'
+import { sortAdminToursForList } from '@/lib/admin/tour-list'
 import { createClient } from '@/lib/supabase/server'
-import type { Branch, Tour } from '@/types'
+import type { Branch, SettlementStatus, Tour } from '@/types'
 
 export interface GuideOption {
   id: string
@@ -23,6 +24,11 @@ export interface GuideOption {
 
 export interface TourWithGuide extends Tour {
   guide: { id: string; full_name: string; email: string } | null
+}
+
+export interface AdminTourListItem extends TourWithGuide {
+  /** Settlement created by the assigned guide for this tour, if any. */
+  settlement: { id: string; status: SettlementStatus } | null
 }
 
 export interface CreateTourInput {
@@ -62,18 +68,43 @@ function adminRegionScope(ctx: NonNullable<Awaited<ReturnType<typeof requireAdmi
   return { role: ctx.role, assignedRegionId: ctx.branch_id }
 }
 
-export async function getAdminTours(): Promise<TourWithGuide[]> {
+export async function getAdminTours(): Promise<AdminTourListItem[]> {
   const ctx = await requireAdminProfile()
   if (!ctx) return []
 
   const { data } = await ctx.supabase
     .from('tours')
     .select('*, guide:profiles!guide_id(id, full_name, email)')
-    .order('start_date', { ascending: false })
     .limit(200)
 
-  const tours = (data ?? []) as TourWithGuide[]
-  return filterAdminToursByRegionScope(tours, adminRegionScope(ctx))
+  const tours = filterAdminToursByRegionScope(
+    (data ?? []) as TourWithGuide[],
+    adminRegionScope(ctx),
+  )
+  const sorted = sortAdminToursForList(tours)
+
+  const tourIds = sorted.map((t) => t.id)
+  const settlementByTourId = new Map<string, { id: string; status: SettlementStatus }>()
+  if (tourIds.length > 0) {
+    const { data: settlements } = await ctx.supabase
+      .from('settlements')
+      .select('id, tour_id, guide_id, status')
+      .in('tour_id', tourIds)
+
+    for (const row of settlements ?? []) {
+      const r = row as { id: string; tour_id: string; guide_id: string; status: SettlementStatus }
+      // Show the assigned guide's settlement for this tour.
+      const tour = sorted.find((t) => t.id === r.tour_id)
+      if (tour && r.guide_id === tour.guide_id && !settlementByTourId.has(r.tour_id)) {
+        settlementByTourId.set(r.tour_id, { id: r.id, status: r.status })
+      }
+    }
+  }
+
+  return sorted.map((t) => ({
+    ...t,
+    settlement: settlementByTourId.get(t.id) ?? null,
+  }))
 }
 
 export async function getBranches(): Promise<Branch[]> {

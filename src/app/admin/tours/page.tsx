@@ -1,12 +1,7 @@
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth/session'
 import { getAdminTours } from '@/lib/actions/tourActions'
-import {
-  TOUR_GUIDE_ASSIGNED_LABEL,
-  TOUR_GUIDE_UNASSIGNED_LABEL,
-  isTourGuideAssigned,
-  tourSettlementStatusLabel,
-} from '@/lib/admin/tour-list'
+import { tourSettlementStatusLabel } from '@/lib/admin/tour-list'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,7 +37,6 @@ export default async function AdminToursPage() {
       ) : (
         <div className="space-y-2">
           {tours.map((t) => {
-            const assigned = isTourGuideAssigned(t)
             const settlementLabel = tourSettlementStatusLabel(t.settlement?.status)
             return (
               <div
@@ -54,20 +48,9 @@ export default async function AdminToursPage() {
                     <p className="font-medium text-gray-800 truncate">{t.pattern}</p>
                     <p className="text-xs text-gray-400 font-mono mt-0.5">{t.tour_code}</p>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    {assigned ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                        {TOUR_GUIDE_ASSIGNED_LABEL}
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-                        {TOUR_GUIDE_UNASSIGNED_LABEL}
-                      </span>
-                    )}
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                      정산서: {settlementLabel}
-                    </span>
-                  </div>
+                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                    정산서: {settlementLabel}
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs text-gray-500">
                   <span>가이드: {t.guide?.full_name ?? '—'}</span>

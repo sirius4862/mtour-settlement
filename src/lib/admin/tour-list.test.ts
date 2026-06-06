@@ -1,10 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { SettlementStatus } from '@/types'
 import {
-  TOUR_GUIDE_ASSIGNED_LABEL,
-  TOUR_GUIDE_UNASSIGNED_LABEL,
   TOUR_SETTLEMENT_NONE_LABEL,
-  isTourGuideAssigned,
   sortAdminToursForList,
   tourSettlementStatusLabel,
 } from './tour-list'
@@ -65,15 +63,18 @@ describe('tourSettlementStatusLabel', () => {
   })
 })
 
-describe('isTourGuideAssigned', () => {
-  it('is true when a guide is assigned and false otherwise', () => {
-    expect(isTourGuideAssigned({ guide_id: 'guide-1' })).toBe(true)
-    expect(isTourGuideAssigned({ guide_id: null })).toBe(false)
-    expect(isTourGuideAssigned({})).toBe(false)
+describe('/admin/tours card UI source', () => {
+  const source = readFileSync('src/app/admin/tours/page.tsx', 'utf8')
+
+  it('does not render redundant assigned-guide or guide-change UI', () => {
+    expect(source).not.toContain('가이드 배정됨')
+    expect(source).not.toContain('가이드 선택 가능')
+    expect(source).not.toContain('가이드 변경')
   })
 
-  it('exposes assigned/unassigned labels for the UI', () => {
-    expect(TOUR_GUIDE_ASSIGNED_LABEL).toBe('가이드 배정됨')
-    expect(TOUR_GUIDE_UNASSIGNED_LABEL).toBe('가이드 배정 필요')
+  it('keeps the guide name line, settlement status badge, and settlement detail link', () => {
+    expect(source).toContain('가이드: {t.guide?.full_name')
+    expect(source).toContain('정산서: {settlementLabel}')
+    expect(source).toContain('/admin/settlements/${t.settlement.id}')
   })
 })

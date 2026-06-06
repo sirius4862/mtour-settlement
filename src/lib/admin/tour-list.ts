@@ -1,9 +1,5 @@
 import type { SettlementStatus } from '@/types'
 
-/** Tour-management screen labels for the assigned guide state (Phase A). */
-export const TOUR_GUIDE_ASSIGNED_LABEL = '가이드 배정됨'
-export const TOUR_GUIDE_UNASSIGNED_LABEL = '가이드 배정 필요'
-
 /** Settlement status labels as shown on the admin tour-management screen. */
 export const TOUR_SETTLEMENT_NONE_LABEL = '정산서 미작성'
 
@@ -41,13 +37,6 @@ export function tourSettlementStatusLabel(
     default:
       return TOUR_SETTLEMENT_NONE_LABEL
   }
-}
-
-/** True when a tour has an assigned guide. */
-export function isTourGuideAssigned(
-  tour: { guide_id?: string | null },
-): boolean {
-  return !!tour.guide_id
 }
 
 export interface SortableTour {

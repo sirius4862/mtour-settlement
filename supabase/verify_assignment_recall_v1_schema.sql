@@ -1,7 +1,8 @@
 -- ============================================================================
 -- 배정회수 (ASSIGNMENT RECALL) v1 — READ-ONLY schema spot-checks
--- Run in Supabase Production SQL Editor AFTER STEP 1 + STEP 2 migration,
--- and BEFORE deploying app code that references the new columns/enum value.
+-- Run in Supabase Production SQL Editor AFTER STEP 1 + STEP 2 migration
+-- (and v1.1 tour recall guard if applied), BEFORE deploying app code that
+-- references the new columns/enum value.
 --
 -- Every query below is read-only. Expect the noted PASS criteria before deploy.
 -- ============================================================================
@@ -83,3 +84,15 @@ WHERE schemaname = 'public'
   )
 ORDER BY policyname;
 -- PASS: all three policies still exist (assignment recall is additive).
+
+
+-- ── 9. enforce_tour_assignment_recall() trigger exists on public.tours ────────
+SELECT tgname, pg_get_triggerdef(oid, true) AS trigger_def
+FROM pg_trigger
+WHERE tgrelid = 'public.tours'::regclass
+  AND tgname = 'trg_enforce_tour_assignment_recall'
+  AND NOT tgisinternal;
+-- PASS: one row; trigger_def contains enforce_tour_assignment_recall.
+SELECT pg_get_functiondef('public.enforce_tour_assignment_recall()'::regprocedure) AS fn_def;
+-- PASS: fn_def contains guide_confirmed_at IS NOT NULL
+--   AND status NOT IN ('draft', 'submitted') eligibility guard for tour recall.

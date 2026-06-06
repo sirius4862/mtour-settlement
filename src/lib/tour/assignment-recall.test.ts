@@ -166,3 +166,30 @@ describe('guide-side recall exclusion source', () => {
     expect(sql).toContain("t.assignment_status = 'recalled'")
   })
 })
+
+describe('tour assignment recall DB guard (v1.1)', () => {
+  const migrationSql = readFileSync(
+    'supabase/assignment_recall_v1_1_tour_recall_guard.sql',
+    'utf8',
+  )
+  const verifySql = readFileSync('supabase/verify_assignment_recall_v1_schema.sql', 'utf8')
+
+  it('migration defines enforce_tour_assignment_recall trigger on public.tours', () => {
+    expect(migrationSql).toContain('CREATE OR REPLACE FUNCTION public.enforce_tour_assignment_recall()')
+    expect(migrationSql).toContain('trg_enforce_tour_assignment_recall')
+    expect(migrationSql).toContain('BEFORE UPDATE ON public.tours')
+  })
+
+  it('migration blocks recalled transition unless linked settlement is draft/submitted and unconfirmed', () => {
+    expect(migrationSql).toContain('guide_confirmed_at IS NOT NULL')
+    expect(migrationSql).toContain("'draft'::public.settlement_status")
+    expect(migrationSql).toContain("'submitted'::public.settlement_status")
+    expect(migrationSql).toContain("NEW.assignment_status = 'recalled'")
+  })
+
+  it('schema verification includes spot-check for tour recall trigger', () => {
+    expect(verifySql).toContain('trg_enforce_tour_assignment_recall')
+    expect(verifySql).toContain('enforce_tour_assignment_recall')
+    expect(verifySql).toContain('guide_confirmed_at')
+  })
+})

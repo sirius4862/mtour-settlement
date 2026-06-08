@@ -148,6 +148,24 @@ describe('vehicle report — settlement separation (source-level)', () => {
   })
 })
 
+describe('vehicle report — profile-based context (source-level)', () => {
+  it('getVehicleCtx does not query vehicle_company_users', () => {
+    expect(ACTIONS_SRC).not.toMatch(/from\(['"]vehicle_company_users['"]\)/)
+    expect(ACTIONS_SRC).not.toMatch(/vehicleCompanyId/)
+    expect(ACTIONS_SRC).toContain('isVehicleCompany(profile.role')
+    expect(ACTIONS_SRC).toContain('profileId: user.id')
+  })
+
+  it('dashboard and detail queries filter by vehicle_company_profile_id', () => {
+    expect(ACTIONS_SRC).toContain("vehicle_company_profile_id', ctx.profileId")
+    expect(ACTIONS_SRC).not.toMatch(/vehicle_company_id/)
+  })
+
+  it('report insert writes vehicle_company_profile_id', () => {
+    expect(ACTIONS_SRC).toContain('vehicle_company_profile_id: ctx.profileId')
+  })
+})
+
 describe('vehicle report — draft/submit behavior (source-level)', () => {
   it('inserts new reports only as draft and rejects locked reports', () => {
     expect(ACTIONS_SRC).toContain("status: 'draft'")

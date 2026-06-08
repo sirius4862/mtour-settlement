@@ -313,7 +313,7 @@ export async function recallTourAssignment(
     }
   }
 
-  // 배정회수 vehicle cleanup — clear tours.vehicle_company_id and delete the now
+  // 배정회수 vehicle cleanup — clear tours.vehicle_company_profile_id and delete the now
   // invalid vehicle report (+ checks via ON DELETE CASCADE) together with the
   // recall. Runs through an admin-gated SECURITY DEFINER RPC so there is no
   // standing DELETE grant on vehicle_route_reports. This does NOT touch any

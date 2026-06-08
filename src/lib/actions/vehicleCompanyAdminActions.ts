@@ -3,33 +3,24 @@
 import { revalidatePath } from 'next/cache'
 import { isAdminTier, isMasterAdmin, isVehicleCompany } from '@/lib/auth/permissions'
 import { filterAdminToursByRegionScope } from '@/lib/guide/assignment'
-import { filterMtourRegionBranches } from '@/lib/region/regions'
 import type { AdminRegionScope } from '@/lib/region/permissions'
 import { assertAdminCanAccessSettlementBranch } from '@/lib/region/settlement-access'
 import { createClient } from '@/lib/supabase/server'
 import {
-  canChangeVehicleAssignment,
   deriveVehicleAssignmentStatus,
   VEHICLE_ASSIGNMENT_LOCKED_MESSAGE,
   type VehicleAssignmentStatus,
 } from '@/lib/vehicle/assignment-status'
 import type { VehicleTourReportStatus } from '@/lib/vehicle/report-status'
-import type { Branch, UserRole } from '@/types'
+import type { UserRole } from '@/types'
 
-export interface VehicleCompanyAdminItem {
-  id: string
-  name: string
-  branch_id: string
-  is_active: boolean
-  created_at: string
-}
-
-export interface VehicleCompanyProfileOption {
+export interface VehicleCompanyProfileItem {
   id: string
   full_name: string
   email: string
   korean_name: string | null
-  current_vehicle_company_id: string | null
+  branch_id: string | null
+  is_active: boolean
 }
 
 export interface VehicleAssignmentTourItem {
@@ -39,7 +30,7 @@ export interface VehicleAssignmentTourItem {
   end_date: string | null
   branch_id: string
   guide_name: string | null
-  vehicle_company_id: string | null
+  vehicle_company_profile_id: string | null
   vehicle_company_name: string | null
   report_status: VehicleTourReportStatus
   assignment_status: VehicleAssignmentStatus
@@ -88,171 +79,50 @@ function guideName(rel: GuideRel): string | null {
   return rel.korean_name || rel.full_name || null
 }
 
-// ── Vehicle company management ──────────────────────────────────────────────
+function vehicleCompanyDisplayName(
+  profile: Pick<VehicleCompanyProfileItem, 'korean_name' | 'full_name' | 'email'>,
+): string {
+  return profile.korean_name || profile.full_name || profile.email || '차량회사'
+}
 
-export async function getAdminVehicleCompanies(): Promise<VehicleCompanyAdminItem[]> {
-  const ctx = await getAdminCtx()
-  if (!ctx) return []
+async function loadVehicleCompanyNamesById(
+  ctx: AdminCtx,
+  profileIds: string[],
+): Promise<Map<string, string>> {
+  const unique = [...new Set(profileIds.filter(Boolean))]
+  if (unique.length === 0) return new Map()
 
   const { data } = await ctx.supabase
-    .from('vehicle_companies')
-    .select('id, name, branch_id, is_active, created_at')
-    .order('name', { ascending: true })
-
-  const rows = (data ?? []) as VehicleCompanyAdminItem[]
-  if (isMasterAdmin(ctx.role)) return rows
-  if (!ctx.branch_id) return rows
-  return rows.filter((c) => c.branch_id === ctx.branch_id)
-}
-
-export async function getAdminVehicleBranches(): Promise<Branch[]> {
-  const ctx = await getAdminCtx()
-  if (!ctx) return []
-
-  const { data } = await ctx.supabase
-    .from('branches')
-    .select('id, name, code, created_at')
-    .order('name')
-
-  const regions = filterMtourRegionBranches((data ?? []) as Branch[])
-  if (isMasterAdmin(ctx.role)) return regions
-  if (!ctx.branch_id) return regions
-  return regions.filter((b) => b.id === ctx.branch_id)
-}
-
-export async function createVehicleCompany(
-  input: { name: string; branch_id: string },
-): Promise<MutationResult> {
-  const ctx = await getAdminCtx()
-  if (!ctx) return { ok: false, error: '관리자 권한이 필요합니다.' }
-
-  const name = (input.name ?? '').trim()
-  if (!name) return { ok: false, error: '차량회사명을 입력해주세요.' }
-  if (name.length > 200) return { ok: false, error: '차량회사명이 너무 깁니다.' }
-  if (!input.branch_id) return { ok: false, error: '지역을 선택해주세요.' }
-
-  const regionGuard = assertAdminCanAccessSettlementBranch(scopeOf(ctx), input.branch_id)
-  if (!regionGuard.ok) return { ok: false, error: regionGuard.error }
-
-  const { error } = await ctx.supabase
-    .from('vehicle_companies')
-    .insert({ name, branch_id: input.branch_id, is_active: true })
-  if (error) return { ok: false, error: '차량회사를 생성할 수 없습니다.' }
-
-  revalidatePath('/admin/vehicle-companies')
-  revalidatePath('/admin/vehicle-assignments')
-  return { ok: true }
-}
-
-export async function updateVehicleCompany(
-  id: string,
-  input: { name?: string; is_active?: boolean },
-): Promise<MutationResult> {
-  const ctx = await getAdminCtx()
-  if (!ctx) return { ok: false, error: '관리자 권한이 필요합니다.' }
-
-  const { data: company } = await ctx.supabase
-    .from('vehicle_companies')
-    .select('id, branch_id')
-    .eq('id', id)
-    .maybeSingle()
-  if (!company) return { ok: false, error: '차량회사를 찾을 수 없습니다.' }
-
-  const regionGuard = assertAdminCanAccessSettlementBranch(scopeOf(ctx), company.branch_id as string)
-  if (!regionGuard.ok) return { ok: false, error: regionGuard.error }
-
-  const patch: { name?: string; is_active?: boolean; updated_at: string } = {
-    updated_at: new Date().toISOString(),
-  }
-  if (typeof input.name === 'string') {
-    const name = input.name.trim()
-    if (!name) return { ok: false, error: '차량회사명을 입력해주세요.' }
-    if (name.length > 200) return { ok: false, error: '차량회사명이 너무 깁니다.' }
-    patch.name = name
-  }
-  if (typeof input.is_active === 'boolean') patch.is_active = input.is_active
-
-  const { error } = await ctx.supabase
-    .from('vehicle_companies')
-    .update(patch)
-    .eq('id', id)
-  if (error) return { ok: false, error: '차량회사를 수정할 수 없습니다.' }
-
-  revalidatePath('/admin/vehicle-companies')
-  revalidatePath('/admin/vehicle-assignments')
-  return { ok: true }
-}
-
-export async function getAvailableVehicleCompanyProfiles(): Promise<VehicleCompanyProfileOption[]> {
-  const ctx = await getAdminCtx()
-  if (!ctx) return []
-
-  const { data: profiles } = await ctx.supabase
     .from('profiles')
     .select('id, full_name, email, korean_name')
-    .eq('role', 'vehicle_company')
-    .order('full_name')
+    .in('id', unique)
 
-  const list = (profiles ?? []) as Omit<VehicleCompanyProfileOption, 'current_vehicle_company_id'>[]
-  if (list.length === 0) return []
-
-  const { data: links } = await ctx.supabase
-    .from('vehicle_company_users')
-    .select('profile_id, vehicle_company_id')
-    .in('profile_id', list.map((p) => p.id))
-
-  const linkByProfile = new Map<string, string>()
-  for (const row of links ?? []) {
-    const r = row as { profile_id: string; vehicle_company_id: string }
-    linkByProfile.set(r.profile_id, r.vehicle_company_id)
+  const map = new Map<string, string>()
+  for (const row of data ?? []) {
+    const p = row as Pick<VehicleCompanyProfileItem, 'id' | 'korean_name' | 'full_name' | 'email'>
+    map.set(p.id, vehicleCompanyDisplayName(p))
   }
-
-  return list.map((p) => ({
-    ...p,
-    current_vehicle_company_id: linkByProfile.get(p.id) ?? null,
-  }))
+  return map
 }
 
-/** Link one vehicle_company-role profile to one vehicle company (one per profile). */
-export async function linkVehicleCompanyUser(
-  profileId: string,
-  vehicleCompanyId: string,
-): Promise<MutationResult> {
+// ── Assignable vehicle company accounts (profiles) ──────────────────────────
+
+/** Active vehicle_company-role profiles in admin scope (for assignment picker). */
+export async function getAssignableVehicleCompanyProfiles(): Promise<VehicleCompanyProfileItem[]> {
   const ctx = await getAdminCtx()
-  if (!ctx) return { ok: false, error: '관리자 권한이 필요합니다.' }
-  if (!profileId || !vehicleCompanyId) return { ok: false, error: '연결 정보를 확인해주세요.' }
+  if (!ctx) return []
 
-  // Target company must be within the admin's region scope.
-  const { data: company } = await ctx.supabase
-    .from('vehicle_companies')
-    .select('id, branch_id')
-    .eq('id', vehicleCompanyId)
-    .maybeSingle()
-  if (!company) return { ok: false, error: '차량회사를 찾을 수 없습니다.' }
-  const regionGuard = assertAdminCanAccessSettlementBranch(scopeOf(ctx), company.branch_id as string)
-  if (!regionGuard.ok) return { ok: false, error: regionGuard.error }
-
-  // Only profiles with role vehicle_company may be linked.
-  const { data: profile } = await ctx.supabase
+  const { data } = await ctx.supabase
     .from('profiles')
-    .select('id, role')
-    .eq('id', profileId)
-    .maybeSingle()
-  if (!profile || !isVehicleCompany(profile.role as UserRole)) {
-    return { ok: false, error: '차량회사 권한 계정만 연결할 수 있습니다.' }
-  }
+    .select('id, full_name, email, korean_name, branch_id, is_active')
+    .eq('role', 'vehicle_company')
+    .eq('is_active', true)
+    .order('full_name')
 
-  // One profile ↔ one vehicle company (PK on profile_id). Upsert keeps it single.
-  const { error } = await ctx.supabase
-    .from('vehicle_company_users')
-    .upsert(
-      { profile_id: profileId, vehicle_company_id: vehicleCompanyId },
-      { onConflict: 'profile_id' },
-    )
-  if (error) return { ok: false, error: '계정을 연결할 수 없습니다.' }
-
-  revalidatePath('/admin/vehicle-companies')
-  return { ok: true }
+  const rows = (data ?? []) as VehicleCompanyProfileItem[]
+  if (isMasterAdmin(ctx.role)) return rows
+  if (!ctx.branch_id) return rows
+  return rows.filter((p) => p.branch_id === ctx.branch_id)
 }
 
 // ── Tour vehicle company assignment ─────────────────────────────────────────
@@ -263,26 +133,32 @@ export async function getAdminVehicleAssignmentTours(): Promise<VehicleAssignmen
 
   const { data: tourRows } = await ctx.supabase
     .from('tours')
-    .select('id, tour_code, start_date, end_date, branch_id, vehicle_company_id, assignment_status, guide:profiles!guide_id(full_name, korean_name)')
+    .select(
+      'id, tour_code, start_date, end_date, branch_id, vehicle_company_profile_id, assignment_status, ' +
+      'guide:profiles!guide_id(full_name, korean_name)',
+    )
     .eq('assignment_status', 'assigned')
     .order('start_date', { ascending: true })
     .order('tour_code', { ascending: true })
     .limit(200)
 
   const scoped = filterAdminToursByRegionScope(
-    (tourRows ?? []) as { branch_id: string }[],
+    (tourRows ?? []) as unknown as { branch_id: string }[],
     scopeOf(ctx),
-  ) as Array<Record<string, unknown>>
+  ) as unknown as Array<Record<string, unknown>>
   if (scoped.length === 0) return []
 
   const tourIds = scoped.map((t) => t.id as string)
+  const profileIds = scoped
+    .map((t) => (t.vehicle_company_profile_id as string | null) ?? null)
+    .filter((id): id is string => !!id)
 
-  const [{ data: reportRows }, companies] = await Promise.all([
+  const [{ data: reportRows }, nameById] = await Promise.all([
     ctx.supabase
       .from('vehicle_route_reports')
       .select('tour_id, status')
       .in('tour_id', tourIds),
-    getAdminVehicleCompanies(),
+    loadVehicleCompanyNamesById(ctx, profileIds),
   ])
 
   const reportByTour = new Map<string, VehicleTourReportStatus>()
@@ -290,10 +166,9 @@ export async function getAdminVehicleAssignmentTours(): Promise<VehicleAssignmen
     const r = row as { tour_id: string; status: VehicleTourReportStatus }
     reportByTour.set(r.tour_id, r.status)
   }
-  const companyById = new Map(companies.map((c) => [c.id, c]))
 
   return scoped.map((t) => {
-    const vehicleCompanyId = (t.vehicle_company_id as string | null) ?? null
+    const profileId = (t.vehicle_company_profile_id as string | null) ?? null
     const reportStatus = reportByTour.get(t.id as string) ?? 'none'
     return {
       id: t.id as string,
@@ -302,12 +177,10 @@ export async function getAdminVehicleAssignmentTours(): Promise<VehicleAssignmen
       end_date: (t.end_date as string | null) ?? null,
       branch_id: t.branch_id as string,
       guide_name: guideName((t.guide as GuideRel) ?? null),
-      vehicle_company_id: vehicleCompanyId,
-      vehicle_company_name: vehicleCompanyId
-        ? companyById.get(vehicleCompanyId)?.name ?? null
-        : null,
+      vehicle_company_profile_id: profileId,
+      vehicle_company_name: profileId ? nameById.get(profileId) ?? null : null,
       report_status: reportStatus,
-      assignment_status: deriveVehicleAssignmentStatus(!!vehicleCompanyId, reportStatus),
+      assignment_status: deriveVehicleAssignmentStatus(!!profileId, reportStatus),
     }
   })
 }
@@ -323,11 +196,11 @@ async function reportExistsForTour(ctx: AdminCtx, tourId: string): Promise<boole
 
 export async function assignVehicleCompanyToTour(
   tourId: string,
-  vehicleCompanyId: string,
+  vehicleCompanyProfileId: string,
 ): Promise<MutationResult> {
   const ctx = await getAdminCtx()
   if (!ctx) return { ok: false, error: '관리자 권한이 필요합니다.' }
-  if (!tourId || !vehicleCompanyId) return { ok: false, error: '배정 정보를 확인해주세요.' }
+  if (!tourId || !vehicleCompanyProfileId) return { ok: false, error: '배정 정보를 확인해주세요.' }
 
   const { data: tour } = await ctx.supabase
     .from('tours')
@@ -339,27 +212,28 @@ export async function assignVehicleCompanyToTour(
   const regionGuard = assertAdminCanAccessSettlementBranch(scopeOf(ctx), tour.branch_id as string)
   if (!regionGuard.ok) return { ok: false, error: regionGuard.error }
 
-  // A report locks the assignment — only recall cleanup may reset it.
   if (await reportExistsForTour(ctx, tourId)) {
     return { ok: false, error: VEHICLE_ASSIGNMENT_LOCKED_MESSAGE }
   }
 
-  const { data: company } = await ctx.supabase
-    .from('vehicle_companies')
-    .select('id, branch_id, is_active')
-    .eq('id', vehicleCompanyId)
+  const { data: profile } = await ctx.supabase
+    .from('profiles')
+    .select('id, role, branch_id, is_active')
+    .eq('id', vehicleCompanyProfileId)
     .maybeSingle()
-  if (!company) return { ok: false, error: '차량회사를 찾을 수 없습니다.' }
-  if (!company.is_active) return { ok: false, error: '비활성 차량회사는 배정할 수 없습니다.' }
+  if (!profile) return { ok: false, error: '차량회사 계정을 찾을 수 없습니다.' }
+  if (!isVehicleCompany(profile.role as UserRole)) {
+    return { ok: false, error: '차량회사 권한 계정만 배정할 수 있습니다.' }
+  }
+  if (!profile.is_active) return { ok: false, error: '비활성 차량회사 계정은 배정할 수 없습니다.' }
 
-  // App-layer branch match (the DB trigger enforces this as defense-in-depth).
-  if ((company.branch_id as string) !== (tour.branch_id as string)) {
+  if ((profile.branch_id as string | null) !== (tour.branch_id as string)) {
     return { ok: false, error: '차량회사와 투어의 지역이 일치해야 합니다.' }
   }
 
   const { error } = await ctx.supabase
     .from('tours')
-    .update({ vehicle_company_id: vehicleCompanyId })
+    .update({ vehicle_company_profile_id: vehicleCompanyProfileId })
     .eq('id', tourId)
   if (error) return { ok: false, error: '차량회사를 배정할 수 없습니다.' }
 
@@ -383,15 +257,13 @@ export async function clearVehicleCompanyFromTour(tourId: string): Promise<Mutat
   const regionGuard = assertAdminCanAccessSettlementBranch(scopeOf(ctx), tour.branch_id as string)
   if (!regionGuard.ok) return { ok: false, error: regionGuard.error }
 
-  // Manual clear is allowed only while no report exists; otherwise reset must go
-  // through the guide assignment-recall cleanup flow.
   if (await reportExistsForTour(ctx, tourId)) {
     return { ok: false, error: VEHICLE_ASSIGNMENT_LOCKED_MESSAGE }
   }
 
   const { error } = await ctx.supabase
     .from('tours')
-    .update({ vehicle_company_id: null })
+    .update({ vehicle_company_profile_id: null })
     .eq('id', tourId)
   if (error) return { ok: false, error: '배정을 해제할 수 없습니다.' }
 
@@ -399,3 +271,4 @@ export async function clearVehicleCompanyFromTour(tourId: string): Promise<Mutat
   revalidatePath('/vehicle')
   return { ok: true }
 }
+

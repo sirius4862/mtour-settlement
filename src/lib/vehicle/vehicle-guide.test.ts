@@ -171,8 +171,11 @@ describe('role tiers unchanged', () => {
 })
 
 describe('recall cleanup unchanged (regression guard)', () => {
+  const V2_SQL = readFileSync('supabase/vehicle_company_v2_profile_assignment.sql', 'utf8')
+
   it('recall RPC still deletes reports + clears assignment (cascade for checks)', () => {
     expect(RPC_SQL).toMatch(/DELETE FROM public\.vehicle_route_reports WHERE tour_id = p_tour_id/)
-    expect(RPC_SQL).toMatch(/UPDATE public\.tours SET vehicle_company_id = NULL/)
+    expect(V2_SQL).toMatch(/DELETE FROM public\.vehicle_route_reports WHERE tour_id = p_tour_id/)
+    expect(V2_SQL).toContain('vehicle_company_profile_id = NULL')
   })
 })

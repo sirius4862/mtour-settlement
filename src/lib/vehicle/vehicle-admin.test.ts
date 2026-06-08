@@ -16,8 +16,7 @@ import {
 const ADMIN_ACTIONS_SRC = readFileSync('src/lib/actions/vehicleCompanyAdminActions.ts', 'utf8')
 const ASSIGN_TABLE_SRC = readFileSync('src/app/admin/vehicle-assignments/VehicleAssignmentTable.tsx', 'utf8')
 const ASSIGN_PAGE_SRC = readFileSync('src/app/admin/vehicle-assignments/page.tsx', 'utf8')
-const COMPANIES_PAGE_SRC = readFileSync('src/app/admin/vehicle-companies/page.tsx', 'utf8')
-const STEP2_SQL = readFileSync('supabase/vehicle_company_v1_step2_schema.sql', 'utf8')
+const V2_SQL = readFileSync('supabase/vehicle_company_v2_profile_assignment.sql', 'utf8')
 
 describe('vehicle assignment status (pure)', () => {
   it('derives status from assignment + report state', () => {
@@ -25,7 +24,6 @@ describe('vehicle assignment status (pure)', () => {
     expect(deriveVehicleAssignmentStatus(true, 'none')).toBe('assigned')
     expect(deriveVehicleAssignmentStatus(true, 'draft')).toBe('draft')
     expect(deriveVehicleAssignmentStatus(true, 'submitted')).toBe('submitted')
-    // A report implies a company even if the flag lagged.
     expect(deriveVehicleAssignmentStatus(false, 'submitted')).toBe('unassigned')
   })
 
@@ -57,74 +55,90 @@ describe('admin vehicle actions — settlement separation (source-level)', () =>
     expect(ADMIN_ACTIONS_SRC).not.toContain('status-guards')
     expect(ADMIN_ACTIONS_SRC).not.toContain('settlementActions')
   })
-
-  it('selects no settlement money fields', () => {
-    for (const financial of [
-      'ground_fee', 'guide_daily_fee', 'settlement_ratio', 'tip_received',
-      'option_credit', 'vehicle_fee_usd', 'calc_summary', 'guide_payout',
-    ]) {
-      expect(ADMIN_ACTIONS_SRC).not.toContain(financial)
-    }
-  })
 })
 
-describe('admin vehicle actions — scoping & rules (source-level)', () => {
-  it('uses region scoping helper for branch access', () => {
-    expect(ADMIN_ACTIONS_SRC).toContain('assertAdminCanAccessSettlementBranch')
-    expect(ADMIN_ACTIONS_SRC).toContain('filterAdminToursByRegionScope')
+describe('admin vehicle actions — profile-based assignment (source-level)', () => {
+  it('loads assignable accounts from profiles (not vehicle_companies)', () => {
+    expect(ADMIN_ACTIONS_SRC).toContain('getAssignableVehicleCompanyProfiles')
+    expect(ADMIN_ACTIONS_SRC).toMatch(/\.from\(['"]profiles['"]\)/)
+    expect(ADMIN_ACTIONS_SRC).toContain(".eq('role', 'vehicle_company')")
+    expect(ADMIN_ACTIONS_SRC).toContain(".eq('is_active', true)")
+    expect(ADMIN_ACTIONS_SRC).not.toMatch(/from\(['"]vehicle_companies['"]\)/)
+    expect(ADMIN_ACTIONS_SRC).not.toMatch(/from\(['"]vehicle_company_users['"]\)/)
   })
 
-  it('master_admin sees all companies; plain admin is branch-scoped', () => {
-    expect(ADMIN_ACTIONS_SRC).toContain('isMasterAdmin(ctx.role)')
-    expect(ADMIN_ACTIONS_SRC).toMatch(/c\.branch_id === ctx\.branch_id/)
+  it('does not expose registry or account-linking actions', () => {
+    expect(ADMIN_ACTIONS_SRC).not.toContain('createVehicleCompany')
+    expect(ADMIN_ACTIONS_SRC).not.toContain('updateVehicleCompany')
+    expect(ADMIN_ACTIONS_SRC).not.toContain('getAdminVehicleCompanies')
+    expect(ADMIN_ACTIONS_SRC).not.toContain('linkVehicleCompanyUser')
+    expect(ADMIN_ACTIONS_SRC).not.toContain('getAvailableVehicleCompanyProfiles')
   })
 
-  it('enforces app-layer branch match on assignment', () => {
-    expect(ADMIN_ACTIONS_SRC).toContain('차량회사와 투어의 지역이 일치해야 합니다.')
-    expect(ADMIN_ACTIONS_SRC).toContain('company.branch_id')
-    expect(ADMIN_ACTIONS_SRC).toContain('tour.branch_id')
+  it('assigns by updating tours.vehicle_company_profile_id only', () => {
+    expect(ADMIN_ACTIONS_SRC).toMatch(
+      /\.from\(['"]tours['"]\)\s*\n?\s*\.update\(\{ vehicle_company_profile_id/,
+    )
+    expect(ADMIN_ACTIONS_SRC).not.toMatch(/\.update\(\{ vehicle_company_id/)
   })
 
-  it('limits profile linking to vehicle_company role and one company per profile', () => {
+  it('rejects non-vehicle_company profiles', () => {
     expect(ADMIN_ACTIONS_SRC).toContain('isVehicleCompany(profile.role')
-    expect(ADMIN_ACTIONS_SRC).toContain('차량회사 권한 계정만 연결할 수 있습니다.')
-    expect(ADMIN_ACTIONS_SRC).toContain("onConflict: 'profile_id'")
+    expect(ADMIN_ACTIONS_SRC).toContain('차량회사 권한 계정만 배정할 수 있습니다.')
+  })
+
+  it('rejects inactive profiles', () => {
+    expect(ADMIN_ACTIONS_SRC).toContain('비활성 차량회사 계정은 배정할 수 없습니다.')
+    expect(ADMIN_ACTIONS_SRC).toContain('!profile.is_active')
+  })
+
+  it('rejects branch mismatch between profile and tour', () => {
+    expect(ADMIN_ACTIONS_SRC).toContain('차량회사와 투어의 지역이 일치해야 합니다.')
+    expect(ADMIN_ACTIONS_SRC).toContain('profile.branch_id')
+    expect(ADMIN_ACTIONS_SRC).toContain('tour.branch_id')
   })
 
   it('blocks manual assign/clear when a vehicle report exists', () => {
     expect(ADMIN_ACTIONS_SRC).toContain('reportExistsForTour')
     expect(ADMIN_ACTIONS_SRC).toContain('VEHICLE_ASSIGNMENT_LOCKED_MESSAGE')
-    // The locked message itself is defined in the pure helper.
     expect(VEHICLE_ASSIGNMENT_LOCKED_MESSAGE).toContain('배정회수')
   })
 
-  it('assigns by updating only tours.vehicle_company_id (no settlements write)', () => {
-    expect(ADMIN_ACTIONS_SRC).toMatch(/\.from\(['"]tours['"]\)\s*\n?\s*\.update\(\{ vehicle_company_id/)
+  it('uses region scoping helper for branch access', () => {
+    expect(ADMIN_ACTIONS_SRC).toContain('assertAdminCanAccessSettlementBranch')
+    expect(ADMIN_ACTIONS_SRC).toContain('filterAdminToursByRegionScope')
   })
 })
 
-describe('admin vehicle UI (source-level)', () => {
-  it('assignment + companies pages are protected by requireAdmin', () => {
+describe('admin vehicle assignment UI (source-level)', () => {
+  it('assignment page is protected by requireAdmin and loads profiles', () => {
     expect(ASSIGN_PAGE_SRC).toContain('requireAdmin')
-    expect(COMPANIES_PAGE_SRC).toContain('requireAdmin')
+    expect(ASSIGN_PAGE_SRC).toContain('getAssignableVehicleCompanyProfiles')
+    expect(ASSIGN_PAGE_SRC).not.toContain('getAdminVehicleCompanies')
+    expect(ASSIGN_PAGE_SRC).not.toContain('vehicle-companies')
   })
 
-  it('assignment table shows only operational fields, no money', () => {
-    for (const financial of ['payout', 'usd', 'vnd', 'profit', '정산', '금액']) {
-      expect(ASSIGN_TABLE_SRC).not.toContain(financial)
-    }
-  })
-
-  it('assignment table uses the simplified status labels', () => {
-    expect(ASSIGN_TABLE_SRC).toContain('vehicleAssignmentStatusLabel')
-    expect(ASSIGN_TABLE_SRC).toContain('canChangeVehicleAssignment')
+  it('assignment table uses profile id as dropdown value', () => {
+    expect(ASSIGN_TABLE_SRC).toContain('vehicle_company_profile_id')
+    expect(ASSIGN_TABLE_SRC).toContain('korean_name || p.full_name || p.email')
+    expect(ASSIGN_TABLE_SRC).not.toContain('vehicle_companies')
   })
 })
 
-describe('DB branch-match trigger remains as defense-in-depth (Phase 1 SQL)', () => {
-  it('step 2 schema still defines the tour branch-match trigger', () => {
-    expect(STEP2_SQL).toContain('trg_enforce_tour_vehicle_company_branch_match')
-    expect(STEP2_SQL).toContain('enforce_tour_vehicle_company_branch_match')
+describe('DB v2 profile assignment migration (source-level)', () => {
+  it('adds profile columns, backfill, RLS, and recall cleanup', () => {
+    expect(V2_SQL).toContain('vehicle_company_profile_id')
+    expect(V2_SQL).toContain('idx_tours_vehicle_company_profile_id')
+    expect(V2_SQL).toContain('idx_vehicle_route_reports_vehicle_company_profile_id')
+    expect(V2_SQL).toContain('vehicle_company_users vcu')
+    expect(V2_SQL).toContain('vehicle_company_profile_id = auth.uid()')
+    expect(V2_SQL).toContain('vehicle_company_profile_id = NULL')
+  })
+
+  it('keeps legacy tables/columns for rollback', () => {
+    expect(V2_SQL).not.toMatch(/DROP TABLE.*vehicle_companies/i)
+    expect(V2_SQL).not.toMatch(/DROP TABLE.*vehicle_company_users/i)
+    expect(V2_SQL).not.toMatch(/DROP COLUMN.*vehicle_company_id/i)
   })
 })
 

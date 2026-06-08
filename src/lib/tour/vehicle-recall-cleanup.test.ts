@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 const TOUR_ACTIONS_SRC = readFileSync('src/lib/actions/tourActions.ts', 'utf8')
 const RPC_SQL = readFileSync('supabase/vehicle_company_v1_2_recall_cleanup_rpc.sql', 'utf8')
+const V2_SQL = readFileSync('supabase/vehicle_company_v2_profile_assignment.sql', 'utf8')
 const STEP2_SQL = readFileSync('supabase/vehicle_company_v1_step2_schema.sql', 'utf8')
 const ADMIN_ACTIONS_SRC = readFileSync('src/lib/actions/vehicleCompanyAdminActions.ts', 'utf8')
 
@@ -55,8 +56,13 @@ describe('recall cleanup RPC (SQL, Option C — no standing DELETE grant)', () =
     expect(RPC_SQL).toContain("assignment_status <> 'recalled'")
   })
 
-  it('clears tours.vehicle_company_id', () => {
+  it('v1 RPC cleared tours.vehicle_company_id (superseded by v2)', () => {
     expect(RPC_SQL).toMatch(/UPDATE public\.tours SET vehicle_company_id = NULL/)
+  })
+
+  it('v2 migration clears vehicle_company_profile_id and legacy column', () => {
+    expect(V2_SQL).toContain('vehicle_company_profile_id = NULL')
+    expect(V2_SQL).toContain('vehicle_company_id = NULL')
   })
 
   it('deletes vehicle_route_reports for the tour', () => {

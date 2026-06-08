@@ -56,13 +56,11 @@ function guideName(rel: GuideRel): string | null {
 interface VehicleCtx {
   supabase: Awaited<ReturnType<typeof createClient>>
   profileId: string
-  vehicleCompanyId: string
 }
 
 /**
  * Resolve the current vehicle-company user context. Returns null unless the
- * caller is a vehicle_company-role user linked to a vehicle company. RLS still
- * enforces ownership on every query/mutation below — this is app-layer gating.
+ * caller has role vehicle_company. RLS enforces ownership on every query below.
  */
 async function getVehicleCtx(): Promise<VehicleCtx | null> {
   const supabase = await createClient()
@@ -76,17 +74,9 @@ async function getVehicleCtx(): Promise<VehicleCtx | null> {
     .single()
   if (!profile || !isVehicleCompany(profile.role as UserRole)) return null
 
-  const { data: link } = await supabase
-    .from('vehicle_company_users')
-    .select('vehicle_company_id')
-    .eq('profile_id', user.id)
-    .maybeSingle()
-  if (!link) return null
-
   return {
     supabase,
     profileId: user.id,
-    vehicleCompanyId: link.vehicle_company_id as string,
   }
 }
 
@@ -113,17 +103,15 @@ function toReportRecord(row: Record<string, unknown>): VehicleReportRecord {
   }
 }
 
-/** Tours assigned to the caller's vehicle company, with report status. */
+/** Tours assigned to the caller's vehicle company profile, with report status. */
 export async function getVehicleCompanyAssignedTours(): Promise<VehicleAssignedTour[]> {
   const ctx = await getVehicleCtx()
   if (!ctx) return []
 
-  // RLS (tours_vehicle_company_select) only returns tours assigned to this
-  // company; the explicit filter is defense-in-depth.
   const { data: tourRows } = await ctx.supabase
     .from('tours')
     .select(TOUR_SELECT_WITH_GUIDE)
-    .eq('vehicle_company_id', ctx.vehicleCompanyId)
+    .eq('vehicle_company_profile_id', ctx.profileId)
     .order('start_date', { ascending: true })
     .order('tour_code', { ascending: true })
     .limit(200)
@@ -163,7 +151,7 @@ export async function getVehicleReportForTour(
     .from('tours')
     .select(TOUR_SELECT_WITH_GUIDE)
     .eq('id', tourId)
-    .eq('vehicle_company_id', ctx.vehicleCompanyId)
+    .eq('vehicle_company_profile_id', ctx.profileId)
     .maybeSingle()
   if (!tourRow) return null
 
@@ -189,16 +177,11 @@ async function assertAssignedTour(ctx: VehicleCtx, tourId: string): Promise<bool
     .from('tours')
     .select('id')
     .eq('id', tourId)
-    .eq('vehicle_company_id', ctx.vehicleCompanyId)
+    .eq('vehicle_company_profile_id', ctx.profileId)
     .maybeSingle()
   return !!data
 }
 
-/**
- * Upsert the draft content for a tour. Inserts a new draft if none exists,
- * updates the existing draft otherwise. Submitted reports are rejected (locked).
- * Returns the report id on success.
- */
 async function upsertDraftContent(
   ctx: VehicleCtx,
   tourId: string,
@@ -228,7 +211,7 @@ async function upsertDraftContent(
       .from('vehicle_route_reports')
       .insert({
         tour_id: tourId,
-        vehicle_company_id: ctx.vehicleCompanyId,
+        vehicle_company_profile_id: ctx.profileId,
         status: 'draft',
         ...content,
       })
@@ -257,7 +240,6 @@ async function upsertDraftContent(
   return { ok: true, id: data.id as string }
 }
 
-/** Save (create or update) the draft report for an assigned tour. */
 export async function saveVehicleReportDraft(
   tourId: string,
   input: unknown,
@@ -277,7 +259,6 @@ export async function saveVehicleReportDraft(
   return { ok: true }
 }
 
-/** Final-submit the report for an assigned tour. Locks it (status=submitted). */
 export async function submitVehicleReport(
   tourId: string,
   input: unknown,
@@ -291,12 +272,9 @@ export async function submitVehicleReport(
   const validation = validateVehicleReportForSubmit(input)
   if (!validation.ok) return { ok: false, error: validation.error }
 
-  // Ensure the row exists as a draft with the latest content first…
   const draft = await upsertDraftContent(ctx, tourId, validation.payload)
   if (!draft.ok) return draft
 
-  // …then flip draft → submitted. The DB submitted-lock trigger only allows this
-  // because OLD.status is still 'draft'; any already-submitted row is rejected.
   const { data, error } = await ctx.supabase
     .from('vehicle_route_reports')
     .update({

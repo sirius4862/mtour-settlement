@@ -38,7 +38,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             { href: '/admin', label: '대시보드' },
             { href: '/admin/tours', label: '투어 관리' },
             { href: '/admin/settlements', label: '정산서 목록' },
-            { href: '/admin/vehicle-companies', label: '차량회사' },
             { href: '/admin/vehicle-assignments', label: '차량 배정' },
           ].map(({ href, label }) => (
             <Link key={href} href={href}

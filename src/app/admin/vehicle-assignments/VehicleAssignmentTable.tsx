@@ -6,7 +6,7 @@ import {
   assignVehicleCompanyToTour,
   clearVehicleCompanyFromTour,
   type VehicleAssignmentTourItem,
-  type VehicleCompanyAdminItem,
+  type VehicleCompanyProfileItem,
 } from '@/lib/actions/vehicleCompanyAdminActions'
 import {
   canChangeVehicleAssignment,
@@ -16,7 +16,7 @@ import {
 
 interface Props {
   tours: VehicleAssignmentTourItem[]
-  companies: VehicleCompanyAdminItem[]
+  profiles: VehicleCompanyProfileItem[]
 }
 
 const STATUS_BADGE: Record<VehicleAssignmentStatus, string> = {
@@ -31,22 +31,26 @@ function periodText(start: string | null, end: string | null): string {
   return start || end || ''
 }
 
-export function VehicleAssignmentTable({ tours, companies }: Props) {
+function profileLabel(p: VehicleCompanyProfileItem): string {
+  return p.korean_name || p.full_name || p.email || '차량회사'
+}
+
+export function VehicleAssignmentTable({ tours, profiles }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
   const [draftSelection, setDraftSelection] = useState<Record<string, string>>({})
 
-  const activeCompaniesByBranch = useMemo(() => {
-    const map = new Map<string, VehicleCompanyAdminItem[]>()
-    for (const c of companies) {
-      if (!c.is_active) continue
-      const list = map.get(c.branch_id) ?? []
-      list.push(c)
-      map.set(c.branch_id, list)
+  const activeProfilesByBranch = useMemo(() => {
+    const map = new Map<string, VehicleCompanyProfileItem[]>()
+    for (const p of profiles) {
+      if (!p.is_active || !p.branch_id) continue
+      const list = map.get(p.branch_id) ?? []
+      list.push(p)
+      map.set(p.branch_id, list)
     }
     return map
-  }, [companies])
+  }, [profiles])
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, fallback: string) => {
     setError('')
@@ -77,8 +81,8 @@ export function VehicleAssignmentTable({ tours, companies }: Props) {
       <ul className="space-y-3">
         {tours.map((tour) => {
           const locked = !canChangeVehicleAssignment(tour.report_status)
-          const branchCompanies = activeCompaniesByBranch.get(tour.branch_id) ?? []
-          const selected = draftSelection[tour.id] ?? tour.vehicle_company_id ?? ''
+          const branchProfiles = activeProfilesByBranch.get(tour.branch_id) ?? []
+          const selected = draftSelection[tour.id] ?? tour.vehicle_company_profile_id ?? ''
 
           return (
             <li key={tour.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -114,17 +118,17 @@ export function VehicleAssignmentTable({ tours, companies }: Props) {
                       setDraftSelection((prev) => ({ ...prev, [tour.id]: e.target.value }))
                     }
                   >
-                    <option value="">차량회사 선택</option>
-                    {branchCompanies.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
+                    <option value="">차량회사 계정 선택</option>
+                    {branchProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {profileLabel(p)}
                       </option>
                     ))}
                   </select>
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      disabled={pending || !selected || selected === tour.vehicle_company_id}
+                      disabled={pending || !selected || selected === tour.vehicle_company_profile_id}
                       onClick={() =>
                         run(
                           () => assignVehicleCompanyToTour(tour.id, selected),
@@ -135,7 +139,7 @@ export function VehicleAssignmentTable({ tours, companies }: Props) {
                     >
                       배정
                     </button>
-                    {tour.vehicle_company_id && (
+                    {tour.vehicle_company_profile_id && (
                       <button
                         type="button"
                         disabled={pending}
@@ -151,9 +155,9 @@ export function VehicleAssignmentTable({ tours, companies }: Props) {
                 </div>
               )}
 
-              {!locked && branchCompanies.length === 0 && (
+              {!locked && branchProfiles.length === 0 && (
                 <p className="mt-2 text-xs text-amber-600">
-                  이 지역에 활성화된 차량회사가 없습니다.
+                  이 지역에 활성화된 차량회사 계정이 없습니다.
                 </p>
               )}
             </li>

@@ -1,5 +1,6 @@
 import type { SettlementStatus, TourAssignmentStatus } from '@/types'
 import { isAssignmentRecallEligible } from '@/lib/tour/assignment-recall'
+import { isVehicleRecallCleanupPending } from '@/lib/tour/vehicle-recall-dead-end'
 import {
   adminDateRangeQuickUrls,
   buildAdminDateRangeHref,
@@ -112,6 +113,25 @@ export function canRecallAdminTour(tour: AdminTourSettlementState): boolean {
     assignmentStatus: tour.assignment_status,
     settlementStatus: tour.settlement?.status ?? null,
     guideConfirmedAt: tour.settlement?.guide_confirmed_at ?? null,
+  })
+}
+
+export interface AdminTourVehicleCleanupState extends AdminTourSettlementState {
+  vehicle_company_profile_id?: string | null
+  vehicle_company_id?: string | null
+  has_vehicle_report: boolean
+}
+
+/**
+ * Recalled tour with leftover vehicle assignment/report artifacts — admin may
+ * retry recall_tour_vehicle_cleanup via recallTourAssignment (RPC-only path).
+ */
+export function canRetryVehicleCleanup(tour: AdminTourVehicleCleanupState): boolean {
+  return isVehicleRecallCleanupPending({
+    assignmentStatus: tour.assignment_status,
+    vehicleCompanyProfileId: tour.vehicle_company_profile_id,
+    vehicleCompanyId: tour.vehicle_company_id,
+    hasVehicleReport: tour.has_vehicle_report,
   })
 }
 

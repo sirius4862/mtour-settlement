@@ -6,11 +6,13 @@ import {
   ADMIN_TOUR_EARLY_VIEW_SUBTITLE,
   adminTourDisplayLabel,
   canRecallAdminTour,
+  canRetryVehicleCleanup,
   filterAdminToursForView,
   parseAdminTourDateSearchParams,
 } from '@/lib/admin/tour-list'
 import { AdminTourDateFilterBar } from './AdminTourDateFilter'
 import { RecallAssignmentButton } from './RecallAssignmentButton'
+import { VehicleCleanupRetryButton } from './VehicleCleanupRetryButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,6 +92,7 @@ export default async function AdminToursPage({
           {visibleTours.map((t) => {
             const settlementLabel = adminTourDisplayLabel(t)
             const recallable = canRecallAdminTour(t)
+            const cleanupRetryEligible = canRetryVehicleCleanup(t)
             return (
               <div
                 key={t.id}
@@ -114,7 +117,7 @@ export default async function AdminToursPage({
                     {t.pax_count}명 · {t.vehicle_type ?? '—'} · TC {t.tc_name ?? '—'}
                   </span>
                 </div>
-                {(t.settlement || recallable) && (
+                {(t.settlement || recallable || cleanupRetryEligible) && (
                   <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between gap-3">
                     {t.settlement ? (
                       <Link
@@ -126,7 +129,10 @@ export default async function AdminToursPage({
                     ) : (
                       <span />
                     )}
-                    {recallable && <RecallAssignmentButton tourId={t.id} />}
+                    <div className="flex flex-col items-end gap-2">
+                      {recallable && <RecallAssignmentButton tourId={t.id} />}
+                      {cleanupRetryEligible && <VehicleCleanupRetryButton tourId={t.id} />}
+                    </div>
                   </div>
                 )}
               </div>

@@ -152,6 +152,27 @@ describe('C1 — vehicle assignment lock coupling', () => {
   })
 })
 
+describe('C1 — admin tour list cleanup retry eligibility (pure helper)', () => {
+  it('canRetryVehicleCleanup delegates to isVehicleRecallCleanupPending', async () => {
+    const { canRetryVehicleCleanup } = await import('@/lib/admin/tour-list')
+    expect(
+      canRetryVehicleCleanup({
+        assignment_status: 'recalled',
+        vehicle_company_profile_id: 'p1',
+        has_vehicle_report: false,
+      }),
+    ).toBe(true)
+    expect(
+      canRetryVehicleCleanup({
+        assignment_status: 'recalled',
+        has_vehicle_report: false,
+        vehicle_company_profile_id: null,
+        vehicle_company_id: null,
+      }),
+    ).toBe(false)
+  })
+})
+
 describe('C1 — Option 1 cleanup retry in recallTourAssignment (source)', () => {
   function recalledRetryBranch(): string {
     const body = recallActionBody()

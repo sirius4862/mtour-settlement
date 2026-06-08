@@ -39,6 +39,9 @@ export interface TourWithGuide extends Tour {
 export interface AdminTourListItem extends TourWithGuide {
   /** Settlement created by the assigned guide for this tour, if any. */
   settlement: { id: string; status: SettlementStatus; guide_confirmed_at: string | null } | null
+  vehicle_company_profile_id: string | null
+  vehicle_company_id: string | null
+  has_vehicle_report: boolean
 }
 
 export interface CreateTourInput {
@@ -145,10 +148,31 @@ export async function getAdminTours(
     }
   }
 
-  return sorted.map((t) => ({
-    ...t,
-    settlement: settlementByTourId.get(t.id) ?? null,
-  }))
+  const reportTourIds = new Set<string>()
+  if (tourIds.length > 0) {
+    const { data: reportRows } = await ctx.supabase
+      .from('vehicle_route_reports')
+      .select('tour_id')
+      .in('tour_id', tourIds)
+
+    for (const row of reportRows ?? []) {
+      reportTourIds.add((row as { tour_id: string }).tour_id)
+    }
+  }
+
+  return sorted.map((t) => {
+    const row = t as TourWithGuide & {
+      vehicle_company_profile_id?: string | null
+      vehicle_company_id?: string | null
+    }
+    return {
+      ...t,
+      settlement: settlementByTourId.get(t.id) ?? null,
+      vehicle_company_profile_id: row.vehicle_company_profile_id ?? null,
+      vehicle_company_id: row.vehicle_company_id ?? null,
+      has_vehicle_report: reportTourIds.has(t.id),
+    }
+  })
 }
 
 export async function getBranches(): Promise<Branch[]> {

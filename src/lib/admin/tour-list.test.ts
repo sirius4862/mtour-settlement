@@ -11,6 +11,7 @@ import {
   adminTourQuickRangeUrls,
   buildAdminTourListHref,
   canRecallAdminTour,
+  canRetryVehicleCleanup,
   filterAdminToursForView,
   parseAdminTourDateSearchParams,
   sortAdminToursForList,
@@ -207,6 +208,78 @@ describe('admin tour assignment recall (배정회수)', () => {
   })
 })
 
+describe('admin tour vehicle cleanup retry eligibility', () => {
+  const recalledBase = {
+    assignment_status: 'recalled' as const,
+    settlement: null,
+    has_vehicle_report: false,
+  }
+
+  it('is eligible when recalled tour still has vehicle_company_profile_id', () => {
+    expect(
+      canRetryVehicleCleanup({
+        ...recalledBase,
+        vehicle_company_profile_id: 'profile-1',
+      }),
+    ).toBe(true)
+  })
+
+  it('is eligible when recalled tour still has legacy vehicle_company_id', () => {
+    expect(
+      canRetryVehicleCleanup({
+        ...recalledBase,
+        vehicle_company_id: 'legacy-co-1',
+      }),
+    ).toBe(true)
+  })
+
+  it('is eligible when recalled tour still has a vehicle_route_reports row', () => {
+    expect(
+      canRetryVehicleCleanup({
+        ...recalledBase,
+        has_vehicle_report: true,
+      }),
+    ).toBe(true)
+  })
+
+  it('is not eligible when recalled tour has no pending cleanup artifacts', () => {
+    expect(
+      canRetryVehicleCleanup({
+        ...recalledBase,
+        vehicle_company_profile_id: null,
+        vehicle_company_id: null,
+        has_vehicle_report: false,
+      }),
+    ).toBe(false)
+  })
+
+  it('is not eligible for assigned tours even with vehicle artifacts', () => {
+    expect(
+      canRetryVehicleCleanup({
+        assignment_status: 'assigned',
+        settlement: null,
+        vehicle_company_profile_id: 'profile-1',
+        has_vehicle_report: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('does not change normal assigned-tour recall eligibility', () => {
+    expect(canRecallAdminTour({ assignment_status: 'assigned', settlement: null })).toBe(true)
+    expect(
+      canRecallAdminTour({ assignment_status: 'assigned', settlement: { status: 'draft' } }),
+    ).toBe(true)
+    expect(
+      canRetryVehicleCleanup({
+        assignment_status: 'assigned',
+        settlement: null,
+        vehicle_company_profile_id: 'profile-1',
+        has_vehicle_report: true,
+      }),
+    ).toBe(false)
+  })
+})
+
 describe('admin tour list date URLs', () => {
   const REF = new Date('2026-06-08T12:00:00Z')
 
@@ -273,6 +346,14 @@ describe('getAdminTours list query (source-level)', () => {
     const body = getAdminToursBody()
     expect(body).toContain(".in('tour_id', tourIds)")
   })
+
+  it('enriches tours with vehicle report presence for cleanup retry eligibility', () => {
+    const body = getAdminToursBody()
+    expect(body).toContain("from('vehicle_route_reports')")
+    expect(body).toContain('has_vehicle_report')
+    expect(body).toContain('vehicle_company_profile_id')
+    expect(body).toContain('vehicle_company_id')
+  })
 })
 
 describe('/admin/tours card UI source', () => {
@@ -289,6 +370,12 @@ describe('/admin/tours card UI source', () => {
     expect(source).toContain('canRecallAdminTour')
     expect(source).toContain('RecallAssignmentButton')
     expect(source).toContain('recallable && <RecallAssignmentButton')
+  })
+
+  it('wires vehicle cleanup retry only when canRetryVehicleCleanup is true', () => {
+    expect(source).toContain('canRetryVehicleCleanup')
+    expect(source).toContain('VehicleCleanupRetryButton')
+    expect(source).toContain('cleanupRetryEligible && <VehicleCleanupRetryButton')
   })
 
   it('keeps the guide name line, settlement status badge, and settlement detail link', () => {

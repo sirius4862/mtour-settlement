@@ -286,12 +286,14 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
 
   const { data } = await supabase
     .from(tableForAudience('settlements', useGuideRead))
-    .select('*, tour:tours(*)')
+    .select(
+      'id,tour_id,guide_id,branch_id,status,reject_reason,guide_confirmed_at,calc_summary_json,created_at,updated_at,tour:tours(id,tour_code,pattern,start_date,end_date)',
+    )
     .eq('guide_id', user.id)
     .order('created_at', { ascending: false })
 
   return (data ?? []).map((row) =>
-    sanitizeSettlementForGuide(row as SettlementWithTour),
+    sanitizeSettlementForGuide(row as unknown as SettlementWithTour),
   ) as SettlementWithTour[]
 }
 

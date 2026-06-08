@@ -190,4 +190,26 @@ describe('guide settlement history filters', () => {
     expect(actions).toContain(".from('tours')")
     expect(actions).toContain(".eq('guide_id', user.id)")
   })
+
+  it('keeps guide dashboard loading UI visible while sections load', () => {
+    const loading = readFileSync(join(ROOT, 'src/app/guide/loading.tsx'), 'utf8')
+
+    expect(loading).toContain('배정된 투어')
+    expect(loading).toContain('작성중')
+    expect(loading).toContain('수정 필요')
+    expect(loading).toContain('최종 확인 필요')
+    expect(loading).toContain('최근 정산서')
+    expect(loading).toContain('bg-[#FCFAF7]')
+    expect(loading).toContain('bg-[#FBE1CC]')
+  })
+
+  it('uses a narrow guide dashboard settlement select instead of full rows', () => {
+    const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
+
+    expect(actions).toContain('export async function getMySettlements')
+    expect(actions).toContain(
+      "'id,tour_id,guide_id,branch_id,status,reject_reason,guide_confirmed_at,calc_summary_json,created_at,updated_at,tour:tours(id,tour_code,pattern,start_date,end_date)'",
+    )
+    expect(actions).not.toContain(".select('*, tour:tours(*)')\n    .eq('guide_id', user.id)")
+  })
 })

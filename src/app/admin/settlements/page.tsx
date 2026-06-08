@@ -6,6 +6,7 @@ import { AdminSettlementTable } from '@/components/admin/AdminSettlementTable'
 import { adminRegionScopeLabel } from '@/lib/region/permissions'
 import { formatRegionLabel } from '@/lib/region/regions'
 import { isMasterAdmin } from '@/lib/auth/permissions'
+import { timed } from '@/lib/server/perf'
 import { STATUS_META, WORKFLOW_STATUS_ORDER } from '@/types'
 import {
   buildAdminSettlementSearchSubtitle,
@@ -37,9 +38,9 @@ function buildListUrl(params: {
 export default async function AdminSettlementsPage({
   searchParams,
 }: { searchParams: Promise<Record<string, string>> }) {
-  const session = await requireAdmin()
+  const session = await timed('admin settlement list auth/profile', () => requireAdmin())
   const params = await searchParams
-  const regions = await getBranches()
+  const regions = await timed('admin settlement list regions', () => getBranches())
 
   const defaultRange = defaultAdminSettlementDateRange()
   const startDate = params.startDate || defaultRange.startDate
@@ -71,14 +72,16 @@ export default async function AdminSettlementsPage({
   const dateRangeValidation = validateAdminSettlementDateRange({ startDate, endDate })
 
   const result = dateRangeValidation.ok
-    ? await getAdminSettlements({
-        startDate,
-        endDate,
-        status: status || undefined,
-        search: search || undefined,
-        regionId: regionId || undefined,
-        page,
-      })
+    ? await timed('admin settlement list rows', () =>
+        getAdminSettlements({
+          startDate,
+          endDate,
+          status: status || undefined,
+          search: search || undefined,
+          regionId: regionId || undefined,
+          page,
+        }),
+      )
     : { items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 }
 
   const listParams = { startDate, endDate, status, search, regionId, page: 1 }

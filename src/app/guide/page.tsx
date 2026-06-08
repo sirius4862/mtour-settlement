@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { requireGuide } from '@/lib/auth/session'
 import { getAvailableTours, getMySettlements } from '@/lib/actions/settlementActions'
 import { tourLabel } from '@/lib/settlement/mappers'
+import { timed } from '@/lib/server/perf'
 import type { SettlementStatus } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -67,10 +68,10 @@ function EmptyState({ message, helper }: { message: string; helper: string }) {
 }
 
 export default async function GuidePage() {
-  const session = await requireGuide()
+  const session = await timed('guide dashboard auth/profile', () => requireGuide())
   const [availableTours, settlements] = await Promise.all([
-    getAvailableTours(),
-    getMySettlements(),
+    timed('guide dashboard assigned tours', () => getAvailableTours()),
+    timed('guide dashboard settlement list', () => getMySettlements()),
   ])
 
   const draftSettlements = settlements.filter((s) => s.status === 'draft')

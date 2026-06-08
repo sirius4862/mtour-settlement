@@ -405,6 +405,19 @@ describe('main admin dashboard settlement list behavior', () => {
     expect(source.slice(listHeader)).not.toContain('ADMIN_DASHBOARD_PROGRESS_ALL_LABEL')
     expect(source.slice(listHeader)).not.toContain('ADMIN_DASHBOARD_PAID_HISTORY_LABEL')
   })
+
+  it('admin screens provide route loading UI and dev-only timing labels', () => {
+    const dashboard = readFileSync('src/app/admin/page.tsx', 'utf8')
+    const list = readFileSync('src/app/admin/settlements/page.tsx', 'utf8')
+    const dashboardLoading = readFileSync('src/app/admin/loading.tsx', 'utf8')
+    const listLoading = readFileSync('src/app/admin/settlements/loading.tsx', 'utf8')
+
+    expect(dashboard).toContain("timed('admin dashboard settlement status counts'")
+    expect(dashboard).toContain("timed('admin dashboard settlement list'")
+    expect(list).toContain("timed('admin settlement list rows'")
+    expect(dashboardLoading).toContain('관리자 대시보드 불러오는 중')
+    expect(listLoading).toContain('정산서 목록 불러오는 중')
+  })
 })
 
 describe('sortAdminSettlementsByTourDate', () => {

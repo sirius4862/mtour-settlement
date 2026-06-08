@@ -7,6 +7,7 @@ import { adminRegionScopeLabel } from '@/lib/region/permissions'
 import { formatRegionLabel } from '@/lib/region/regions'
 import { isMasterAdmin } from '@/lib/auth/permissions'
 import { STATUS_META } from '@/types'
+import { timed } from '@/lib/server/perf'
 import {
   ADMIN_DASHBOARD_PAID_HISTORY_LABEL,
   ADMIN_DASHBOARD_PROGRESS_ALL_LABEL,
@@ -43,9 +44,9 @@ export default async function AdminPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>
 }) {
-  const session = await requireAdmin()
+  const session = await timed('admin dashboard auth/profile', () => requireAdmin())
   const params = await searchParams
-  const regions = await getBranches()
+  const regions = await timed('admin dashboard regions', () => getBranches())
   const parsedStatus = parseDashboardStatusFilter(params.status)
   const activeStatus = parsedStatus && ADMIN_DASHBOARD_STATUS_ORDER.includes(parsedStatus)
     ? parsedStatus
@@ -63,13 +64,17 @@ export default async function AdminPage({
   })
 
   const [stats, settlements] = await Promise.all([
-    getAdminDashboardStats({ regionId: regionId || undefined }),
+    timed('admin dashboard settlement status counts', () =>
+      getAdminDashboardStats({ regionId: regionId || undefined }),
+    ),
     shouldFetchRows
-      ? getAdminSettlements({
-          status: activeStatus || undefined,
-          regionId: regionId || undefined,
-          page,
-        })
+      ? timed('admin dashboard settlement list', () =>
+          getAdminSettlements({
+            status: activeStatus || undefined,
+            regionId: regionId || undefined,
+            page,
+          }),
+        )
       : Promise.resolve({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 }),
   ])
 

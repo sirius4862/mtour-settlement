@@ -244,5 +244,56 @@ FROM (
         )
     )
 
+  UNION ALL
+  -- Check 15 (v1.2): recall cleanup RPC exists and is SECURITY DEFINER
+  SELECT 21,
+    'check_15_recall_cleanup_rpc_security_definer',
+    'recall_tour_vehicle_cleanup(uuid) exists + SECURITY DEFINER',
+    COALESCE((
+      SELECT p.prosecdef
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public'
+        AND p.proname = 'recall_tour_vehicle_cleanup'
+      LIMIT 1
+    ), false)
+
+  UNION ALL
+  -- Check 16 (v1.2): EXECUTE on the RPC granted to authenticated
+  SELECT 22,
+    'check_16_recall_cleanup_rpc_execute_grant',
+    'authenticated may EXECUTE recall_tour_vehicle_cleanup',
+    EXISTS (
+      SELECT 1 FROM information_schema.role_routine_grants
+      WHERE routine_schema = 'public'
+        AND routine_name = 'recall_tour_vehicle_cleanup'
+        AND grantee = 'authenticated'
+        AND privilege_type = 'EXECUTE'
+    )
+
+  UNION ALL
+  -- Check 17 (v1.2): NO standing DELETE grant on vehicle_route_reports for authenticated
+  SELECT 23,
+    'check_17_reports_no_standing_delete_grant',
+    'authenticated lacks DELETE on vehicle_route_reports',
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.role_table_grants
+      WHERE table_schema = 'public' AND table_name = 'vehicle_route_reports'
+        AND grantee = 'authenticated'
+        AND privilege_type = 'DELETE'
+    )
+
+  UNION ALL
+  -- Check 18 (v1.2): checks.report_id FK cascades from vehicle_route_reports
+  SELECT 24,
+    'check_18_checks_cascade_from_reports',
+    'vehicle_report_checks.report_id FK ON DELETE CASCADE',
+    EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'public.vehicle_report_checks'::regclass
+        AND confrelid = 'public.vehicle_route_reports'::regclass
+        AND confdeltype = 'c'
+    )
+
 ) AS checks
 ORDER BY ord;

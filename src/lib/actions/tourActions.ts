@@ -12,6 +12,7 @@ import { filterMtourRegionBranches } from '@/lib/region/regions'
 import { sortAdminToursForList } from '@/lib/admin/tour-list'
 import { validateCreateTourTextLengths } from '@/lib/tour/create-tour-validation'
 import { assertCanRecallTourAssignment } from '@/lib/tour/assignment-recall'
+import { isVehicleRecallCleanupPending } from '@/lib/tour/vehicle-recall-dead-end'
 import { assertAdminCanAccessSettlementBranch } from '@/lib/region/settlement-access'
 import { createClient } from '@/lib/supabase/server'
 import type { Branch, SettlementStatus, Tour, TourAssignmentStatus } from '@/types'
@@ -257,7 +258,9 @@ export async function recallTourAssignment(
 
   const { data: tour } = await ctx.supabase
     .from('tours')
-    .select('id, branch_id, guide_id, assignment_status')
+    .select(
+      'id, branch_id, guide_id, assignment_status, vehicle_company_profile_id, vehicle_company_id',
+    )
     .eq('id', tourId)
     .maybeSingle()
   if (!tour) return { ok: false, error: '투어를 찾을 수 없습니다.' }
@@ -268,6 +271,8 @@ export async function recallTourAssignment(
   )
   if (!regionGuard.ok) return { ok: false, error: regionGuard.error }
 
+  const assignmentStatus = (tour.assignment_status ?? 'assigned') as TourAssignmentStatus
+
   const { data: settlement } = await ctx.supabase
     .from('settlements')
     .select('id, status, guide_confirmed_at')
@@ -275,40 +280,59 @@ export async function recallTourAssignment(
     .eq('guide_id', tour.guide_id as string)
     .maybeSingle()
 
-  const guard = assertCanRecallTourAssignment({
-    role: ctx.role,
-    assignmentStatus: (tour.assignment_status ?? 'assigned') as TourAssignmentStatus,
-    settlementStatus: (settlement?.status ?? null) as SettlementStatus | null,
-    guideConfirmedAt: (settlement?.guide_confirmed_at ?? null) as string | null,
-  })
-  if (!guard.ok) return { ok: false, error: guard.error }
+  if (assignmentStatus === 'recalled') {
+    const { data: vehicleReport } = await ctx.supabase
+      .from('vehicle_route_reports')
+      .select('id')
+      .eq('tour_id', tourId)
+      .maybeSingle()
 
-  const now = new Date().toISOString()
+    const cleanupPending = isVehicleRecallCleanupPending({
+      assignmentStatus,
+      vehicleCompanyProfileId: tour.vehicle_company_profile_id as string | null,
+      vehicleCompanyId: tour.vehicle_company_id as string | null,
+      hasVehicleReport: !!vehicleReport,
+    })
 
-  // Recall the tour first so the guide immediately loses visibility — tours RLS and
-  // the guide settlement read view both key off tours.assignment_status = 'recalled'.
-  const { error: tourError } = await ctx.supabase
-    .from('tours')
-    .update({ assignment_status: 'recalled', recalled_at: now, recalled_by: ctx.id })
-    .eq('id', tourId)
-    .eq('assignment_status', 'assigned')
-  if (tourError) {
-    return { ok: false, error: '배정을 회수할 수 없습니다. 잠시 후 다시 시도해주세요.' }
-  }
+    if (!cleanupPending) {
+      return { ok: false, error: '이미 배정 회수된 투어입니다.' }
+    }
+  } else {
+    const guard = assertCanRecallTourAssignment({
+      role: ctx.role,
+      assignmentStatus,
+      settlementStatus: (settlement?.status ?? null) as SettlementStatus | null,
+      guideConfirmedAt: (settlement?.guide_confirmed_at ?? null) as string | null,
+    })
+    if (!guard.ok) return { ok: false, error: guard.error }
 
-  // Status-only transition for an existing draft/submitted settlement. The workflow
-  // trigger authorizes only draft/submitted → recalled for admin tier.
-  if (settlement) {
-    const fromStatus = settlement.status as SettlementStatus
-    const { error: settlementError } = await ctx.supabase
-      .from('settlements')
-      .update({ status: 'recalled' })
-      .eq('id', settlement.id as string)
-      .eq('status', fromStatus)
-    if (settlementError) {
-      return {
-        ok: false,
-        error: '배정은 회수되었으나 정산서 상태 갱신에 실패했습니다. 다시 시도해주세요.',
+    const now = new Date().toISOString()
+
+    // Recall the tour first so the guide immediately loses visibility — tours RLS and
+    // the guide settlement read view both key off tours.assignment_status = 'recalled'.
+    const { error: tourError } = await ctx.supabase
+      .from('tours')
+      .update({ assignment_status: 'recalled', recalled_at: now, recalled_by: ctx.id })
+      .eq('id', tourId)
+      .eq('assignment_status', 'assigned')
+    if (tourError) {
+      return { ok: false, error: '배정을 회수할 수 없습니다. 잠시 후 다시 시도해주세요.' }
+    }
+
+    // Status-only transition for an existing draft/submitted settlement. The workflow
+    // trigger authorizes only draft/submitted → recalled for admin tier.
+    if (settlement) {
+      const fromStatus = settlement.status as SettlementStatus
+      const { error: settlementError } = await ctx.supabase
+        .from('settlements')
+        .update({ status: 'recalled' })
+        .eq('id', settlement.id as string)
+        .eq('status', fromStatus)
+      if (settlementError) {
+        return {
+          ok: false,
+          error: '배정은 회수되었으나 정산서 상태 갱신에 실패했습니다. 다시 시도해주세요.',
+        }
       }
     }
   }

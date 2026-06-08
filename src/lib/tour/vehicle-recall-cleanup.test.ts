@@ -33,9 +33,14 @@ describe('recall cleanup wiring (inside existing recall path)', () => {
     expect(calls).toBe(1)
   })
 
-  it('keeps the existing recall eligibility guard', () => {
+  it('keeps the existing recall eligibility guard for assigned tours only', () => {
     const body = recallActionBody()
     expect(body).toContain('assertCanRecallTourAssignment')
+    const recalledBranch = body.slice(
+      body.indexOf("if (assignmentStatus === 'recalled')"),
+      body.indexOf('} else {', body.indexOf("if (assignmentStatus === 'recalled')")),
+    )
+    expect(recalledBranch).not.toContain('assertCanRecallTourAssignment')
   })
 
   it('revalidates the vehicle views after recall', () => {
@@ -113,5 +118,34 @@ describe('manual assignment stays blocked when a report exists', () => {
     // The admin actions never delete reports themselves — that is recall-only.
     expect(ADMIN_ACTIONS_SRC).not.toMatch(/from\(['"]vehicle_route_reports['"]\)[\s\S]*?\.delete\(\)/)
     expect(ADMIN_ACTIONS_SRC).not.toContain('recall_tour_vehicle_cleanup')
+  })
+})
+
+describe('C1 audit — non-atomic recall exposes dead-end risk (source-level)', () => {
+  it('vehicle cleanup is the last step and has no compensating rollback', () => {
+    const body = recallActionBody()
+    const tourIdx = body.indexOf("assignment_status: 'recalled'")
+    const settlementIdx = body.indexOf("status: 'recalled'")
+    const rpcIdx = body.indexOf("'recall_tour_vehicle_cleanup'")
+    expect(tourIdx).toBeLessThan(settlementIdx)
+    expect(settlementIdx).toBeLessThan(rpcIdx)
+    expect(body).toContain('vehicleCleanupError')
+    expect(body).toMatch(/if \(vehicleCleanupError\)/)
+  })
+
+  it('no alternate app entry calls recall_tour_vehicle_cleanup today', () => {
+    const cleanupCalls = TOUR_ACTIONS_SRC.split("'recall_tour_vehicle_cleanup'").length - 1
+    expect(cleanupCalls).toBe(1)
+  })
+
+  it('recalled tour with pending cleanup retries RPC-only without dead-ending', () => {
+    const body = recallActionBody()
+    expect(body).toContain('isVehicleRecallCleanupPending')
+    const recalledBranch = body.slice(
+      body.indexOf("if (assignmentStatus === 'recalled')"),
+      body.indexOf('} else {', body.indexOf("if (assignmentStatus === 'recalled')")),
+    )
+    expect(recalledBranch).not.toContain("assignment_status: 'recalled'")
+    expect(recalledBranch).not.toContain("status: 'recalled'")
   })
 })

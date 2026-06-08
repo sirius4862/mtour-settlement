@@ -313,7 +313,25 @@ export async function recallTourAssignment(
     }
   }
 
+  // 배정회수 vehicle cleanup — clear tours.vehicle_company_id and delete the now
+  // invalid vehicle report (+ checks via ON DELETE CASCADE) together with the
+  // recall. Runs through an admin-gated SECURITY DEFINER RPC so there is no
+  // standing DELETE grant on vehicle_route_reports. This does NOT touch any
+  // settlement calculation, payout, status flow, paid-lock, or guide confirmation.
+  const { error: vehicleCleanupError } = await ctx.supabase.rpc(
+    'recall_tour_vehicle_cleanup',
+    { p_tour_id: tourId },
+  )
+  if (vehicleCleanupError) {
+    return {
+      ok: false,
+      error: '배정은 회수되었으나 차량 리포트 정리에 실패했습니다. 다시 시도해주세요.',
+    }
+  }
+
   revalidatePath('/admin/tours')
+  revalidatePath('/admin/vehicle-assignments')
+  revalidatePath('/vehicle')
   revalidatePath('/guide')
   revalidatePath('/guide/settlements')
   revalidatePath('/guide/settlements/new')

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 const TABS = [
   { href: '/guide', label: '홈', icon: '🏠', exact: true },
   { href: '/guide/settlements', label: '정산서', icon: '📋', exact: false },
+  { href: '/guide/vehicle-reports', label: '차량 리포트', icon: '🚐', exact: false },
 ] as const
 
 export function GuideBottomNav() {

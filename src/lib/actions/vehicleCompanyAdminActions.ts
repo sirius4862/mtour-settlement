@@ -2,12 +2,15 @@
 
 import { revalidatePath } from 'next/cache'
 import { isAdminTier, isMasterAdmin, isVehicleCompany } from '@/lib/auth/permissions'
-import { filterAdminToursByRegionScope } from '@/lib/guide/assignment'
 import type { AdminRegionScope } from '@/lib/region/permissions'
 import { assertAdminCanAccessSettlementBranch } from '@/lib/region/settlement-access'
 import { createClient } from '@/lib/supabase/server'
 import {
-  deriveVehicleAssignmentStatus,
+  buildVehicleAssignmentTourListItems,
+  filterVehicleAssignmentToursByScope,
+  type VehicleAssignmentTourRow,
+} from '@/lib/vehicle/admin-assignment-list'
+import {
   VEHICLE_ASSIGNMENT_LOCKED_MESSAGE,
   type VehicleAssignmentStatus,
 } from '@/lib/vehicle/assignment-status'
@@ -131,33 +134,55 @@ export async function getAdminVehicleAssignmentTours(): Promise<VehicleAssignmen
   const ctx = await getAdminCtx()
   if (!ctx) return []
 
-  const { data: tourRows } = await ctx.supabase
+  // Tours-first list: no join/filter on vehicle_route_reports. Branch filter runs
+  // in the DB query for plain admins so limit(200) applies within the region,
+  // not across all branches / oldest global rows.
+  let tourQuery = ctx.supabase
     .from('tours')
     .select(
       'id, tour_code, start_date, end_date, branch_id, vehicle_company_profile_id, assignment_status, ' +
       'guide:profiles!guide_id(full_name, korean_name)',
     )
     .eq('assignment_status', 'assigned')
-    .order('start_date', { ascending: true })
+
+  if (!isMasterAdmin(ctx.role) && ctx.branch_id) {
+    tourQuery = tourQuery.eq('branch_id', ctx.branch_id)
+  }
+
+  const { data: tourRows } = await tourQuery
+    .order('start_date', { ascending: false })
     .order('tour_code', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(200)
 
-  const scoped = filterAdminToursByRegionScope(
+  const scoped = filterVehicleAssignmentToursByScope(
     (tourRows ?? []) as unknown as { branch_id: string }[],
     scopeOf(ctx),
   ) as unknown as Array<Record<string, unknown>>
   if (scoped.length === 0) return []
 
-  const tourIds = scoped.map((t) => t.id as string)
-  const profileIds = scoped
-    .map((t) => (t.vehicle_company_profile_id as string | null) ?? null)
+  const rows: VehicleAssignmentTourRow[] = scoped.map((t) => ({
+    id: t.id as string,
+    tour_code: (t.tour_code as string) ?? '',
+    start_date: (t.start_date as string | null) ?? null,
+    end_date: (t.end_date as string | null) ?? null,
+    branch_id: t.branch_id as string,
+    vehicle_company_profile_id: (t.vehicle_company_profile_id as string | null) ?? null,
+    guide_name: guideName((t.guide as GuideRel) ?? null),
+  }))
+
+  const tourIds = rows.map((t) => t.id)
+  const profileIds = rows
+    .map((t) => t.vehicle_company_profile_id)
     .filter((id): id is string => !!id)
 
   const [{ data: reportRows }, nameById] = await Promise.all([
-    ctx.supabase
-      .from('vehicle_route_reports')
-      .select('tour_id, status')
-      .in('tour_id', tourIds),
+    tourIds.length > 0
+      ? ctx.supabase
+          .from('vehicle_route_reports')
+          .select('tour_id, status')
+          .in('tour_id', tourIds)
+      : Promise.resolve({ data: [] as { tour_id: string; status: VehicleTourReportStatus }[] }),
     loadVehicleCompanyNamesById(ctx, profileIds),
   ])
 
@@ -167,22 +192,7 @@ export async function getAdminVehicleAssignmentTours(): Promise<VehicleAssignmen
     reportByTour.set(r.tour_id, r.status)
   }
 
-  return scoped.map((t) => {
-    const profileId = (t.vehicle_company_profile_id as string | null) ?? null
-    const reportStatus = reportByTour.get(t.id as string) ?? 'none'
-    return {
-      id: t.id as string,
-      tour_code: (t.tour_code as string) ?? '',
-      start_date: (t.start_date as string | null) ?? null,
-      end_date: (t.end_date as string | null) ?? null,
-      branch_id: t.branch_id as string,
-      guide_name: guideName((t.guide as GuideRel) ?? null),
-      vehicle_company_profile_id: profileId,
-      vehicle_company_name: profileId ? nameById.get(profileId) ?? null : null,
-      report_status: reportStatus,
-      assignment_status: deriveVehicleAssignmentStatus(!!profileId, reportStatus),
-    }
-  })
+  return buildVehicleAssignmentTourListItems(rows, reportByTour, nameById)
 }
 
 async function reportExistsForTour(ctx: AdminCtx, tourId: string): Promise<boolean> {

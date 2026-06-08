@@ -106,7 +106,51 @@ describe('admin vehicle actions — profile-based assignment (source-level)', ()
 
   it('uses region scoping helper for branch access', () => {
     expect(ADMIN_ACTIONS_SRC).toContain('assertAdminCanAccessSettlementBranch')
-    expect(ADMIN_ACTIONS_SRC).toContain('filterAdminToursByRegionScope')
+    expect(ADMIN_ACTIONS_SRC).toContain('filterVehicleAssignmentToursByScope')
+  })
+})
+
+function vehicleAssignmentListFnBody(): string {
+  const start = ADMIN_ACTIONS_SRC.indexOf('export async function getAdminVehicleAssignmentTours')
+  const end = ADMIN_ACTIONS_SRC.indexOf('async function reportExistsForTour', start)
+  expect(start).toBeGreaterThan(-1)
+  expect(end).toBeGreaterThan(start)
+  return ADMIN_ACTIONS_SRC.slice(start, end)
+}
+
+describe('admin vehicle assignment list query (source-level)', () => {
+  it('lists from tours only — reports are optional enrichment', () => {
+    const body = vehicleAssignmentListFnBody()
+    expect(ADMIN_ACTIONS_SRC).toContain('buildVehicleAssignmentTourListItems')
+    expect(body).toMatch(/\.from\(['"]tours['"]\)/)
+    expect(body).toMatch(/\.from\(['"]vehicle_route_reports['"]\)/)
+    expect(body).toMatch(/\.in\('tour_id', tourIds\)/)
+    expect(body.indexOf('.from(\'tours\')')).toBeLessThan(body.indexOf('.from(\'vehicle_route_reports\')'))
+  })
+
+  it('does not require vehicle_company_profile_id or a vehicle report', () => {
+    expect(ADMIN_ACTIONS_SRC).not.toMatch(/vehicle_company_profile_id['"]\s*,\s*null/)
+    expect(ADMIN_ACTIONS_SRC).not.toContain('.not.is(')
+    expect(ADMIN_ACTIONS_SRC).not.toMatch(/vehicle_company_id/)
+    expect(ADMIN_ACTIONS_SRC).not.toMatch(/inner.*vehicle_route_reports/i)
+  })
+
+  it('does not query settlements', () => {
+    expect(ADMIN_ACTIONS_SRC).not.toMatch(/from\(['"]settlements['"]\)/)
+  })
+
+  it('applies branch_id in the tours query for scoped admins', () => {
+    expect(ADMIN_ACTIONS_SRC).toContain("tourQuery.eq('branch_id', ctx.branch_id)")
+    expect(ADMIN_ACTIONS_SRC).toContain('isMasterAdmin(ctx.role)')
+  })
+
+  it('orders recent tours first within the branch-scoped limit', () => {
+    expect(ADMIN_ACTIONS_SRC).toMatch(/\.order\('start_date',\s*\{\s*ascending:\s*false\s*\}\)/)
+    expect(ADMIN_ACTIONS_SRC).toMatch(/\.order\('created_at',\s*\{\s*ascending:\s*false\s*\}\)/)
+  })
+
+  it('excludes recalled guide assignments only', () => {
+    expect(ADMIN_ACTIONS_SRC).toContain(".eq('assignment_status', 'assigned')")
   })
 })
 

@@ -90,9 +90,10 @@ describe('guide settlement history filters', () => {
     expect(parseGuideHistoryStatus('submitted')).toBe('submitted')
     expect(parseGuideHistoryStatus('approved')).toBe('')
     expect(parseGuideHistoryStatus('nope')).toBe('')
+    expect(parseGuideHistoryPeriod('7d')).toBe('7d')
     expect(parseGuideHistoryPeriod('30d')).toBe('30d')
     expect(parseGuideHistoryPeriod('all')).toBe('all')
-    expect(parseGuideHistoryPeriod('bad')).toBe('all')
+    expect(parseGuideHistoryPeriod('bad')).toBe('7d')
     expect(normalizeGuideHistoryPage('3')).toBe(3)
     expect(normalizeGuideHistoryPage('-1')).toBe(1)
   })
@@ -110,13 +111,18 @@ describe('guide settlement history filters', () => {
     expect(expandGuideHistoryStatusFilter()).toBeNull()
   })
 
+  it('defaults recent history to 7 days', () => {
+    expect(guideHistorySinceDate('7d', now)).toBe('2026-05-28')
+    expect(parseGuideHistoryPeriod()).toBe('7d')
+  })
+
   it('filters by status, period, and keyword', () => {
     const row = settlement({})
     expect(matchesGuideHistoryFilters(row, { status: 'submitted', period: '90d', search: 'family' }, now)).toBe(true)
     expect(matchesGuideHistoryFilters(row, { status: 'draft', period: '90d' }, now)).toBe(false)
     expect(matchesGuideHistoryFilters(row, { period: '30d' }, now)).toBe(true)
-    expect(matchesGuideHistoryFilters(row, { search: 'DN-2026' }, now)).toBe(true)
-    expect(matchesGuideHistoryFilters(row, { search: 'missing' }, now)).toBe(false)
+    expect(matchesGuideHistoryFilters(row, { period: 'all', search: 'DN-2026' }, now)).toBe(true)
+    expect(matchesGuideHistoryFilters(row, { period: 'all', search: 'missing' }, now)).toBe(false)
   })
 
   it('builds pagination and reset URLs for the history page', () => {

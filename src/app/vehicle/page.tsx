@@ -49,7 +49,7 @@ export default async function VehicleHomePage({
 
       <VehicleDashboardDateFilterBar
         filter={dateFilter}
-        showDefaultMonthNotice={dateFilter.range === 'current_month' && !hasExplicitDateParams}
+        showDefaultMonthNotice={dateFilter.range === 'forward_week' && !hasExplicitDateParams}
         showAllWarning={dateFilter.range === 'all'}
       />
 

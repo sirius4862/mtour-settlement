@@ -1,46 +1,51 @@
 import { describe, expect, it } from 'vitest'
 import {
   ADMIN_DATE_RANGE_ALL_WARNING,
-  ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE,
+  ADMIN_DATE_RANGE_DEFAULT_NOTICE,
   currentMonthRange,
   filterToursByAdminDateRange,
+  forwardWeekRange,
   isTourInAdminDateRange,
   nextMonthRange,
   parseAdminDateRangeSearchParams,
   prevMonthRange,
+  recentWeekRange,
   todayUtcString,
 } from './date-range-filter'
 
 const REF = new Date('2026-06-08T12:00:00Z')
 
 describe('admin date range filter (shared)', () => {
-  it('defaults to the current calendar month when no params', () => {
+  it('defaults to today through today + 7 days when no params', () => {
     const filter = parseAdminDateRangeSearchParams(undefined, REF)
     expect(filter).toEqual({
-      range: 'current_month',
-      from: '2026-06-01',
-      to: '2026-06-30',
+      range: 'forward_week',
+      from: '2026-06-08',
+      to: '2026-06-15',
     })
-    expect(ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE).toBe('기본값: 이번 달 투어만 표시됩니다.')
+    expect(ADMIN_DATE_RANGE_DEFAULT_NOTICE).toBe('기본값: 오늘부터 7일간의 투어만 표시됩니다.')
   })
 
-  it('hides tours outside the default current month', () => {
+  it('hides tours outside the default forward week', () => {
     const filter = parseAdminDateRangeSearchParams(undefined, REF)
-    expect(isTourInAdminDateRange('2026-05-31', filter)).toBe(false)
-    expect(isTourInAdminDateRange('2026-07-01', filter)).toBe(false)
+    expect(isTourInAdminDateRange('2026-06-07', filter)).toBe(false)
+    expect(isTourInAdminDateRange('2026-06-16', filter)).toBe(false)
     const visible = filterToursByAdminDateRange(
       [
-        { id: 'old', start_date: '2026-05-15' },
+        { id: 'old', start_date: '2026-06-07' },
         { id: 'in', start_date: '2026-06-08' },
+        { id: 'end', start_date: '2026-06-15' },
+        { id: 'future', start_date: '2026-06-16' },
       ],
       filter,
     )
-    expect(visible.map((t) => t.id)).toEqual(['in'])
+    expect(visible.map((t) => t.id)).toEqual(['in', 'end'])
   })
 
-  it('shows current-month tour', () => {
+  it('shows tours inside the default forward week', () => {
     const filter = parseAdminDateRangeSearchParams(undefined, REF)
     expect(isTourInAdminDateRange('2026-06-08', filter)).toBe(true)
+    expect(isTourInAdminDateRange('2026-06-15', filter)).toBe(true)
   })
 
   it('shows today/future tours with 오늘 이후 filter', () => {
@@ -48,6 +53,22 @@ describe('admin date range filter (shared)', () => {
     expect(filter.range).toBe('from_today')
     expect(isTourInAdminDateRange('2026-12-01', filter)).toBe(true)
     expect(isTourInAdminDateRange('2026-06-07', filter)).toBe(false)
+  })
+
+  it('supports 최근 7일 forward-week quick filter', () => {
+    const forward = forwardWeekRange(REF)
+    const filter = parseAdminDateRangeSearchParams({ from: forward.from, to: forward.to }, REF)
+    expect(filter.range).toBe('forward_week')
+    expect(isTourInAdminDateRange('2026-06-15', filter)).toBe(true)
+    expect(isTourInAdminDateRange('2026-06-16', filter)).toBe(false)
+  })
+
+  it('supports 이번 달 filter', () => {
+    const current = currentMonthRange(REF)
+    const filter = parseAdminDateRangeSearchParams({ from: current.from, to: current.to }, REF)
+    expect(filter.range).toBe('current_month')
+    expect(isTourInAdminDateRange('2026-06-08', filter)).toBe(true)
+    expect(isTourInAdminDateRange('2026-05-31', filter)).toBe(false)
   })
 
   it('supports 다음 달 filter', () => {
@@ -83,7 +104,9 @@ describe('admin date range filter (shared)', () => {
     expect(ADMIN_DATE_RANGE_ALL_WARNING).toBe('전체 조회는 데이터가 많을 수 있습니다.')
   })
 
-  it('computes month boundaries', () => {
+  it('computes week and month boundaries', () => {
+    expect(forwardWeekRange(REF)).toEqual({ from: '2026-06-08', to: '2026-06-15' })
+    expect(recentWeekRange(REF)).toEqual({ startDate: '2026-06-01', endDate: '2026-06-08' })
     expect(currentMonthRange(REF)).toEqual({ from: '2026-06-01', to: '2026-06-30' })
     expect(nextMonthRange(REF)).toEqual({ from: '2026-07-01', to: '2026-07-31' })
     expect(prevMonthRange(REF)).toEqual({ from: '2026-05-01', to: '2026-05-31' })

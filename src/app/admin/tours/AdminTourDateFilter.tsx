@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import {
   ADMIN_DATE_RANGE_ALL_WARNING,
-  ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE,
+  ADMIN_DATE_RANGE_DEFAULT_NOTICE,
 } from '@/lib/admin/date-range-filter'
 import {
   adminTourQuickRangeUrls,
@@ -23,6 +23,7 @@ interface Props {
 
 const QUICK_LABELS = {
   fromToday: '오늘 이후',
+  forwardWeek: '최근 7일',
   currentMonth: '이번 달',
   nextMonth: '다음 달',
   prevMonth: '지난 달',
@@ -57,7 +58,7 @@ export function AdminTourDateFilterBar({
     <div className="space-y-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
       {showDefaultMonthNotice && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
-          {ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE}
+          {ADMIN_DATE_RANGE_DEFAULT_NOTICE}
         </p>
       )}
       {showAllWarning && (
@@ -69,6 +70,9 @@ export function AdminTourDateFilterBar({
       <div className="flex flex-wrap gap-2">
         <Link href={quick.fromToday} className={quickButtonClass(filter.range === 'from_today')}>
           {QUICK_LABELS.fromToday}
+        </Link>
+        <Link href={quick.forwardWeek} className={quickButtonClass(filter.range === 'forward_week')}>
+          {QUICK_LABELS.forwardWeek}
         </Link>
         <Link href={quick.currentMonth} className={quickButtonClass(filter.range === 'current_month')}>
           {QUICK_LABELS.currentMonth}

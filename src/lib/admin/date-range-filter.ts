@@ -1,5 +1,8 @@
-export const ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE =
-  '기본값: 이번 달 투어만 표시됩니다.'
+export const ADMIN_DATE_RANGE_DEFAULT_NOTICE =
+  '기본값: 오늘부터 7일간의 투어만 표시됩니다.'
+
+/** @deprecated Use ADMIN_DATE_RANGE_DEFAULT_NOTICE */
+export const ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE = ADMIN_DATE_RANGE_DEFAULT_NOTICE
 
 export const ADMIN_DATE_RANGE_ALL_WARNING =
   '전체 조회는 데이터가 많을 수 있습니다.'
@@ -10,6 +13,8 @@ export const ADMIN_DATE_RANGE_LIST_LIMIT_ALL = 500
 export type AdminDateQuickRange =
   | 'all'
   | 'from_today'
+  | 'forward_week'
+  | 'recent_week'
   | 'current_month'
   | 'next_month'
   | 'prev_month'
@@ -35,6 +40,37 @@ export function toUtcDateString(date: Date): string {
   return date.toISOString().slice(0, 10)
 }
 
+export function addUtcDays(referenceDate: Date, days: number): Date {
+  return new Date(Date.UTC(
+    referenceDate.getUTCFullYear(),
+    referenceDate.getUTCMonth(),
+    referenceDate.getUTCDate() + days,
+  ))
+}
+
+export function todayUtcString(referenceDate: Date = new Date()): string {
+  return toUtcDateString(referenceDate)
+}
+
+/** Operational default: today through today + 7 days (inclusive). */
+export function forwardWeekRange(referenceDate: Date = new Date()): { from: string; to: string } {
+  return {
+    from: todayUtcString(referenceDate),
+    to: toUtcDateString(addUtcDays(referenceDate, 7)),
+  }
+}
+
+/** Settlement/history default: today - 7 days through today (inclusive). */
+export function recentWeekRange(referenceDate: Date = new Date()): {
+  startDate: string
+  endDate: string
+} {
+  return {
+    startDate: toUtcDateString(addUtcDays(referenceDate, -7)),
+    endDate: todayUtcString(referenceDate),
+  }
+}
+
 export function currentMonthRange(referenceDate: Date = new Date()): { from: string; to: string } {
   const y = referenceDate.getUTCFullYear()
   const m = referenceDate.getUTCMonth()
@@ -54,13 +90,41 @@ export function prevMonthRange(referenceDate: Date = new Date()): { from: string
   return currentMonthRange(anchor)
 }
 
-export function todayUtcString(referenceDate: Date = new Date()): string {
-  return toUtcDateString(referenceDate)
+function matchesKnownRange(
+  from: string | null,
+  to: string | null,
+  referenceDate: Date,
+): AdminDateRangeFilter | null {
+  const today = todayUtcString(referenceDate)
+  if (from === today && !to) {
+    return { range: 'from_today', from, to: null }
+  }
+  const forward = forwardWeekRange(referenceDate)
+  if (from === forward.from && to === forward.to) {
+    return { range: 'forward_week', from, to }
+  }
+  const recent = recentWeekRange(referenceDate)
+  if (from === recent.startDate && to === recent.endDate) {
+    return { range: 'recent_week', from, to }
+  }
+  const current = currentMonthRange(referenceDate)
+  if (from === current.from && to === current.to) {
+    return { range: 'current_month', from, to }
+  }
+  const next = nextMonthRange(referenceDate)
+  if (from === next.from && to === next.to) {
+    return { range: 'next_month', from, to }
+  }
+  const prev = prevMonthRange(referenceDate)
+  if (from === prev.from && to === prev.to) {
+    return { range: 'prev_month', from, to }
+  }
+  return null
 }
 
 /**
  * Resolve date filter from URL search params.
- * No date params → current calendar month.
+ * No date params → today through today + 7 days (operational default).
  */
 export function parseAdminDateRangeSearchParams(
   params: AdminDateRangeSearchParams | undefined,
@@ -71,29 +135,15 @@ export function parseAdminDateRangeSearchParams(
   }
 
   if (params?.from || params?.to) {
-    const today = todayUtcString(referenceDate)
     const from = params.from ?? null
     const to = params.to ?? null
-    if (from === today && !to) {
-      return { range: 'from_today', from, to: null }
-    }
-    const current = currentMonthRange(referenceDate)
-    if (from === current.from && to === current.to) {
-      return { range: 'current_month', from, to }
-    }
-    const next = nextMonthRange(referenceDate)
-    if (from === next.from && to === next.to) {
-      return { range: 'next_month', from, to }
-    }
-    const prev = prevMonthRange(referenceDate)
-    if (from === prev.from && to === prev.to) {
-      return { range: 'prev_month', from, to }
-    }
+    const known = matchesKnownRange(from, to, referenceDate)
+    if (known) return known
     return { range: 'custom', from, to }
   }
 
-  const { from, to } = currentMonthRange(referenceDate)
-  return { range: 'current_month', from, to }
+  const { from, to } = forwardWeekRange(referenceDate)
+  return { range: 'forward_week', from, to }
 }
 
 export function buildAdminDateRangeHref(
@@ -120,10 +170,10 @@ export function adminDateRangeQuickUrls(
   extra?: Record<string, string | undefined>,
 ) {
   const today = todayUtcString(referenceDate)
+  const forward = forwardWeekRange(referenceDate)
   const current = currentMonthRange(referenceDate)
   const next = nextMonthRange(referenceDate)
   const prev = prevMonthRange(referenceDate)
-  const allExtra = { ...extra, range: 'all' }
   const allSp = new URLSearchParams()
   allSp.set('range', 'all')
   if (extra) {
@@ -133,6 +183,7 @@ export function adminDateRangeQuickUrls(
   }
   return {
     fromToday: buildAdminDateRangeHref(basePath, today, null, extra),
+    forwardWeek: buildAdminDateRangeHref(basePath, forward.from, forward.to, extra),
     currentMonth: buildAdminDateRangeHref(basePath, current.from, current.to, extra),
     nextMonth: buildAdminDateRangeHref(basePath, next.from, next.to, extra),
     prevMonth: buildAdminDateRangeHref(basePath, prev.from, prev.to, extra),

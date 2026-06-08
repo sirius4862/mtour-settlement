@@ -4,7 +4,7 @@ import { isWorkflowStatus } from '@/lib/settlement/status-display'
 
 export const GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE = 20
 
-export const GUIDE_HISTORY_PERIODS = ['30d', '90d', '1y', 'all'] as const
+export const GUIDE_HISTORY_PERIODS = ['7d', '30d', '90d', '1y', 'all'] as const
 export type GuideHistoryPeriod = (typeof GUIDE_HISTORY_PERIODS)[number]
 export const GUIDE_HISTORY_STATUS_ORDER: SettlementStatus[] = [
   'draft',
@@ -39,7 +39,7 @@ export function parseGuideHistoryStatus(value?: string | null): SettlementStatus
 export function parseGuideHistoryPeriod(value?: string | null): GuideHistoryPeriod {
   return GUIDE_HISTORY_PERIODS.includes(value as GuideHistoryPeriod)
     ? (value as GuideHistoryPeriod)
-    : 'all'
+    : '7d'
 }
 
 export function normalizeGuideHistoryPage(value?: number | string | null): number {
@@ -49,6 +49,7 @@ export function normalizeGuideHistoryPage(value?: number | string | null): numbe
 
 export function guideHistorySinceDate(period: GuideHistoryPeriod, now = new Date()): string | null {
   const days =
+    period === '7d' ? 7 :
     period === '30d' ? 30 :
     period === '90d' ? 90 :
     period === '1y' ? 365 :

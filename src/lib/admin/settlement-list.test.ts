@@ -247,16 +247,16 @@ const listRows = [
 ]
 
 describe('/admin/settlements search list behavior', () => {
-  it('defaults to current month and 전체 상태 subtitle', () => {
-    const range = defaultAdminSettlementDateRange(new Date(Date.UTC(2026, 5, 15)))
-    expect(range).toEqual({ startDate: '2026-06-01', endDate: '2026-06-30' })
+  it('defaults to recent 7 days and 전체 상태 subtitle', () => {
+    const range = defaultAdminSettlementDateRange(new Date(Date.UTC(2026, 5, 8)))
+    expect(range).toEqual({ startDate: '2026-06-01', endDate: '2026-06-08' })
     expect(
       buildAdminSettlementSearchSubtitle({
         ...range,
         regionLabel: '전체 지역',
         statusLabel: '전체 상태',
       }),
-    ).toBe('2026-06-01 ~ 2026-06-30 · 전체 지역 · 전체 상태')
+    ).toBe('2026-06-01 ~ 2026-06-08 · 전체 지역 · 전체 상태')
   })
 
   it('validates date range order and max one-year range', () => {

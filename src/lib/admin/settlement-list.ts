@@ -1,3 +1,4 @@
+import { recentWeekRange } from '@/lib/admin/date-range-filter'
 import type { SettlementStatus } from '@/types'
 import type { GuideNameFields } from '@/lib/guide/display-name'
 import type { SettlementCalcSummaryJson } from '@/lib/settlement/calc-summary'
@@ -94,9 +95,7 @@ export function defaultAdminSettlementDateRange(now = new Date()): {
   startDate: string
   endDate: string
 } {
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))
-  return { startDate: dateOnly(start), endDate: dateOnly(end) }
+  return recentWeekRange(now)
 }
 
 function parseDateOnly(value: string): Date | null {

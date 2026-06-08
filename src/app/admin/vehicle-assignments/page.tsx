@@ -36,7 +36,7 @@ export default async function AdminVehicleAssignmentsPage({
 
       <VehicleAssignmentDateFilterBar
         filter={dateFilter}
-        showDefaultMonthNotice={dateFilter.range === 'current_month' && !hasExplicitParams}
+        showDefaultMonthNotice={dateFilter.range === 'forward_week' && !hasExplicitParams}
         showAllWarning={dateFilter.range === 'all'}
       />
 

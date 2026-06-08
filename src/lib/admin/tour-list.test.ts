@@ -226,7 +226,11 @@ describe('admin tour list date URLs', () => {
   })
 
   it('delegates date parsing for the tour page', () => {
-    expect(parseAdminTourDateSearchParams(undefined, REF).from).toBe('2026-06-01')
+    expect(parseAdminTourDateSearchParams(undefined, REF)).toEqual({
+      range: 'forward_week',
+      from: '2026-06-08',
+      to: '2026-06-15',
+    })
   })
 })
 
@@ -313,12 +317,13 @@ describe('/admin/tours card UI source', () => {
 
   it('date filter bar matches vehicle assignment filter layout', () => {
     expect(filterSrc).toContain('오늘 이후')
+    expect(filterSrc).toContain('최근 7일')
     expect(filterSrc).toContain('이번 달')
     expect(filterSrc).toContain('다음 달')
     expect(filterSrc).toContain('지난 달')
     expect(filterSrc).toContain('전체')
     expect(filterSrc).toContain('조회')
-    expect(filterSrc).toContain('ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE')
+    expect(filterSrc).toContain('ADMIN_DATE_RANGE_DEFAULT_NOTICE')
     expect(filterSrc).toContain('ADMIN_DATE_RANGE_ALL_WARNING')
     expect(filterSrc).toContain('adminTourQuickRangeUrls')
     expect(filterSrc).not.toMatch(/delete|archive|삭제/i)

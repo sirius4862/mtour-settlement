@@ -13,6 +13,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 const PERIOD_OPTIONS = [
+  { value: '7d', label: '최근 7일' },
   { value: '30d', label: '최근 30일' },
   { value: '90d', label: '최근 90일' },
   { value: '1y', label: '최근 1년' },

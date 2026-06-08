@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import {
+  currentMonthRange,
+  forwardWeekRange,
+  nextMonthRange,
+  prevMonthRange,
+  todayUtcString,
+} from '@/lib/admin/date-range-filter'
+import {
   buildVehicleAssignmentTourListItems,
   buildVehicleAssignmentListHref,
-  currentMonthRange,
   filterVehicleAssignmentToursByDateRange,
   filterVehicleAssignmentToursByScope,
   isTourInVehicleAssignmentDateRange,
-  nextMonthRange,
   parseVehicleAssignmentSearchParams,
-  prevMonthRange,
-  todayUtcString,
   vehicleAssignmentQuickRangeUrls,
   VEHICLE_ASSIGNMENT_ALL_RANGE_WARNING,
-  VEHICLE_ASSIGNMENT_CURRENT_MONTH_NOTICE,
+  VEHICLE_ASSIGNMENT_DEFAULT_RANGE_NOTICE,
 } from './admin-assignment-list'
 
 const DANANG = 'branch-danang'
@@ -81,23 +84,25 @@ describe('buildVehicleAssignmentTourListItems', () => {
 })
 
 describe('vehicle assignment date range filter', () => {
-  it('defaults to the current calendar month when no params', () => {
+  it('defaults to today through today + 7 days when no params', () => {
     const filter = parseVehicleAssignmentSearchParams(undefined, REF)
     expect(filter).toEqual({
-      range: 'current_month',
-      from: '2026-06-01',
-      to: '2026-06-30',
+      range: 'forward_week',
+      from: '2026-06-08',
+      to: '2026-06-15',
     })
-    expect(VEHICLE_ASSIGNMENT_CURRENT_MONTH_NOTICE).toBe('기본값: 이번 달 투어만 표시됩니다.')
+    expect(VEHICLE_ASSIGNMENT_DEFAULT_RANGE_NOTICE).toBe(
+      '기본값: 오늘부터 7일간의 투어만 표시됩니다.',
+    )
   })
 
-  it('hides tours outside the default current month', () => {
+  it('hides tours outside the default forward week', () => {
     const filter = parseVehicleAssignmentSearchParams(undefined, REF)
-    expect(isTourInVehicleAssignmentDateRange('2026-05-31', filter)).toBe(false)
-    expect(isTourInVehicleAssignmentDateRange('2026-07-01', filter)).toBe(false)
+    expect(isTourInVehicleAssignmentDateRange('2026-06-07', filter)).toBe(false)
+    expect(isTourInVehicleAssignmentDateRange('2026-06-16', filter)).toBe(false)
     const visible = filterVehicleAssignmentToursByDateRange(
       [
-        { id: 'old', start_date: '2026-05-15', branch_id: DANANG },
+        { id: 'old', start_date: '2026-06-07', branch_id: DANANG },
         { id: 'in', start_date: '2026-06-08', branch_id: DANANG },
       ],
       filter,
@@ -105,7 +110,7 @@ describe('vehicle assignment date range filter', () => {
     expect(visible.map((t) => t.id)).toEqual(['in'])
   })
 
-  it('shows current-month unassigned tour without a vehicle report', () => {
+  it('shows forward-week unassigned tour without a vehicle report', () => {
     const filter = parseVehicleAssignmentSearchParams(undefined, REF)
     const items = buildVehicleAssignmentTourListItems(
       [{
@@ -162,9 +167,18 @@ describe('vehicle assignment date range filter', () => {
     expect(VEHICLE_ASSIGNMENT_ALL_RANGE_WARNING).toBe('전체 조회는 데이터가 많을 수 있습니다.')
   })
 
+  it('supports 최근 7일 forward-week quick filter', () => {
+    const forward = forwardWeekRange(REF)
+    const filter = parseVehicleAssignmentSearchParams({ from: forward.from, to: forward.to }, REF)
+    expect(filter.range).toBe('forward_week')
+    expect(isTourInVehicleAssignmentDateRange('2026-06-15', filter)).toBe(true)
+    expect(isTourInVehicleAssignmentDateRange('2026-06-16', filter)).toBe(false)
+  })
+
   it('exposes quick filter URLs for shareable navigation', () => {
     const urls = vehicleAssignmentQuickRangeUrls(REF)
     expect(urls.fromToday).toBe('/admin/vehicle-assignments?from=2026-06-08')
+    expect(urls.forwardWeek).toBe('/admin/vehicle-assignments?from=2026-06-08&to=2026-06-15')
     expect(urls.currentMonth).toBe('/admin/vehicle-assignments?from=2026-06-01&to=2026-06-30')
     expect(urls.nextMonth).toBe('/admin/vehicle-assignments?from=2026-07-01&to=2026-07-31')
     expect(urls.prevMonth).toBe('/admin/vehicle-assignments?from=2026-05-01&to=2026-05-31')

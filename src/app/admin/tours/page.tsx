@@ -74,7 +74,7 @@ export default async function AdminToursPage({
       <AdminTourDateFilterBar
         filter={dateFilter}
         view={view}
-        showDefaultMonthNotice={dateFilter.range === 'current_month' && !hasExplicitDateParams}
+        showDefaultMonthNotice={dateFilter.range === 'forward_week' && !hasExplicitDateParams}
         showAllWarning={dateFilter.range === 'all'}
       />
 

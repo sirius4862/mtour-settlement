@@ -7,13 +7,18 @@ import {
   nextMonthRange,
   prevMonthRange,
 } from '@/lib/admin/date-range-filter'
+import { readFileSync } from 'node:fs'
 import {
   buildVehicleDashboardHref,
+  isVehicleCompanyTourAccessible,
   parseVehicleDashboardSearchParams,
+  RECALLED_VEHICLE_TOUR_ERROR,
   VEHICLE_DASHBOARD_DEFAULT_RANGE_NOTICE,
   VEHICLE_DASHBOARD_PATH,
   vehicleDashboardQuickRangeUrls,
 } from './vehicle-list'
+
+const ACTIONS_SRC = readFileSync('src/lib/actions/vehicleReportActions.ts', 'utf8')
 
 const REF = new Date('2026-06-08T12:00:00Z')
 
@@ -86,5 +91,33 @@ describe('vehicle dashboard date filter', () => {
     expect(buildVehicleDashboardHref('2026-06-08', '2026-06-15')).toBe(
       '/vehicle?from=2026-06-08&to=2026-06-15',
     )
+  })
+})
+
+describe('vehicle company tour access — recalled assignment guard', () => {
+  it('isVehicleCompanyTourAccessible allows assigned and treats null as assigned', () => {
+    expect(isVehicleCompanyTourAccessible('assigned')).toBe(true)
+    expect(isVehicleCompanyTourAccessible(null)).toBe(true)
+    expect(isVehicleCompanyTourAccessible(undefined)).toBe(true)
+  })
+
+  it('isVehicleCompanyTourAccessible blocks recalled tours', () => {
+    expect(isVehicleCompanyTourAccessible('recalled')).toBe(false)
+  })
+
+  it('exposes the recalled-tour edit error message', () => {
+    expect(RECALLED_VEHICLE_TOUR_ERROR).toBe(
+      'This tour assignment has been recalled and can no longer be edited.',
+    )
+  })
+
+  it('getVehicleCompanyAssignedTours excludes recalled tours at the DB query', () => {
+    const fnStart = ACTIONS_SRC.indexOf('export async function getVehicleCompanyAssignedTours')
+    const fnEnd = ACTIONS_SRC.indexOf('export async function getVehicleReportForTour', fnStart)
+    const body = ACTIONS_SRC.slice(fnStart, fnEnd)
+    const profileIdx = body.indexOf("vehicle_company_profile_id', ctx.profileId")
+    const recalledIdx = body.indexOf(".neq('assignment_status', 'recalled')")
+    expect(recalledIdx).toBeGreaterThan(profileIdx)
+    expect(recalledIdx).toBeGreaterThan(-1)
   })
 })

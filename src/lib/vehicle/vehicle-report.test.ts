@@ -199,6 +199,51 @@ describe('vehicle report — profile-based context (source-level)', () => {
   })
 })
 
+describe('vehicle report — recalled tour assignment guard (source-level)', () => {
+  it('getVehicleCompanyAssignedTours excludes recalled tours from the dashboard list', () => {
+    const fnStart = ACTIONS_SRC.indexOf('export async function getVehicleCompanyAssignedTours')
+    const fnEnd = ACTIONS_SRC.indexOf('export async function getVehicleReportForTour', fnStart)
+    const body = ACTIONS_SRC.slice(fnStart, fnEnd)
+    expect(body).toContain(".neq('assignment_status', 'recalled')")
+  })
+
+  it('getVehicleReportForTour blocks direct access to recalled tours', () => {
+    const fnStart = ACTIONS_SRC.indexOf('export async function getVehicleReportForTour')
+    const fnEnd = ACTIONS_SRC.indexOf('interface MutationResult', fnStart)
+    const body = ACTIONS_SRC.slice(fnStart, fnEnd)
+    expect(body).toContain(".neq('assignment_status', 'recalled')")
+  })
+
+  it('saveVehicleReportDraft rejects recalled tour assignments', () => {
+    const fnStart = ACTIONS_SRC.indexOf('export async function saveVehicleReportDraft')
+    const fnEnd = ACTIONS_SRC.indexOf('export async function submitVehicleReport', fnStart)
+    const body = ACTIONS_SRC.slice(fnStart, fnEnd)
+    expect(body).toContain('assertVehicleCompanyCanEditTour')
+    const guardStart = ACTIONS_SRC.indexOf('async function assertVehicleCompanyCanEditTour')
+    const guardBody = ACTIONS_SRC.slice(guardStart, guardStart + 600)
+    expect(guardBody).toContain('RECALLED_VEHICLE_TOUR_ERROR')
+    expect(guardBody).toContain('isVehicleCompanyTourAccessible')
+  })
+
+  it('submitVehicleReport rejects recalled tour assignments', () => {
+    const fnStart = ACTIONS_SRC.indexOf('export async function submitVehicleReport')
+    const body = ACTIONS_SRC.slice(fnStart)
+    expect(body).toContain('assertVehicleCompanyCanEditTour')
+    const guardStart = ACTIONS_SRC.indexOf('async function assertVehicleCompanyCanEditTour')
+    const guardBody = ACTIONS_SRC.slice(guardStart, guardStart + 600)
+    expect(guardBody).toContain('RECALLED_VEHICLE_TOUR_ERROR')
+  })
+
+  it('active assigned tours still use draft save and submit paths', () => {
+    expect(ACTIONS_SRC).toContain('export async function saveVehicleReportDraft')
+    expect(ACTIONS_SRC).toContain('export async function submitVehicleReport')
+    expect(ACTIONS_SRC).toContain('upsertDraftContent')
+    expect(ACTIONS_SRC).toContain("status: 'draft'")
+    expect(ACTIONS_SRC).toContain("status: 'submitted'")
+    expect(ACTIONS_SRC).toContain('isVehicleCompanyTourAccessible')
+  })
+})
+
 describe('vehicle report — draft/submit behavior (source-level)', () => {
   it('inserts new reports only as draft and rejects locked reports', () => {
     expect(ACTIONS_SRC).toContain("status: 'draft'")

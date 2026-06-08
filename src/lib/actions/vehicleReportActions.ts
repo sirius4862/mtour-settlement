@@ -18,7 +18,11 @@ import {
 } from '@/lib/admin/date-range-filter'
 import type { GuideCheckStatus } from '@/lib/vehicle/guide-check'
 import type { VehicleTourReportStatus } from '@/lib/vehicle/report-status'
-import type { UserRole } from '@/types'
+import {
+  isVehicleCompanyTourAccessible,
+  RECALLED_VEHICLE_TOUR_ERROR,
+} from '@/lib/vehicle/vehicle-list'
+import type { TourAssignmentStatus, UserRole } from '@/types'
 
 // Operational, non-financial view of a tour for the vehicle company. NEVER
 // includes settlement/payout/money fields (those live on `settlements`, which
@@ -125,6 +129,7 @@ export async function getVehicleCompanyAssignedTours(
     .from('tours')
     .select(TOUR_SELECT_WITH_GUIDE)
     .eq('vehicle_company_profile_id', ctx.profileId)
+    .neq('assignment_status', 'recalled')
 
   if (filter.range !== 'all') {
     if (filter.from) tourQuery = tourQuery.gte('start_date', filter.from)
@@ -204,6 +209,7 @@ export async function getVehicleReportForTour(
     .select(TOUR_SELECT_WITH_GUIDE)
     .eq('id', tourId)
     .eq('vehicle_company_profile_id', ctx.profileId)
+    .neq('assignment_status', 'recalled')
     .maybeSingle()
   if (!tourRow) return null
 
@@ -224,14 +230,21 @@ interface MutationResult {
   error?: string
 }
 
-async function assertAssignedTour(ctx: VehicleCtx, tourId: string): Promise<boolean> {
+async function assertVehicleCompanyCanEditTour(
+  ctx: VehicleCtx,
+  tourId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { data } = await ctx.supabase
     .from('tours')
-    .select('id')
+    .select('id, assignment_status')
     .eq('id', tourId)
     .eq('vehicle_company_profile_id', ctx.profileId)
     .maybeSingle()
-  return !!data
+  if (!data) return { ok: false, error: '배정된 투어가 아닙니다.' }
+  if (!isVehicleCompanyTourAccessible(data.assignment_status as TourAssignmentStatus)) {
+    return { ok: false, error: RECALLED_VEHICLE_TOUR_ERROR }
+  }
+  return { ok: true }
 }
 
 function reportContentColumns(payload: VehicleReportPayload) {
@@ -304,9 +317,8 @@ export async function saveVehicleReportDraft(
 ): Promise<MutationResult> {
   const ctx = await getVehicleCtx()
   if (!ctx) return { ok: false, error: '차량회사 권한이 필요합니다.' }
-  if (!(await assertAssignedTour(ctx, tourId))) {
-    return { ok: false, error: '배정된 투어가 아닙니다.' }
-  }
+  const access = await assertVehicleCompanyCanEditTour(ctx, tourId)
+  if (!access.ok) return access
 
   const payload = normalizeVehicleReportPayload(input)
   const result = await upsertDraftContent(ctx, tourId, payload)
@@ -323,9 +335,8 @@ export async function submitVehicleReport(
 ): Promise<MutationResult> {
   const ctx = await getVehicleCtx()
   if (!ctx) return { ok: false, error: '차량회사 권한이 필요합니다.' }
-  if (!(await assertAssignedTour(ctx, tourId))) {
-    return { ok: false, error: '배정된 투어가 아닙니다.' }
-  }
+  const access = await assertVehicleCompanyCanEditTour(ctx, tourId)
+  if (!access.ok) return access
 
   const validation = validateVehicleReportForSubmit(input)
   if (!validation.ok) return { ok: false, error: validation.error }

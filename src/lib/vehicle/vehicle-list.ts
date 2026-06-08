@@ -9,6 +9,17 @@ import {
 
 export const VEHICLE_DASHBOARD_PATH = '/vehicle'
 
+/** Returned when a vehicle company tries to edit a recalled tour assignment. */
+export const RECALLED_VEHICLE_TOUR_ERROR =
+  'This tour assignment has been recalled and can no longer be edited.'
+
+/** Vehicle companies may only access tours that are not recalled (배정회수). */
+export function isVehicleCompanyTourAccessible(
+  assignmentStatus: string | null | undefined,
+): boolean {
+  return (assignmentStatus ?? 'assigned') !== 'recalled'
+}
+
 export const VEHICLE_DASHBOARD_DEFAULT_RANGE_NOTICE =
   '기본값: 오늘부터 7일간 배정 행사만 표시됩니다.'
 

@@ -1,6 +1,11 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { canAccessAdminRoutes, canAccessGuideRoutes, homePathForRole } from '@/lib/auth/permissions'
+import {
+  canAccessAdminRoutes,
+  canAccessGuideRoutes,
+  canAccessVehicleRoutes,
+  homePathForRole,
+} from '@/lib/auth/permissions'
 import { timed } from '@/lib/server/perf'
 import type { UserRole } from '@/types'
 
@@ -44,7 +49,7 @@ export async function requireGuide() {
 export async function requireAdmin() {
   const session = await requireAuth()
   if (!canAccessAdminRoutes(session.role)) {
-    redirect('/guide')
+    redirect(homePathForRole(session.role))
   }
   return session
 }
@@ -53,7 +58,16 @@ export async function requireAdmin() {
 export async function requireMasterAdmin() {
   const session = await requireAuth()
   if (session.role !== 'master_admin') {
-    redirect(canAccessAdminRoutes(session.role) ? '/admin' : '/guide')
+    redirect(canAccessAdminRoutes(session.role) ? '/admin' : homePathForRole(session.role))
+  }
+  return session
+}
+
+/** Vehicle company operations routes (/vehicle) — vehicle_company role only. */
+export async function requireVehicleCompany() {
+  const session = await requireAuth()
+  if (!canAccessVehicleRoutes(session.role)) {
+    redirect(homePathForRole(session.role))
   }
   return session
 }

@@ -16,13 +16,23 @@ export function isMasterAdmin(role: UserRole): role is 'master_admin' {
   return role === 'master_admin'
 }
 
-/** Admin review routes — admin and master_admin. */
+/**
+ * Vehicle company role — operational vehicle-report module only.
+ * NOT part of the admin tier and NOT a guide; cannot touch settlements/financials.
+ */
+export function isVehicleCompany(role: UserRole): role is 'vehicle_company' {
+  return role === 'vehicle_company'
+}
+
+/** Admin review routes — admin and master_admin. Vehicle company is excluded. */
 export function isAdminTier(role: UserRole): role is 'admin' | 'master_admin' {
   return role === 'admin' || role === 'master_admin'
 }
 
-export function homePathForRole(role: UserRole): '/guide' | '/admin' {
-  return isAdminTier(role) ? '/admin' : '/guide'
+export function homePathForRole(role: UserRole): '/guide' | '/admin' | '/vehicle' {
+  if (isAdminTier(role)) return '/admin'
+  if (isVehicleCompany(role)) return '/vehicle'
+  return '/guide'
 }
 
 export function canAccessGuideRoutes(role: UserRole): boolean {
@@ -31,6 +41,11 @@ export function canAccessGuideRoutes(role: UserRole): boolean {
 
 export function canAccessAdminRoutes(role: UserRole): boolean {
   return isAdminTier(role)
+}
+
+/** Vehicle company operations routes (/vehicle) — vehicle_company role only. */
+export function canAccessVehicleRoutes(role: UserRole): boolean {
+  return isVehicleCompany(role)
 }
 
 export function canPerformGuideMutation(role: UserRole): boolean {

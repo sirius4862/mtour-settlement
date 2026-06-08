@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   assertAdminReadOnlyAfterApproval,
@@ -5,6 +6,7 @@ import {
   assertRoleCanSaveAdminSettlement,
   canAccessAdminRoutes,
   canAccessGuideRoutes,
+  canAccessVehicleRoutes,
   canAdminReviewActions,
   canAdminReviewEditSettlement,
   canMarkSettlementPaid,
@@ -13,7 +15,9 @@ import {
   canOperationalAdminReview,
   canSaveAdminSettlementEdits,
   homePathForRole,
+  isAdminTier,
   isPostApprovalReadOnlyForAdmin,
+  isVehicleCompany,
   settlementRequiresReconfirmAfterMasterAdminEdit,
 } from './permissions'
 
@@ -22,6 +26,7 @@ describe('permissions', () => {
     expect(canAccessGuideRoutes('guide')).toBe(true)
     expect(canAccessGuideRoutes('admin')).toBe(false)
     expect(canAccessGuideRoutes('master_admin')).toBe(false)
+    expect(canAccessGuideRoutes('vehicle_company')).toBe(false)
     expect(homePathForRole('guide')).toBe('/guide')
   })
 
@@ -29,8 +34,37 @@ describe('permissions', () => {
     expect(canAccessAdminRoutes('admin')).toBe(true)
     expect(canAccessAdminRoutes('master_admin')).toBe(true)
     expect(canAccessAdminRoutes('guide')).toBe(false)
+    expect(canAccessAdminRoutes('vehicle_company')).toBe(false)
     expect(homePathForRole('admin')).toBe('/admin')
     expect(homePathForRole('master_admin')).toBe('/admin')
+  })
+
+  it('routes vehicle_company to /vehicle only', () => {
+    expect(isVehicleCompany('vehicle_company')).toBe(true)
+    expect(isVehicleCompany('guide')).toBe(false)
+    expect(isVehicleCompany('admin')).toBe(false)
+    expect(isVehicleCompany('master_admin')).toBe(false)
+
+    expect(canAccessVehicleRoutes('vehicle_company')).toBe(true)
+    expect(canAccessVehicleRoutes('guide')).toBe(false)
+    expect(canAccessVehicleRoutes('admin')).toBe(false)
+    expect(canAccessVehicleRoutes('master_admin')).toBe(false)
+
+    expect(homePathForRole('vehicle_company')).toBe('/vehicle')
+  })
+
+  it('keeps vehicle_company out of the admin tier and guide/admin routes', () => {
+    expect(isAdminTier('vehicle_company')).toBe(false)
+    expect(canAccessGuideRoutes('vehicle_company')).toBe(false)
+    expect(canAccessAdminRoutes('vehicle_company')).toBe(false)
+    expect(canMarkSettlementPaid('vehicle_company')).toBe(false)
+    expect(canOperationalAdminReview('vehicle_company')).toBe(false)
+  })
+
+  it('protects the /vehicle route group with requireVehicleCompany', () => {
+    const layout = readFileSync('src/app/vehicle/layout.tsx', 'utf8')
+    expect(layout).toContain('requireVehicleCompany')
+    expect(layout).toMatch(/await requireVehicleCompany\(\)/)
   })
 
   it('allows admin and master_admin to mark paid, never guide', () => {

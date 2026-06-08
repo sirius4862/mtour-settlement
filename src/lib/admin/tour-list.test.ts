@@ -4,11 +4,15 @@ import type { SettlementStatus } from '@/types'
 import {
   ADMIN_TOUR_ALL_VIEW_SUBTITLE,
   ADMIN_TOUR_EARLY_VIEW_SUBTITLE,
+  ADMIN_TOUR_LIST_PATH,
   TOUR_ASSIGNMENT_RECALLED_LABEL,
   TOUR_SETTLEMENT_NONE_LABEL,
   adminTourDisplayLabel,
+  adminTourQuickRangeUrls,
+  buildAdminTourListHref,
   canRecallAdminTour,
   filterAdminToursForView,
+  parseAdminTourDateSearchParams,
   sortAdminToursForList,
   tourSettlementStatusLabel,
 } from './tour-list'
@@ -203,8 +207,73 @@ describe('admin tour assignment recall (배정회수)', () => {
   })
 })
 
+describe('admin tour list date URLs', () => {
+  const REF = new Date('2026-06-08T12:00:00Z')
+
+  it('uses /admin/tours as the list path', () => {
+    expect(ADMIN_TOUR_LIST_PATH).toBe('/admin/tours')
+    const urls = adminTourQuickRangeUrls(REF)
+    expect(urls.currentMonth).toBe('/admin/tours?from=2026-06-01&to=2026-06-30')
+    expect(urls.all).toBe('/admin/tours?range=all')
+  })
+
+  it('preserves view=all in quick filter URLs', () => {
+    const urls = adminTourQuickRangeUrls(REF, 'all')
+    expect(urls.all).toBe('/admin/tours?range=all&view=all')
+    expect(buildAdminTourListHref('2026-06-01', '2026-06-30', 'all')).toBe(
+      '/admin/tours?from=2026-06-01&to=2026-06-30&view=all',
+    )
+  })
+
+  it('delegates date parsing for the tour page', () => {
+    expect(parseAdminTourDateSearchParams(undefined, REF).from).toBe('2026-06-01')
+  })
+})
+
+describe('getAdminTours list query (source-level)', () => {
+  const TOUR_ACTIONS_SRC = readFileSync('src/lib/actions/tourActions.ts', 'utf8')
+
+  function getAdminToursBody(): string {
+    const start = TOUR_ACTIONS_SRC.indexOf('export async function getAdminTours')
+    const end = TOUR_ACTIONS_SRC.indexOf('export async function getBranches', start)
+    return TOUR_ACTIONS_SRC.slice(start, end)
+  }
+
+  it('applies branch_id and date filters in DB before limit', () => {
+    const body = getAdminToursBody()
+    expect(body).toContain('AdminDateRangeFilter')
+    expect(body).toContain("tourQuery.eq('branch_id', ctx.branch_id)")
+    expect(body).toContain("filter.range !== 'all'")
+    expect(body).toMatch(/if \(filter\.from\) tourQuery = tourQuery\.gte\('start_date', filter\.from\)/)
+    expect(body).toMatch(/if \(filter\.to\) tourQuery = tourQuery\.lte\('start_date', filter\.to\)/)
+    const branchIdx = body.indexOf("tourQuery.eq('branch_id'")
+    const gteIdx = body.indexOf("filter.from) tourQuery")
+    const limitIdx = body.indexOf('.limit(listLimit)')
+    const orderIdx = body.indexOf(".order('start_date'")
+    expect(branchIdx).toBeGreaterThan(-1)
+    expect(gteIdx).toBeGreaterThan(branchIdx)
+    expect(orderIdx).toBeGreaterThan(gteIdx)
+    expect(limitIdx).toBeGreaterThan(orderIdx)
+  })
+
+  it('does not require settlements to list tours', () => {
+    const body = getAdminToursBody()
+    expect(body).toMatch(/\.from\(['"]tours['"]\)/)
+    const toursIdx = body.indexOf(".from('tours')")
+    const settlementsIdx = body.indexOf(".from('settlements')")
+    expect(settlementsIdx).toBeGreaterThan(toursIdx)
+    expect(body).not.toMatch(/inner.*settlements/i)
+  })
+
+  it('loads settlements only as optional enrichment after tour query', () => {
+    const body = getAdminToursBody()
+    expect(body).toContain(".in('tour_id', tourIds)")
+  })
+})
+
 describe('/admin/tours card UI source', () => {
   const source = readFileSync('src/app/admin/tours/page.tsx', 'utf8')
+  const filterSrc = readFileSync('src/app/admin/tours/AdminTourDateFilter.tsx', 'utf8')
 
   it('does not render redundant assigned-guide or guide-change UI', () => {
     expect(source).not.toContain('가이드 배정됨')
@@ -233,6 +302,26 @@ describe('/admin/tours card UI source', () => {
     expect(source).toContain("params.view === 'all' ? 'all' : 'early'")
     expect(source).toContain('전체 투어 보기')
     expect(source).toContain('미작성/작성중 보기')
+  })
+
+  it('wires shareable date filters without delete/archive controls', () => {
+    expect(source).toContain('parseAdminTourDateSearchParams')
+    expect(source).toContain('getAdminTours(dateFilter)')
+    expect(source).toContain('AdminTourDateFilterBar')
+    expect(source).not.toMatch(/delete|archive|삭제/i)
+  })
+
+  it('date filter bar matches vehicle assignment filter layout', () => {
+    expect(filterSrc).toContain('오늘 이후')
+    expect(filterSrc).toContain('이번 달')
+    expect(filterSrc).toContain('다음 달')
+    expect(filterSrc).toContain('지난 달')
+    expect(filterSrc).toContain('전체')
+    expect(filterSrc).toContain('조회')
+    expect(filterSrc).toContain('ADMIN_DATE_RANGE_CURRENT_MONTH_NOTICE')
+    expect(filterSrc).toContain('ADMIN_DATE_RANGE_ALL_WARNING')
+    expect(filterSrc).toContain('adminTourQuickRangeUrls')
+    expect(filterSrc).not.toMatch(/delete|archive|삭제/i)
   })
 })
 

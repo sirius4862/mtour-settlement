@@ -7,36 +7,54 @@ import {
   adminTourDisplayLabel,
   canRecallAdminTour,
   filterAdminToursForView,
+  parseAdminTourDateSearchParams,
 } from '@/lib/admin/tour-list'
+import { AdminTourDateFilterBar } from './AdminTourDateFilter'
 import { RecallAssignmentButton } from './RecallAssignmentButton'
 
 export const dynamic = 'force-dynamic'
 
+function tourListHref(view: 'early' | 'all', params: { from?: string; to?: string; range?: string }) {
+  const sp = new URLSearchParams()
+  if (params.range === 'all') {
+    sp.set('range', 'all')
+  } else {
+    if (params.from) sp.set('from', params.from)
+    if (params.to) sp.set('to', params.to)
+  }
+  if (view === 'all') sp.set('view', 'all')
+  const q = sp.toString()
+  return q ? `/admin/tours?${q}` : '/admin/tours'
+}
+
 export default async function AdminToursPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>
+  searchParams: Promise<{ view?: string; from?: string; to?: string; range?: string }>
 }) {
   await requireAdmin()
-  const tours = await getAdminTours()
   const params = await searchParams
+  const dateFilter = parseAdminTourDateSearchParams(params)
+  const hasExplicitDateParams = !!(params.from || params.to || params.range)
   const view = params.view === 'all' ? 'all' : 'early'
+
+  const tours = await getAdminTours(dateFilter)
   const visibleTours = filterAdminToursForView(tours, view)
   const subtitle =
     view === 'all' ? ADMIN_TOUR_ALL_VIEW_SUBTITLE : ADMIN_TOUR_EARLY_VIEW_SUBTITLE
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-gray-900">투어 관리</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             {visibleTours.length}건 · {subtitle}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Link
-            href={view === 'all' ? '/admin/tours' : '/admin/tours?view=all'}
+            href={tourListHref(view === 'all' ? 'early' : 'all', params)}
             className="px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium text-blue-600 hover:bg-gray-50"
           >
             {view === 'all' ? '미작성/작성중 보기' : '전체 투어 보기'}
@@ -52,6 +70,13 @@ export default async function AdminToursPage({
           </Link>
         </div>
       </div>
+
+      <AdminTourDateFilterBar
+        filter={dateFilter}
+        view={view}
+        showDefaultMonthNotice={dateFilter.range === 'current_month' && !hasExplicitDateParams}
+        showAllWarning={dateFilter.range === 'all'}
+      />
 
       {visibleTours.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center">

@@ -1,5 +1,46 @@
 import type { SettlementStatus, TourAssignmentStatus } from '@/types'
 import { isAssignmentRecallEligible } from '@/lib/tour/assignment-recall'
+import {
+  adminDateRangeQuickUrls,
+  buildAdminDateRangeHref,
+  parseAdminDateRangeSearchParams,
+  type AdminDateRangeFilter,
+  type AdminDateRangeSearchParams,
+} from './date-range-filter'
+
+export const ADMIN_TOUR_LIST_PATH = '/admin/tours'
+
+export type { AdminDateRangeFilter }
+
+export type AdminTourListView = 'early' | 'all'
+
+export interface AdminTourPageSearchParams extends AdminDateRangeSearchParams {
+  view?: string
+}
+
+export function parseAdminTourDateSearchParams(
+  params: AdminTourPageSearchParams | undefined,
+  referenceDate: Date = new Date(),
+): AdminDateRangeFilter {
+  return parseAdminDateRangeSearchParams(params, referenceDate)
+}
+
+export function adminTourQuickRangeUrls(
+  referenceDate: Date = new Date(),
+  view?: AdminTourListView,
+) {
+  const extra = view === 'all' ? { view: 'all' } : undefined
+  return adminDateRangeQuickUrls(ADMIN_TOUR_LIST_PATH, referenceDate, extra)
+}
+
+export function buildAdminTourListHref(
+  from: string | null,
+  to: string | null,
+  view?: AdminTourListView,
+): string {
+  const extra = view === 'all' ? { view: 'all' } : undefined
+  return buildAdminDateRangeHref(ADMIN_TOUR_LIST_PATH, from, to, extra)
+}
 
 /** Settlement status labels as shown on the admin tour-management screen. */
 export const TOUR_SETTLEMENT_NONE_LABEL = '정산서 미작성'
@@ -46,8 +87,6 @@ export function tourSettlementStatusLabel(
       return TOUR_SETTLEMENT_NONE_LABEL
   }
 }
-
-export type AdminTourListView = 'early' | 'all'
 
 export interface AdminTourSettlementState {
   assignment_status?: TourAssignmentStatus | null

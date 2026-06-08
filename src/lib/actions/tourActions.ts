@@ -9,6 +9,12 @@ import {
 } from '@/lib/guide/assignment'
 import type { AdminRegionScope } from '@/lib/region/permissions'
 import { filterMtourRegionBranches } from '@/lib/region/regions'
+import {
+  ADMIN_DATE_RANGE_LIST_LIMIT,
+  ADMIN_DATE_RANGE_LIST_LIMIT_ALL,
+  parseAdminDateRangeSearchParams,
+  type AdminDateRangeFilter,
+} from '@/lib/admin/date-range-filter'
 import { sortAdminToursForList } from '@/lib/admin/tour-list'
 import { validateCreateTourTextLengths } from '@/lib/tour/create-tour-validation'
 import { assertCanRecallTourAssignment } from '@/lib/tour/assignment-recall'
@@ -72,17 +78,35 @@ function adminRegionScope(ctx: NonNullable<Awaited<ReturnType<typeof requireAdmi
   return { role: ctx.role, assignedRegionId: ctx.branch_id }
 }
 
-export async function getAdminTours(): Promise<AdminTourListItem[]> {
+export async function getAdminTours(
+  dateFilter?: AdminDateRangeFilter,
+): Promise<AdminTourListItem[]> {
   const ctx = await requireAdminProfile()
   if (!ctx) return []
 
-  const { data } = await ctx.supabase
+  const filter = dateFilter ?? parseAdminDateRangeSearchParams(undefined)
+
+  let tourQuery = ctx.supabase
     .from('tours')
     .select('*, guide:profiles!guide_id(id, full_name, email)')
-    .order('start_date', { ascending: true })
+
+  if (!isMasterAdmin(ctx.role) && ctx.branch_id) {
+    tourQuery = tourQuery.eq('branch_id', ctx.branch_id)
+  }
+
+  if (filter.range !== 'all') {
+    if (filter.from) tourQuery = tourQuery.gte('start_date', filter.from)
+    if (filter.to) tourQuery = tourQuery.lte('start_date', filter.to)
+  }
+
+  const listLimit =
+    filter.range === 'all' ? ADMIN_DATE_RANGE_LIST_LIMIT_ALL : ADMIN_DATE_RANGE_LIST_LIMIT
+
+  const { data } = await tourQuery
+    .order('start_date', { ascending: false })
     .order('tour_code', { ascending: true })
-    .order('id', { ascending: true })
-    .limit(200)
+    .order('created_at', { ascending: false })
+    .limit(listLimit)
 
   const tours = filterAdminToursByRegionScope(
     (data ?? []) as TourWithGuide[],

@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -13,6 +14,11 @@ import {
   vehicleAssignmentStatusLabel,
   type VehicleAssignmentStatus,
 } from '@/lib/vehicle/assignment-status'
+import {
+  adminVehicleReportDetailHref,
+  adminVehicleReportGuideCheckListLabel,
+  adminVehicleReportIssueNotePreview,
+} from '@/lib/vehicle/admin-vehicle-report'
 
 interface Props {
   tours: VehicleAssignmentTourItem[]
@@ -103,6 +109,37 @@ export function VehicleAssignmentTable({ tours, profiles }: Props) {
                   {vehicleAssignmentStatusLabel(tour.assignment_status)}
                 </span>
               </div>
+
+              {tour.report_status === 'submitted' && (() => {
+                const guideCheckLabel = adminVehicleReportGuideCheckListLabel(tour.report_status, {
+                  check_status: tour.guide_check_status,
+                  checked_at: tour.guide_check_checked_at,
+                  issue_note: tour.guide_check_issue_note,
+                })
+                const issuePreview = adminVehicleReportIssueNotePreview(tour.guide_check_issue_note)
+                return (
+                <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-medium">제출완료</span>
+                    {guideCheckLabel && <span>· {guideCheckLabel}</span>}
+                    {tour.guide_check_checked_at && (
+                      <span className="text-emerald-700">
+                        · {new Date(tour.guide_check_checked_at).toLocaleString('ko-KR')}
+                      </span>
+                    )}
+                  </div>
+                  {issuePreview && (
+                    <p className="mt-1 text-emerald-700">메모: {issuePreview}</p>
+                  )}
+                  <Link
+                    href={adminVehicleReportDetailHref(tour.id)}
+                    className="mt-2 inline-flex rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                  >
+                    리포트 보기
+                  </Link>
+                </div>
+                )
+              })()}
 
               {locked ? (
                 <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">

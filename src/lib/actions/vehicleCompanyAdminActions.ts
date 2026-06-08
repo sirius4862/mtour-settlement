@@ -18,7 +18,16 @@ import {
   VEHICLE_ASSIGNMENT_LOCKED_MESSAGE,
   type VehicleAssignmentStatus,
 } from '@/lib/vehicle/assignment-status'
+import type { GuideCheckStatus } from '@/lib/vehicle/guide-check'
+import { normalizeVehicleReportPayload } from '@/lib/vehicle/report-validation'
 import type { VehicleTourReportStatus } from '@/lib/vehicle/report-status'
+import type {
+  AdminVehicleReportContent,
+  AdminVehicleReportDetailView,
+  AdminVehicleReportGuideCheckDetail,
+  AdminVehicleReportGuideCheckSummary,
+  AdminVehicleReportTourInfo,
+} from '@/lib/vehicle/admin-vehicle-report'
 import type { UserRole } from '@/types'
 
 export interface VehicleCompanyProfileItem {
@@ -41,6 +50,9 @@ export interface VehicleAssignmentTourItem {
   vehicle_company_name: string | null
   report_status: VehicleTourReportStatus
   assignment_status: VehicleAssignmentStatus
+  guide_check_status: GuideCheckStatus | null
+  guide_check_checked_at: string | null
+  guide_check_issue_note: string | null
 }
 
 interface MutationResult {
@@ -92,7 +104,7 @@ function vehicleCompanyDisplayName(
   return profile.korean_name || profile.full_name || profile.email || '차량회사'
 }
 
-async function loadVehicleCompanyNamesById(
+async function loadProfileDisplayNamesById(
   ctx: AdminCtx,
   profileIds: string[],
 ): Promise<Map<string, string>> {
@@ -110,6 +122,13 @@ async function loadVehicleCompanyNamesById(
     map.set(p.id, vehicleCompanyDisplayName(p))
   }
   return map
+}
+
+async function loadVehicleCompanyNamesById(
+  ctx: AdminCtx,
+  profileIds: string[],
+): Promise<Map<string, string>> {
+  return loadProfileDisplayNamesById(ctx, profileIds)
 }
 
 // ── Assignable vehicle company accounts (profiles) ──────────────────────────
@@ -195,19 +214,152 @@ export async function getAdminVehicleAssignmentTours(
     tourIds.length > 0
       ? ctx.supabase
           .from('vehicle_route_reports')
-          .select('tour_id, status')
+          .select('id, tour_id, status')
           .in('tour_id', tourIds)
-      : Promise.resolve({ data: [] as { tour_id: string; status: VehicleTourReportStatus }[] }),
+      : Promise.resolve({ data: [] as { id: string; tour_id: string; status: VehicleTourReportStatus }[] }),
     loadVehicleCompanyNamesById(ctx, profileIds),
   ])
 
-  const reportByTour = new Map<string, VehicleTourReportStatus>()
+  const reportByTour = new Map<string, { id: string; status: VehicleTourReportStatus }>()
   for (const row of reportRows ?? []) {
-    const r = row as { tour_id: string; status: VehicleTourReportStatus }
-    reportByTour.set(r.tour_id, r.status)
+    const r = row as { id: string; tour_id: string; status: VehicleTourReportStatus }
+    reportByTour.set(r.tour_id, { id: r.id, status: r.status })
   }
 
-  return buildVehicleAssignmentTourListItems(rows, reportByTour, nameById)
+  const submittedReportIds = [...reportByTour.values()]
+    .filter((r) => r.status === 'submitted')
+    .map((r) => r.id)
+
+  const checkByReportId = new Map<string, AdminVehicleReportGuideCheckSummary>()
+  if (submittedReportIds.length > 0) {
+    const { data: checkRows } = await ctx.supabase
+      .from('vehicle_report_checks')
+      .select('report_id, check_status, issue_note, checked_at')
+      .in('report_id', submittedReportIds)
+
+    for (const row of checkRows ?? []) {
+      const c = row as {
+        report_id: string
+        check_status: GuideCheckStatus
+        issue_note: string | null
+        checked_at: string | null
+      }
+      checkByReportId.set(c.report_id, {
+        check_status: c.check_status,
+        checked_at: c.checked_at,
+        issue_note: c.issue_note,
+      })
+    }
+  }
+
+  const items = buildVehicleAssignmentTourListItems(
+    rows,
+    new Map([...reportByTour.entries()].map(([tourId, r]) => [tourId, r.status])),
+    nameById,
+  )
+
+  return items.map((item) => {
+    const report = reportByTour.get(item.id)
+    const check =
+      report?.status === 'submitted' && report.id
+        ? checkByReportId.get(report.id) ?? null
+        : null
+    return {
+      ...item,
+      guide_check_status: check?.check_status ?? null,
+      guide_check_checked_at: check?.checked_at ?? null,
+      guide_check_issue_note: check?.issue_note ?? null,
+    }
+  })
+}
+
+/** Submitted vehicle report + guide check for admin read-only detail. Branch-scoped. */
+export async function getAdminVehicleReportDetail(
+  tourId: string,
+): Promise<AdminVehicleReportDetailView | null> {
+  const ctx = await getAdminCtx()
+  if (!ctx || !tourId) return null
+
+  const { data: tourRow } = await ctx.supabase
+    .from('tours')
+    .select(
+      'id, tour_code, start_date, end_date, branch_id, vehicle_company_profile_id, ' +
+      'guide:profiles!guide_id(full_name, korean_name)',
+    )
+    .eq('id', tourId)
+    .maybeSingle()
+  if (!tourRow) return null
+  const tourData = tourRow as unknown as Record<string, unknown>
+
+  const branchId = tourData.branch_id as string
+  const regionGuard = assertAdminCanAccessSettlementBranch(scopeOf(ctx), branchId)
+  if (!regionGuard.ok) return null
+
+  const { data: reportRow } = await ctx.supabase
+    .from('vehicle_route_reports')
+    .select(
+      'id, tour_id, status, submitted_at, submitted_by, event_code, event_period_text, pax_text, ' +
+      'flight_info_text, vehicle_text, hotel_text, guide_text, daily_routes, special_notes',
+    )
+    .eq('tour_id', tourId)
+    .eq('status', 'submitted')
+    .maybeSingle()
+  if (!reportRow) return null
+  const reportData = reportRow as unknown as Record<string, unknown>
+
+  const reportId = reportData.id as string
+  const vehicleProfileId = (tourData.vehicle_company_profile_id as string | null) ?? null
+
+  const [vehicleNameById, submitterNameById, checkRow] = await Promise.all([
+    vehicleProfileId
+      ? loadVehicleCompanyNamesById(ctx, [vehicleProfileId])
+      : Promise.resolve(new Map<string, string>()),
+    reportData.submitted_by
+      ? loadProfileDisplayNamesById(ctx, [reportData.submitted_by as string])
+      : Promise.resolve(new Map<string, string>()),
+    ctx.supabase
+      .from('vehicle_report_checks')
+      .select(
+        'check_status, issue_note, checked_at, guide_id, guide:profiles!guide_id(full_name, korean_name)',
+      )
+      .eq('report_id', reportId)
+      .maybeSingle(),
+  ])
+
+  const normalized = normalizeVehicleReportPayload(reportData)
+  const report: AdminVehicleReportContent = {
+    ...normalized,
+    id: reportId,
+    submitted_at: (reportData.submitted_at as string | null) ?? null,
+    submitted_by_name: reportData.submitted_by
+      ? submitterNameById.get(reportData.submitted_by as string) ?? null
+      : null,
+  }
+
+  const tour: AdminVehicleReportTourInfo = {
+    id: tourData.id as string,
+    tour_code: (tourData.tour_code as string) ?? '',
+    start_date: (tourData.start_date as string | null) ?? null,
+    end_date: (tourData.end_date as string | null) ?? null,
+    branch_id: branchId,
+    guide_name: guideName((tourData.guide as GuideRel) ?? null),
+    vehicle_company_name: vehicleProfileId
+      ? vehicleNameById.get(vehicleProfileId) ?? null
+      : null,
+  }
+
+  let guide_check: AdminVehicleReportGuideCheckDetail | null = null
+  if (checkRow.data) {
+    const c = checkRow.data as Record<string, unknown>
+    guide_check = {
+      check_status: (c.check_status as GuideCheckStatus) ?? 'no_issue',
+      issue_note: (c.issue_note as string | null) ?? null,
+      checked_at: (c.checked_at as string | null) ?? null,
+      guide_name: guideName((c.guide as GuideRel) ?? null),
+    }
+  }
+
+  return { tour, report, guide_check }
 }
 
 async function reportExistsForTour(ctx: AdminCtx, tourId: string): Promise<boolean> {

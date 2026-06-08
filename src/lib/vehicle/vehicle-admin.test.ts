@@ -20,6 +20,7 @@ const ASSIGN_FILTER_SRC = readFileSync(
   'src/app/admin/vehicle-assignments/VehicleAssignmentDateFilter.tsx',
   'utf8',
 )
+const ADMIN_REPORT_DETAIL_SRC = readFileSync('src/app/admin/vehicle-reports/[tourId]/page.tsx', 'utf8')
 const V2_SQL = readFileSync('supabase/vehicle_company_v2_profile_assignment.sql', 'utf8')
 
 describe('vehicle assignment status (pure)', () => {
@@ -208,6 +209,12 @@ describe('admin vehicle assignment UI (source-level)', () => {
     expect(ASSIGN_TABLE_SRC).toContain('vehicle_company_profile_id')
     expect(ASSIGN_TABLE_SRC).toContain('korean_name || p.full_name || p.email')
     expect(ASSIGN_TABLE_SRC).not.toContain('vehicle_companies')
+  })
+
+  it('assignment table links to admin vehicle report detail for submitted reports', () => {
+    expect(ASSIGN_TABLE_SRC).toContain('리포트 보기')
+    expect(ASSIGN_TABLE_SRC).toContain('adminVehicleReportDetailHref')
+    expect(ADMIN_REPORT_DETAIL_SRC).toContain('requireAdmin')
   })
 })
 

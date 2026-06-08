@@ -15,8 +15,14 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-
-const MARKER = 'ASSIGN_RECALL_VERIFY'
+import { fileURLToPath } from 'node:url'
+import {
+  MARKER,
+  buildManualCleanupSql,
+  buildTestMarkerOrFilter,
+  classifyVerificationOutcome,
+  rowMatchesTestMarker,
+} from './assignment-recall-cleanup-report.mjs'
 
 const ASSIGNMENT_RECALL_ELIGIBLE = new Set(['draft', 'submitted'])
 
@@ -413,6 +419,33 @@ async function cleanup(adminClient, ids) {
   }
 }
 
+/**
+ * Re-query production for ACTUAL remaining test data after a cleanup attempt.
+ * Tours are read with an admin-tier client (sees all tours); linked settlements
+ * are read with a client that can see every region (master) to avoid undercount.
+ */
+async function countRemainingTestData(toursClient, settlementsClient) {
+  const orFilter = buildTestMarkerOrFilter()
+  const { data: tourRows, error: toursError } = await toursClient
+    .from('tours')
+    .select('id, tour_code, pattern, agency_name, tc_name')
+    .or(orFilter)
+  if (toursError) throw new Error(`tours query: ${toursError.message}`)
+  const tours = (tourRows ?? []).filter((row) => rowMatchesTestMarker(row))
+  const tourIds = tours.map((t) => t.id)
+
+  let settlements = []
+  if (tourIds.length) {
+    const { data: settlementRows, error: settlementsError } = await settlementsClient
+      .from('settlements')
+      .select('id, tour_id')
+      .in('tour_id', tourIds)
+    if (settlementsError) throw new Error(`settlements query: ${settlementsError.message}`)
+    settlements = settlementRows ?? []
+  }
+  return { tours, settlements }
+}
+
 const results = []
 
 function pass(name, detail = '') {
@@ -473,6 +506,8 @@ async function main() {
   if (!otherBranch?.id) throw new Error('no other branch for cross-region test')
 
   const cleanupIds = { settlements: [], tours: [] }
+  let remaining = { tours: [], settlements: [] }
+  let remainingQueryFailed = false
 
   try {
     // ── 1. admin can recall tour with no settlement ─────────────────────────
@@ -845,25 +880,91 @@ async function main() {
     )
   } finally {
     console.log('\n--- Cleanup ---')
+    console.log(
+      `Attempting best-effort cleanup of ${cleanupIds.settlements.length} settlement(s) and ` +
+        `${cleanupIds.tours.length} tour(s) created by this run...`,
+    )
     try {
       await cleanup(adminClient, cleanupIds)
-      console.log(
-        `Cleaned ${cleanupIds.settlements.length} test settlements, ${cleanupIds.tours.length} test tours`,
-      )
     } catch (e) {
-      console.error('Cleanup error:', e instanceof Error ? e.message : e)
+      console.error('Cleanup attempt error:', e instanceof Error ? e.message : e)
     }
+
+    // Authenticated admin/master clients cannot DELETE tours/settlements (there is
+    // no DELETE RLS policy), so deletes above can silently affect 0 rows. Re-query
+    // production to report the ACTUAL remaining test data — not the queued-id count.
+    try {
+      remaining = await countRemainingTestData(adminClient, masterClient ?? adminClient)
+    } catch (e) {
+      remainingQueryFailed = true
+      console.error('Remaining-data query error:', e instanceof Error ? e.message : e)
+    }
+    console.log(
+      `Remaining ${MARKER} rows after cleanup — tours: ${remaining.tours.length}, ` +
+        `linked settlements: ${remaining.settlements.length}` +
+        (remainingQueryFailed ? ' (query failed; treat as unverified)' : ''),
+    )
   }
 
   const failed = results.filter((r) => !r.ok)
-  console.log(`\n=== Summary: ${results.length - failed.length}/${results.length} passed ===`)
+  const functionalPassed = failed.length === 0
+  const outcome = classifyVerificationOutcome({
+    functionalPassed,
+    remainingTours: remaining.tours.length,
+    remainingSettlements: remaining.settlements.length,
+  })
+  // A failed remaining-data query means we cannot confirm completion: treat as
+  // incomplete so we never report a clean cleanup we did not verify.
+  if (functionalPassed && remainingQueryFailed && outcome.cleanupComplete) {
+    outcome.cleanupComplete = false
+    outcome.status = 'functional_passed_cleanup_incomplete'
+    outcome.exitCode = 2
+  }
+
+  console.log(
+    `\n=== Functional verification: ${results.length - failed.length}/${results.length} ` +
+      `${functionalPassed ? 'PASSED' : 'FAILED'} ===`,
+  )
   if (failed.length) {
-    process.exitCode = 1
     for (const f of failed) console.error(`  ✗ ${f.name}: ${f.detail}`)
+  }
+
+  if (outcome.cleanupComplete) {
+    console.log(`=== Cleanup: COMPLETED (no ${MARKER} rows remain) ===`)
+  } else {
+    console.warn('=== Cleanup: INCOMPLETE ===')
+    console.warn(
+      'Cleanup incomplete: production RLS likely blocked client-side deletes. ' +
+        'Run the manual Supabase SQL cleanup.',
+    )
+    console.warn(
+      `Leftover: ${remaining.tours.length} tour(s), ${remaining.settlements.length} linked settlement(s).`,
+    )
+    console.warn('\n--- Manual Supabase SQL cleanup (run in Production SQL Editor) ---')
+    console.warn(buildManualCleanupSql())
+  }
+
+  // Final result distinguishes the three states:
+  //   functional_failed                    → exit 1 (functional verification failed)
+  //   functional_passed_cleanup_completed  → exit 0
+  //   functional_passed_cleanup_incomplete → exit 2 (cleanup warning; functional NOT failed)
+  // Emit on the same stream as the preceding block so output stays in order.
+  const logResult = outcome.cleanupComplete ? console.log : console.warn
+  logResult(`\n=== Result: ${outcome.status} (exit ${outcome.exitCode}) ===`)
+  process.exitCode = outcome.exitCode
+}
+
+function isInvokedDirectly() {
+  try {
+    return fileURLToPath(import.meta.url) === process.argv[1]
+  } catch {
+    return false
   }
 }
 
-main().catch((e) => {
-  console.error('FATAL:', e.message)
-  process.exitCode = 1
-})
+if (isInvokedDirectly()) {
+  main().catch((e) => {
+    console.error('FATAL:', e.message)
+    process.exitCode = 1
+  })
+}

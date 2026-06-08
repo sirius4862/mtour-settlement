@@ -25,6 +25,7 @@ import {
 const ACTIONS_SRC = readFileSync('src/lib/actions/vehicleReportActions.ts', 'utf8')
 const FORM_SRC = readFileSync('src/app/vehicle/reports/[tourId]/VehicleReportForm.tsx', 'utf8')
 const DASHBOARD_SRC = readFileSync('src/app/vehicle/page.tsx', 'utf8')
+const FILTER_SRC = readFileSync('src/app/vehicle/VehicleDashboardDateFilter.tsx', 'utf8')
 const LAYOUT_SRC = readFileSync('src/app/vehicle/layout.tsx', 'utf8')
 
 describe('vehicle report — payload normalization', () => {
@@ -161,6 +162,33 @@ describe('vehicle report — profile-based context (source-level)', () => {
     expect(ACTIONS_SRC).not.toMatch(/vehicle_company_id/)
   })
 
+  it('assigned-tours query applies date filter before limit and enriches guide checks', () => {
+    const fnStart = ACTIONS_SRC.indexOf('export async function getVehicleCompanyAssignedTours')
+    const fnEnd = ACTIONS_SRC.indexOf('export async function getVehicleReportForTour', fnStart)
+    const body = ACTIONS_SRC.slice(fnStart, fnEnd)
+    expect(body).toContain('AdminDateRangeFilter')
+    expect(body).toContain("filter.range !== 'all'")
+    expect(body).toMatch(/if \(filter\.from\) tourQuery = tourQuery\.gte\('start_date', filter\.from\)/)
+    expect(body).toMatch(/if \(filter\.to\) tourQuery = tourQuery\.lte\('start_date', filter\.to\)/)
+    const profileIdx = body.indexOf("vehicle_company_profile_id', ctx.profileId")
+    const gteIdx = body.indexOf("filter.from) tourQuery")
+    const limitIdx = body.indexOf('.limit(listLimit)')
+    const orderIdx = body.indexOf(".order('start_date'")
+    expect(profileIdx).toBeGreaterThan(-1)
+    expect(gteIdx).toBeGreaterThan(profileIdx)
+    expect(orderIdx).toBeGreaterThan(gteIdx)
+    expect(limitIdx).toBeGreaterThan(orderIdx)
+    expect(body).toContain("from('vehicle_report_checks')")
+    expect(body).toContain('guide_check_status')
+    expect(body).not.toMatch(/from\(['"]settlements['"]\)/)
+  })
+
+  it('vehicle company list is scoped to the logged-in profile only', () => {
+    expect(ACTIONS_SRC).toContain(".eq('vehicle_company_profile_id', ctx.profileId)")
+    expect(ACTIONS_SRC).not.toMatch(/from\(['"]vehicle_company_users['"]\)/)
+    expect(ACTIONS_SRC).not.toMatch(/from\(['"]vehicle_companies['"]\)/)
+  })
+
   it('report insert writes vehicle_company_profile_id', () => {
     expect(ACTIONS_SRC).toContain('vehicle_company_profile_id: ctx.profileId')
   })
@@ -191,9 +219,22 @@ describe('vehicle report — UI source-level guards', () => {
     expect(FORM_SRC).toContain('제출완료된 리포트입니다')
   })
 
-  it('dashboard uses the simple status labels and shows the empty state', () => {
-    expect(DASHBOARD_SRC).toContain('vehicleReportStatusLabel')
+  it('dashboard shows report + guide-check status and the empty state', () => {
+    expect(DASHBOARD_SRC).toContain('vehicleDashboardReportStatusLabel')
+    expect(DASHBOARD_SRC).toContain('vehicleDashboardGuideCheckLabel')
+    expect(DASHBOARD_SRC).toContain('guide_check_status')
+    expect(DASHBOARD_SRC).toContain('vehicleDashboardIssueNotePreview')
     expect(DASHBOARD_SRC).toContain('배정된 차량 리포트 대상이 없습니다.')
+    expect(DASHBOARD_SRC).not.toMatch(/ground_fee|guide_payout|company_profit|paid_at/)
+  })
+
+  it('dashboard uses shareable date filters', () => {
+    expect(DASHBOARD_SRC).toContain('parseVehicleDashboardSearchParams')
+    expect(DASHBOARD_SRC).toContain('getVehicleCompanyAssignedTours(dateFilter)')
+    expect(DASHBOARD_SRC).toContain('VehicleDashboardDateFilterBar')
+    expect(FILTER_SRC).toContain('VEHICLE_DASHBOARD_CURRENT_MONTH_NOTICE')
+    expect(FILTER_SRC).toContain('vehicleDashboardQuickRangeUrls')
+    expect(FILTER_SRC).not.toMatch(/delete|archive|삭제/i)
   })
 
   it('/vehicle route group is protected by requireVehicleCompany', () => {

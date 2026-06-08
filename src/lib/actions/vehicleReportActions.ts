@@ -10,6 +10,13 @@ import {
   type VehicleReportPayload,
   type VehicleReportStatus,
 } from '@/lib/vehicle/report-validation'
+import {
+  ADMIN_DATE_RANGE_LIST_LIMIT,
+  ADMIN_DATE_RANGE_LIST_LIMIT_ALL,
+  parseAdminDateRangeSearchParams,
+  type AdminDateRangeFilter,
+} from '@/lib/admin/date-range-filter'
+import type { GuideCheckStatus } from '@/lib/vehicle/guide-check'
 import type { VehicleTourReportStatus } from '@/lib/vehicle/report-status'
 import type { UserRole } from '@/types'
 
@@ -29,6 +36,8 @@ export interface VehicleTourInfo {
 export interface VehicleAssignedTour extends VehicleTourInfo {
   report_id: string | null
   report_status: VehicleTourReportStatus
+  guide_check_status: GuideCheckStatus | null
+  guide_check_issue_note: string | null
 }
 
 export interface VehicleReportRecord extends VehicleReportPayload {
@@ -103,18 +112,33 @@ function toReportRecord(row: Record<string, unknown>): VehicleReportRecord {
   }
 }
 
-/** Tours assigned to the caller's vehicle company profile, with report status. */
-export async function getVehicleCompanyAssignedTours(): Promise<VehicleAssignedTour[]> {
+/** Tours assigned to the caller's vehicle company profile, with report + guide-check status. */
+export async function getVehicleCompanyAssignedTours(
+  dateFilter?: AdminDateRangeFilter,
+): Promise<VehicleAssignedTour[]> {
   const ctx = await getVehicleCtx()
   if (!ctx) return []
 
-  const { data: tourRows } = await ctx.supabase
+  const filter = dateFilter ?? parseAdminDateRangeSearchParams(undefined)
+
+  let tourQuery = ctx.supabase
     .from('tours')
     .select(TOUR_SELECT_WITH_GUIDE)
     .eq('vehicle_company_profile_id', ctx.profileId)
-    .order('start_date', { ascending: true })
+
+  if (filter.range !== 'all') {
+    if (filter.from) tourQuery = tourQuery.gte('start_date', filter.from)
+    if (filter.to) tourQuery = tourQuery.lte('start_date', filter.to)
+  }
+
+  const listLimit =
+    filter.range === 'all' ? ADMIN_DATE_RANGE_LIST_LIMIT_ALL : ADMIN_DATE_RANGE_LIST_LIMIT
+
+  const { data: tourRows } = await tourQuery
+    .order('start_date', { ascending: false })
     .order('tour_code', { ascending: true })
-    .limit(200)
+    .order('created_at', { ascending: false })
+    .limit(listLimit)
 
   const tours = (tourRows ?? []).map((r) => toTourInfo(r as Record<string, unknown>))
   if (tours.length === 0) return []
@@ -130,12 +154,40 @@ export async function getVehicleCompanyAssignedTours(): Promise<VehicleAssignedT
     reportByTour.set(r.tour_id, { id: r.id, status: r.status })
   }
 
+  const submittedReportIds = [...reportByTour.values()]
+    .filter((r) => r.status === 'submitted')
+    .map((r) => r.id)
+
+  const checkByReportId = new Map<string, { check_status: GuideCheckStatus; issue_note: string | null }>()
+  if (submittedReportIds.length > 0) {
+    const { data: checkRows } = await ctx.supabase
+      .from('vehicle_report_checks')
+      .select('report_id, check_status, issue_note')
+      .in('report_id', submittedReportIds)
+
+    for (const row of checkRows ?? []) {
+      const c = row as {
+        report_id: string
+        check_status: GuideCheckStatus
+        issue_note: string | null
+      }
+      checkByReportId.set(c.report_id, {
+        check_status: c.check_status,
+        issue_note: c.issue_note,
+      })
+    }
+  }
+
   return tours.map((t) => {
     const report = reportByTour.get(t.id)
+    const reportStatus = (report?.status ?? 'none') as VehicleTourReportStatus
+    const check = report?.id ? checkByReportId.get(report.id) ?? null : null
     return {
       ...t,
       report_id: report?.id ?? null,
-      report_status: (report?.status ?? 'none') as VehicleTourReportStatus,
+      report_status: reportStatus,
+      guide_check_status: check?.check_status ?? null,
+      guide_check_issue_note: check?.issue_note ?? null,
     }
   })
 }

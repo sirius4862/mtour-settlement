@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   saveVehicleReportDraft,
@@ -8,6 +8,11 @@ import {
   type VehicleReportRecord,
 } from '@/lib/actions/vehicleReportActions'
 import type { DailyRouteRow } from '@/lib/vehicle/report-validation'
+import {
+  buildVehicleReportFormPayload,
+  vehicleReportReadOnlyValues,
+  VEHICLE_REPORT_BASIC_INFO_FIELDS,
+} from '@/lib/vehicle/vehicle-report-form'
 
 interface Props {
   tourId: string
@@ -43,6 +48,10 @@ function ReadOnlyValue({ value }: { value: string }) {
   return <p className="text-sm text-gray-800 whitespace-pre-wrap">{value || '-'}</p>
 }
 
+function initialRoutes(report: VehicleReportRecord | null): DailyRouteRow[] {
+  return report?.daily_routes?.length ? report.daily_routes : [{ date: '', route: '' }]
+}
+
 export function VehicleReportForm({ tourId, report }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -59,21 +68,33 @@ export function VehicleReportForm({ tourId, report }: Props) {
   const [hotel, setHotel] = useState(report?.hotel_text ?? '')
   const [guide, setGuide] = useState(report?.guide_text ?? '')
   const [specialNotes, setSpecialNotes] = useState(report?.special_notes ?? '')
-  const [routes, setRoutes] = useState<DailyRouteRow[]>(
-    report?.daily_routes?.length ? report.daily_routes : [{ date: '', route: '' }],
-  )
+  const [routes, setRoutes] = useState<DailyRouteRow[]>(initialRoutes(report))
 
-  const buildPayload = () => ({
-    event_code: eventCode,
-    event_period_text: eventPeriod,
-    pax_text: pax,
-    flight_info_text: flight,
-    vehicle_text: vehicle,
-    hotel_text: hotel,
-    guide_text: guide,
-    daily_routes: routes,
-    special_notes: specialNotes,
-  })
+  useEffect(() => {
+    if (locked) return
+    setEventCode(report?.event_code ?? '')
+    setEventPeriod(report?.event_period_text ?? '')
+    setPax(report?.pax_text ?? '')
+    setFlight(report?.flight_info_text ?? '')
+    setVehicle(report?.vehicle_text ?? '')
+    setHotel(report?.hotel_text ?? '')
+    setGuide(report?.guide_text ?? '')
+    setSpecialNotes(report?.special_notes ?? '')
+    setRoutes(initialRoutes(report))
+  }, [report, locked])
+
+  const buildPayload = () =>
+    buildVehicleReportFormPayload({
+      event_code: eventCode,
+      event_period_text: eventPeriod,
+      pax_text: pax,
+      flight_info_text: flight,
+      vehicle_text: vehicle,
+      hotel_text: hotel,
+      guide_text: guide,
+      daily_routes: routes,
+      special_notes: specialNotes,
+    })
 
   const updateRoute = (index: number, key: keyof DailyRouteRow, value: string) => {
     setRoutes((prev) => prev.map((row, i) => (i === index ? { ...row, [key]: value } : row)))
@@ -110,8 +131,9 @@ export function VehicleReportForm({ tourId, report }: Props) {
     })
   }
 
-  // ── Read-only (submitted) view ────────────────────────────────────────────
-  if (locked) {
+  // ── Read-only (submitted) view — always render saved server report ─────────
+  if (locked && report) {
+    const saved = vehicleReportReadOnlyValues(report)
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -120,22 +142,20 @@ export function VehicleReportForm({ tourId, report }: Props) {
 
         <Card title="기본정보">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="행사코드"><ReadOnlyValue value={eventCode} /></Field>
-            <Field label="행사기간"><ReadOnlyValue value={eventPeriod} /></Field>
-            <Field label="인원"><ReadOnlyValue value={pax} /></Field>
-            <Field label="항공편"><ReadOnlyValue value={flight} /></Field>
-            <Field label="차량"><ReadOnlyValue value={vehicle} /></Field>
-            <Field label="호텔"><ReadOnlyValue value={hotel} /></Field>
-            <Field label="가이드"><ReadOnlyValue value={guide} /></Field>
+            {VEHICLE_REPORT_BASIC_INFO_FIELDS.map(({ label, key }) => (
+              <Field key={key} label={label}>
+                <ReadOnlyValue value={saved[key]} />
+              </Field>
+            ))}
           </div>
         </Card>
 
         <Card title="날짜별 동선">
-          {routes.length === 0 ? (
+          {saved.daily_routes.length === 0 ? (
             <p className="text-sm text-gray-400">등록된 동선이 없습니다.</p>
           ) : (
             <ul className="space-y-2">
-              {routes.map((row, i) => (
+              {saved.daily_routes.map((row, i) => (
                 <li key={i} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
                   <p className="text-xs font-medium text-gray-500">{row.date || '날짜 미입력'}</p>
                   <p className="mt-0.5 text-sm text-gray-800 whitespace-pre-wrap">{row.route || '-'}</p>
@@ -146,7 +166,7 @@ export function VehicleReportForm({ tourId, report }: Props) {
         </Card>
 
         <Card title="특이사항">
-          <ReadOnlyValue value={specialNotes} />
+          <ReadOnlyValue value={saved.special_notes} />
         </Card>
       </div>
     )

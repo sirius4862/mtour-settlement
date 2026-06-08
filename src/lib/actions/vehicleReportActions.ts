@@ -234,6 +234,20 @@ async function assertAssignedTour(ctx: VehicleCtx, tourId: string): Promise<bool
   return !!data
 }
 
+function reportContentColumns(payload: VehicleReportPayload) {
+  return {
+    event_code: payload.event_code,
+    event_period_text: payload.event_period_text,
+    pax_text: payload.pax_text,
+    flight_info_text: payload.flight_info_text,
+    vehicle_text: payload.vehicle_text,
+    hotel_text: payload.hotel_text,
+    guide_text: payload.guide_text,
+    daily_routes: payload.daily_routes,
+    special_notes: payload.special_notes,
+  }
+}
+
 async function upsertDraftContent(
   ctx: VehicleCtx,
   tourId: string,
@@ -246,15 +260,7 @@ async function upsertDraftContent(
     .maybeSingle()
 
   const content = {
-    event_code: payload.event_code,
-    event_period_text: payload.event_period_text,
-    pax_text: payload.pax_text,
-    flight_info_text: payload.flight_info_text,
-    vehicle_text: payload.vehicle_text,
-    hotel_text: payload.hotel_text,
-    guide_text: payload.guide_text,
-    daily_routes: payload.daily_routes,
-    special_notes: payload.special_notes,
+    ...reportContentColumns(payload),
     updated_at: new Date().toISOString(),
   }
 
@@ -327,13 +333,15 @@ export async function submitVehicleReport(
   const draft = await upsertDraftContent(ctx, tourId, validation.payload)
   if (!draft.ok) return draft
 
+  const now = new Date().toISOString()
   const { data, error } = await ctx.supabase
     .from('vehicle_route_reports')
     .update({
+      ...reportContentColumns(validation.payload),
       status: 'submitted',
-      submitted_at: new Date().toISOString(),
+      submitted_at: now,
       submitted_by: ctx.profileId,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     })
     .eq('id', draft.id)
     .eq('status', 'draft')

@@ -21,6 +21,11 @@ import {
   vehicleReportActionLabel,
   vehicleReportStatusLabel,
 } from './report-status'
+import {
+  buildVehicleReportFormPayload,
+  vehicleReportReadOnlyValues,
+  VEHICLE_REPORT_BASIC_INFO_FIELDS,
+} from './vehicle-report-form'
 
 const ACTIONS_SRC = readFileSync('src/lib/actions/vehicleReportActions.ts', 'utf8')
 const FORM_SRC = readFileSync('src/app/vehicle/reports/[tourId]/VehicleReportForm.tsx', 'utf8')
@@ -211,12 +216,121 @@ describe('vehicle report — draft/submit behavior (source-level)', () => {
     expect(ACTIONS_SRC).toContain('submitted_by: ctx.profileId')
     expect(ACTIONS_SRC).toContain('validateVehicleReportForSubmit')
   })
+
+  it('draft save persists every basic-info column and daily routes', () => {
+    expect(ACTIONS_SRC).toContain('reportContentColumns(payload)')
+    const columnsStart = ACTIONS_SRC.indexOf('function reportContentColumns')
+    const columnsBody = ACTIONS_SRC.slice(columnsStart, columnsStart + 700)
+    for (const key of [
+      'event_code',
+      'event_period_text',
+      'pax_text',
+      'flight_info_text',
+      'vehicle_text',
+      'hotel_text',
+      'guide_text',
+      'daily_routes',
+      'special_notes',
+    ]) {
+      expect(columnsBody).toContain(`${key}: payload.${key}`)
+    }
+  })
+
+  it('final submit re-writes all basic-info columns in the same submit update', () => {
+    const submitStart = ACTIONS_SRC.indexOf('export async function submitVehicleReport')
+    const submitBody = ACTIONS_SRC.slice(submitStart)
+    expect(submitBody).toContain('reportContentColumns(validation.payload)')
+
+    const columnsStart = ACTIONS_SRC.indexOf('function reportContentColumns')
+    const columnsBody = ACTIONS_SRC.slice(columnsStart, columnsStart + 700)
+    for (const key of [
+      'event_code',
+      'event_period_text',
+      'pax_text',
+      'flight_info_text',
+      'vehicle_text',
+      'hotel_text',
+      'guide_text',
+      'daily_routes',
+      'special_notes',
+    ]) {
+      expect(columnsBody).toContain(`${key}: payload.${key}`)
+    }
+  })
+
+  it('save draft and final submit actions are wired to distinct handlers', () => {
+    const saveDraftBody = FORM_SRC.slice(
+      FORM_SRC.indexOf('const handleSaveDraft'),
+      FORM_SRC.indexOf('const handleSubmit'),
+    )
+    const submitBody = FORM_SRC.slice(FORM_SRC.indexOf('const handleSubmit'))
+    expect(saveDraftBody).toContain('saveVehicleReportDraft(tourId, buildPayload())')
+    expect(saveDraftBody).not.toContain('submitVehicleReport')
+    expect(submitBody).toContain('submitVehicleReport(tourId, buildPayload())')
+    expect(submitBody).not.toContain('saveVehicleReportDraft')
+  })
+})
+
+describe('vehicle report — form/read-only field mapping', () => {
+  const samplePayload = normalizeVehicleReportPayload({
+    event_code: '260608',
+    event_period_text: '2026-06-08 ~ 2026-06-10',
+    pax_text: '18명',
+    flight_info_text: 'VN123',
+    vehicle_text: '16Seat',
+    hotel_text: 'Grand Ace',
+    guide_text: 'Kim Guide',
+    daily_routes: [{ date: '2026-06-08', route: 'Airport - Hotel' }],
+    special_notes: '특이사항 메모',
+  })
+
+  it('form write keys match read-only display keys', () => {
+    const written = buildVehicleReportFormPayload(samplePayload)
+    const readOnly = vehicleReportReadOnlyValues(samplePayload)
+    for (const { key } of VEHICLE_REPORT_BASIC_INFO_FIELDS) {
+      expect(written[key]).toBe(readOnly[key])
+    }
+    expect(written.daily_routes).toEqual(readOnly.daily_routes)
+    expect(written.special_notes).toBe(readOnly.special_notes)
+  })
+
+  it('draft save and final submit preserve all basic-info fields in payload helpers', () => {
+    const payload = buildVehicleReportFormPayload(samplePayload)
+    expect(payload.event_code).toBe('260608')
+    expect(payload.event_period_text).toBe('2026-06-08 ~ 2026-06-10')
+    expect(payload.pax_text).toBe('18명')
+    expect(payload.flight_info_text).toBe('VN123')
+    expect(payload.vehicle_text).toBe('16Seat')
+    expect(payload.hotel_text).toBe('Grand Ace')
+    expect(payload.guide_text).toBe('Kim Guide')
+    expect(payload.special_notes).toBe('특이사항 메모')
+  })
+
+  it('draft save and final submit preserve daily route rows in payload helpers', () => {
+    const payload = buildVehicleReportFormPayload(samplePayload)
+    expect(payload.daily_routes).toEqual([{ date: '2026-06-08', route: 'Airport - Hotel' }])
+  })
 })
 
 describe('vehicle report — UI source-level guards', () => {
   it('form renders a read-only state for submitted reports', () => {
     expect(FORM_SRC).toContain("report?.status === 'submitted'")
     expect(FORM_SRC).toContain('제출완료된 리포트입니다')
+  })
+
+  it('submitted read-only view renders saved server report, not editable client state', () => {
+    expect(FORM_SRC).toContain('vehicleReportReadOnlyValues(report)')
+    expect(FORM_SRC).toContain('VEHICLE_REPORT_BASIC_INFO_FIELDS.map')
+    expect(FORM_SRC).toContain('saved.daily_routes')
+    expect(FORM_SRC).not.toMatch(/if \(locked\)[\s\S]*ReadOnlyValue value=\{eventCode\}/)
+  })
+
+  it('draft remains editable and syncs refreshed report into form state', () => {
+    expect(FORM_SRC).toContain('useEffect')
+    expect(FORM_SRC).toContain('if (locked) return')
+    expect(FORM_SRC).toContain("onClick={handleSaveDraft}")
+    expect(FORM_SRC).toContain("onClick={handleSubmit}")
+    expect(FORM_SRC).not.toContain('redirect(')
   })
 
   it('dashboard shows report + guide-check status and the empty state', () => {

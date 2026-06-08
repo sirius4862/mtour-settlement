@@ -8,6 +8,10 @@ import { createClient } from '@/lib/supabase/server'
 import {
   buildVehicleAssignmentTourListItems,
   filterVehicleAssignmentToursByScope,
+  parseVehicleAssignmentSearchParams,
+  VEHICLE_ASSIGNMENT_LIST_LIMIT,
+  VEHICLE_ASSIGNMENT_LIST_LIMIT_ALL,
+  type VehicleAssignmentDateFilter,
   type VehicleAssignmentTourRow,
 } from '@/lib/vehicle/admin-assignment-list'
 import {
@@ -130,13 +134,16 @@ export async function getAssignableVehicleCompanyProfiles(): Promise<VehicleComp
 
 // ── Tour vehicle company assignment ─────────────────────────────────────────
 
-export async function getAdminVehicleAssignmentTours(): Promise<VehicleAssignmentTourItem[]> {
+export async function getAdminVehicleAssignmentTours(
+  dateFilter?: VehicleAssignmentDateFilter,
+): Promise<VehicleAssignmentTourItem[]> {
   const ctx = await getAdminCtx()
   if (!ctx) return []
 
-  // Tours-first list: no join/filter on vehicle_route_reports. Branch filter runs
-  // in the DB query for plain admins so limit(200) applies within the region,
-  // not across all branches / oldest global rows.
+  const filter = dateFilter ?? parseVehicleAssignmentSearchParams(undefined)
+
+  // Tours-first list: no join/filter on vehicle_route_reports. Branch + date filters
+  // run in the DB before limit so scoped admins never lose recent rows to global noise.
   let tourQuery = ctx.supabase
     .from('tours')
     .select(
@@ -149,11 +156,19 @@ export async function getAdminVehicleAssignmentTours(): Promise<VehicleAssignmen
     tourQuery = tourQuery.eq('branch_id', ctx.branch_id)
   }
 
+  if (filter.range !== 'all') {
+    if (filter.from) tourQuery = tourQuery.gte('start_date', filter.from)
+    if (filter.to) tourQuery = tourQuery.lte('start_date', filter.to)
+  }
+
+  const listLimit =
+    filter.range === 'all' ? VEHICLE_ASSIGNMENT_LIST_LIMIT_ALL : VEHICLE_ASSIGNMENT_LIST_LIMIT
+
   const { data: tourRows } = await tourQuery
     .order('start_date', { ascending: false })
     .order('tour_code', { ascending: true })
     .order('created_at', { ascending: false })
-    .limit(200)
+    .limit(listLimit)
 
   const scoped = filterVehicleAssignmentToursByScope(
     (tourRows ?? []) as unknown as { branch_id: string }[],

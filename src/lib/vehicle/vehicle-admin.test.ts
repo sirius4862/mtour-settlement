@@ -16,6 +16,10 @@ import {
 const ADMIN_ACTIONS_SRC = readFileSync('src/lib/actions/vehicleCompanyAdminActions.ts', 'utf8')
 const ASSIGN_TABLE_SRC = readFileSync('src/app/admin/vehicle-assignments/VehicleAssignmentTable.tsx', 'utf8')
 const ASSIGN_PAGE_SRC = readFileSync('src/app/admin/vehicle-assignments/page.tsx', 'utf8')
+const ASSIGN_FILTER_SRC = readFileSync(
+  'src/app/admin/vehicle-assignments/VehicleAssignmentDateFilter.tsx',
+  'utf8',
+)
 const V2_SQL = readFileSync('supabase/vehicle_company_v2_profile_assignment.sql', 'utf8')
 
 describe('vehicle assignment status (pure)', () => {
@@ -149,6 +153,22 @@ describe('admin vehicle assignment list query (source-level)', () => {
     expect(ADMIN_ACTIONS_SRC).toMatch(/\.order\('created_at',\s*\{\s*ascending:\s*false\s*\}\)/)
   })
 
+  it('applies date range in DB after branch filter and before limit', () => {
+    const body = vehicleAssignmentListFnBody()
+    expect(body).toContain('VehicleAssignmentDateFilter')
+    expect(body).toContain("filter.range !== 'all'")
+    expect(body).toMatch(/if \(filter\.from\) tourQuery = tourQuery\.gte\('start_date', filter\.from\)/)
+    expect(body).toMatch(/if \(filter\.to\) tourQuery = tourQuery\.lte\('start_date', filter\.to\)/)
+    const branchIdx = body.indexOf("tourQuery.eq('branch_id'")
+    const gteIdx = body.indexOf("filter.from) tourQuery")
+    const limitIdx = body.indexOf('.limit(listLimit)')
+    const orderIdx = body.indexOf(".order('start_date'")
+    expect(branchIdx).toBeGreaterThan(-1)
+    expect(gteIdx).toBeGreaterThan(branchIdx)
+    expect(orderIdx).toBeGreaterThan(gteIdx)
+    expect(limitIdx).toBeGreaterThan(orderIdx)
+  })
+
   it('excludes recalled guide assignments only', () => {
     expect(ADMIN_ACTIONS_SRC).toContain(".eq('assignment_status', 'assigned')")
   })
@@ -160,6 +180,28 @@ describe('admin vehicle assignment UI (source-level)', () => {
     expect(ASSIGN_PAGE_SRC).toContain('getAssignableVehicleCompanyProfiles')
     expect(ASSIGN_PAGE_SRC).not.toContain('getAdminVehicleCompanies')
     expect(ASSIGN_PAGE_SRC).not.toContain('vehicle-companies')
+  })
+
+  it('uses searchParams for shareable date filters without delete/archive controls', () => {
+    expect(ASSIGN_PAGE_SRC).toContain('searchParams')
+    expect(ASSIGN_PAGE_SRC).toContain('parseVehicleAssignmentSearchParams')
+    expect(ASSIGN_PAGE_SRC).toContain('getAdminVehicleAssignmentTours(dateFilter)')
+    expect(ASSIGN_PAGE_SRC).toContain('VehicleAssignmentDateFilterBar')
+    expect(ASSIGN_PAGE_SRC).not.toMatch(/delete|archive|삭제/i)
+  })
+
+  it('date filter bar exposes quick ranges, custom apply, and notices', () => {
+    expect(ASSIGN_FILTER_SRC).toContain('오늘 이후')
+    expect(ASSIGN_FILTER_SRC).toContain('이번 달')
+    expect(ASSIGN_FILTER_SRC).toContain('다음 달')
+    expect(ASSIGN_FILTER_SRC).toContain('지난 달')
+    expect(ASSIGN_FILTER_SRC).toContain('전체')
+    expect(ASSIGN_FILTER_SRC).toContain('조회')
+    expect(ASSIGN_FILTER_SRC).toContain('VEHICLE_ASSIGNMENT_CURRENT_MONTH_NOTICE')
+    expect(ASSIGN_FILTER_SRC).toContain('VEHICLE_ASSIGNMENT_ALL_RANGE_WARNING')
+    expect(ASSIGN_FILTER_SRC).toContain('vehicleAssignmentQuickRangeUrls')
+    expect(ASSIGN_FILTER_SRC).toContain('href={quick.all}')
+    expect(ASSIGN_FILTER_SRC).not.toMatch(/delete|archive|삭제/i)
   })
 
   it('assignment table uses profile id as dropdown value', () => {

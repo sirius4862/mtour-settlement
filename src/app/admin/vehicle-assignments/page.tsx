@@ -3,14 +3,24 @@ import {
   getAdminVehicleAssignmentTours,
   getAssignableVehicleCompanyProfiles,
 } from '@/lib/actions/vehicleCompanyAdminActions'
+import { parseVehicleAssignmentSearchParams } from '@/lib/vehicle/admin-assignment-list'
+import { VehicleAssignmentDateFilterBar } from './VehicleAssignmentDateFilter'
 import { VehicleAssignmentTable } from './VehicleAssignmentTable'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminVehicleAssignmentsPage() {
+export default async function AdminVehicleAssignmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string; range?: string }>
+}) {
   await requireAdmin()
+  const params = await searchParams
+  const dateFilter = parseVehicleAssignmentSearchParams(params)
+  const hasExplicitParams = !!(params.from || params.to || params.range)
+
   const [tours, profiles] = await Promise.all([
-    getAdminVehicleAssignmentTours(),
+    getAdminVehicleAssignmentTours(dateFilter),
     getAssignableVehicleCompanyProfiles(),
   ])
 
@@ -23,6 +33,13 @@ export default async function AdminVehicleAssignmentsPage() {
           (role=vehicle_company, branch_id, 이름). 차량 리포트가 작성되면 배정회수를 통해서만 초기화할 수 있습니다.
         </p>
       </div>
+
+      <VehicleAssignmentDateFilterBar
+        filter={dateFilter}
+        showDefaultMonthNotice={dateFilter.range === 'current_month' && !hasExplicitParams}
+        showAllWarning={dateFilter.range === 'all'}
+      />
+
       <VehicleAssignmentTable tours={tours} profiles={profiles} />
     </div>
   )

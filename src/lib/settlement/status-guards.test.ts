@@ -67,6 +67,16 @@ describe('canGuideConfirm', () => {
   })
 })
 
+describe('settlement optimistic update helpers', () => {
+  it('exposes stale-status and duplicate-tour error messages', async () => {
+    const { SETTLEMENT_STATUS_STALE_ERROR, SETTLEMENT_DUPLICATE_TOUR_ERROR } = await import(
+      './status-guards'
+    )
+    expect(SETTLEMENT_STATUS_STALE_ERROR).toContain('새로고침')
+    expect(SETTLEMENT_DUPLICATE_TOUR_ERROR).toContain('이미 정산서')
+  })
+})
+
 describe('isStuckGuideConfirmation', () => {
   const pending = {
     status: 'pending_guide_confirmation' as SettlementStatus,

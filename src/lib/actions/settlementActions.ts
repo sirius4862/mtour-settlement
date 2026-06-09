@@ -53,8 +53,11 @@ import {
   assertAdminSendForConfirmation,
   assertCanRecallSettlement,
   assertGuideConfirmAction,
+  assertSingleOptimisticUpdate,
   canAdminSendForConfirmation,
+  isPgUniqueViolation,
   RECALL_TARGET_STATUS,
+  SETTLEMENT_DUPLICATE_TOUR_ERROR,
 } from '@/lib/settlement/status-guards'
 import {
   canOperationalAdminReview,
@@ -667,7 +670,18 @@ export async function upsertSettlement(payload: {
     year_month: (tour.start_date as string).slice(0, 7),
   }
 
-  type WriteResult = { error: { message: string } | null; id?: string }
+  type WriteResult = { error: { message: string; code?: string } | null; id?: string }
+
+  if (!payload.id) {
+    const { data: existingForTour } = await supabase
+      .from('settlements')
+      .select('id')
+      .eq('tour_id', payload.tour_id)
+      .maybeSingle()
+    if (existingForTour) {
+      return { ok: false, error: SETTLEMENT_DUPLICATE_TOUR_ERROR }
+    }
+  }
 
   const writeSettlement = async (row: typeof base): Promise<WriteResult> => {
     if (payload.id) {
@@ -715,6 +729,9 @@ export async function upsertSettlement(payload: {
 
   const writeResult = await writeSettlement(base)
   if (writeResult.error) {
+    if (!payload.id && isPgUniqueViolation(writeResult.error)) {
+      return { ok: false, error: SETTLEMENT_DUPLICATE_TOUR_ERROR }
+    }
     logServerError('[upsertSettlement] write failed', writeResult.error)
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
   }
@@ -1316,7 +1333,7 @@ export async function reviewSettlement(params: {
   const now = new Date().toISOString()
 
   if (params.action === 'reopen') {
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('settlements')
       .update({
         status: 'edit_requested',
@@ -1329,8 +1346,11 @@ export async function reviewSettlement(params: {
       })
       .eq('id', params.id)
       .eq('status', 'paid')
+      .select('id')
 
     if (error) return { ok: false, error: error.message }
+    const rowCheck = assertSingleOptimisticUpdate(updatedRows)
+    if (!rowCheck.ok) return { ok: false, error: rowCheck.error }
 
     await insertAuditEvent(supabase, {
       settlementId: params.id,
@@ -1372,13 +1392,16 @@ export async function reviewSettlement(params: {
       break
   }
 
-  const { error } = await supabase
+  const { data: updatedRows, error } = await supabase
     .from('settlements')
     .update(updates)
     .eq('id', params.id)
     .eq('status', fromStatus)
+    .select('id')
 
   if (error) return { ok: false, error: error.message }
+  const rowCheck = assertSingleOptimisticUpdate(updatedRows)
+  if (!rowCheck.ok) return { ok: false, error: rowCheck.error }
 
   await insertAuditEvent(supabase, {
     settlementId: params.id,
@@ -1436,16 +1459,19 @@ export async function recallSettlement(
 
   // Status-only transition. admin_note is intentionally NOT overwritten so
   // admin-entered notes are preserved; the recall reason lives in the audit log.
-  const { error } = await supabase
+  const { data: updatedRows, error } = await supabase
     .from('settlements')
     .update({ status: RECALL_TARGET_STATUS, reviewed_by: profile.id })
     .eq('id', id)
     .eq('status', fromStatus)
+    .select('id')
 
   if (error) {
     logServerError('[recallSettlement] update failed', error, { settlementId: id })
     return { ok: false, error: '정산서를 회수할 수 없습니다. 잠시 후 다시 시도해주세요.' }
   }
+  const rowCheck = assertSingleOptimisticUpdate(updatedRows)
+  if (!rowCheck.ok) return { ok: false, error: rowCheck.error }
 
   await insertAuditEvent(supabase, {
     settlementId: id,
@@ -1750,6 +1776,10 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
     return { ok: false, error: '최종확인 처리에 실패했습니다.' }
   }
 
+  // TODO(audit): True atomic guide confirm requires moving settlement_confirmations
+  // update into guide_confirm_settlement RPC via a reviewed DB migration. The app
+  // currently calls the RPC first, then updates the confirmation row separately;
+  // partial failure can desync — isStuckGuideConfirmation() detects that state.
   const { error: confErr } = await supabase
     .from('settlement_confirmations')
     .update({

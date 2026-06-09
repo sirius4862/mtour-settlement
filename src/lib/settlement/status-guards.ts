@@ -276,6 +276,27 @@ export function assertAdminReviewAction(
   }
 }
 
+/** Returned when an optimistic status-conditioned update affects zero or multiple rows. */
+export const SETTLEMENT_STATUS_STALE_ERROR =
+  '상태가 이미 변경되었습니다. 새로고침 후 다시 시도해주세요.'
+
+/** Friendly message when settlements_tour_id_key (UNIQUE tour_id) rejects a second insert. */
+export const SETTLEMENT_DUPLICATE_TOUR_ERROR =
+  '이 투어에는 이미 정산서가 있습니다. 기존 정산서를 열어주세요.'
+
+export function isPgUniqueViolation(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '23505'
+}
+
+export function assertSingleOptimisticUpdate(
+  rows: { id: string }[] | null | undefined,
+): { ok: true } | { ok: false; error: string } {
+  if (!rows || rows.length !== 1) {
+    return { ok: false, error: SETTLEMENT_STATUS_STALE_ERROR }
+  }
+  return { ok: true }
+}
+
 export {
   canMasterAdminEditApprovedSettlement,
   canMarkSettlementPaid,

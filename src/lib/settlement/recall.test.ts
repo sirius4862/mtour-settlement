@@ -182,6 +182,12 @@ describe('recallSettlement server action is status-only (no calc/payout/paid cha
     expect(body).toContain('.update({ status: RECALL_TARGET_STATUS, reviewed_by: profile.id })')
   })
 
+  it('verifies exactly one row changed via optimistic status match', () => {
+    expect(body).toContain(".eq('status', fromStatus)")
+    expect(body).toContain('.select(\'id\')')
+    expect(body).toContain('assertSingleOptimisticUpdate(updatedRows)')
+  })
+
   it('never writes paid_at, guide confirmation flags, calc summary, or admin_note', () => {
     // Guarantees calculations, payout, company profit, paid-lock, and admin notes
     // are untouched by recall (admin_note is preserved, not overwritten).

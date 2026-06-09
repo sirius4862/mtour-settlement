@@ -7,6 +7,7 @@ import {
 } from '@/lib/settlement/calc-summary'
 import { canAdminEditSettlement, getSettlementStatusDisplay } from '@/types'
 import type { AdminSettlementListItem } from '@/lib/admin/settlement-list'
+import { isAdminUnsubmittedTourListItemId } from '@/lib/admin/settlement-unsubmitted-list'
 
 function formatUpdatedAt(iso: string): string {
   return iso.slice(0, 16).replace('T', ' ')
@@ -51,6 +52,7 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
           {items.map((s) => {
             const summary = parseSettlementCalcSummaryJson(s.calc_summary_json)
             const canEdit = canAdminEditSettlement(s.status)
+            const tourOnly = isAdminUnsubmittedTourListItemId(s.id)
             const guideLines = formatGuideDisplayLines(s.guide)
             return (
               <tr
@@ -96,22 +98,26 @@ export function AdminSettlementTable({ items }: { items: AdminSettlementListItem
                   {formatUpdatedAt(s.updated_at)}
                 </td>
                 <td className="px-3 py-3 whitespace-nowrap">
-                  <div className="flex items-center gap-1.5">
-                    <Link
-                      href={`/admin/settlements/${s.id}`}
-                      className="px-2 py-1 text-xs font-medium text-blue-600 border border-blue-100 rounded-md hover:bg-blue-50"
-                    >
-                      상세
-                    </Link>
-                    {canEdit && (
+                  {tourOnly ? (
+                    <span className="text-xs text-gray-400">정산서 미작성</span>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
                       <Link
-                        href={`/admin/settlements/${s.id}/edit`}
-                        className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50"
+                        href={`/admin/settlements/${s.id}`}
+                        className="px-2 py-1 text-xs font-medium text-blue-600 border border-blue-100 rounded-md hover:bg-blue-50"
                       >
-                        수정
+                        상세
                       </Link>
-                    )}
-                  </div>
+                      {canEdit && (
+                        <Link
+                          href={`/admin/settlements/${s.id}/edit`}
+                          className="px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50"
+                        >
+                          수정
+                        </Link>
+                      )}
+                    </div>
+                  )}
                 </td>
               </tr>
             )

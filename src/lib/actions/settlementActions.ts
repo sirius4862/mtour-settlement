@@ -83,6 +83,12 @@ import {
   type AdminSettlementsPageResult,
 } from '@/lib/admin/settlement-list'
 import {
+  ADMIN_UNSUBMITTED_TOUR_SELECT,
+  isAdminUnsubmittedOnlyStatusFilter,
+  mergeAdminUnsubmittedListItems,
+  type AdminUnsubmittedTourRow,
+} from '@/lib/admin/settlement-unsubmitted-list'
+import {
   GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE,
   expandGuideHistoryStatusFilter,
   normalizeGuideHistoryPage,
@@ -472,6 +478,101 @@ export async function getSettlementFull(
   } as SettlementFull
 }
 
+function emptyAdminSettlementsPage(
+  page: number,
+  pageSize: number,
+): AdminSettlementsPageResult {
+  return { items: [], total: 0, page, pageSize, totalPages: 0 }
+}
+
+/** 미제출 — assigned tours with no settlement row and existing draft settlements. */
+async function getAdminUnsubmittedSettlements(
+  supabase: SupabaseClient,
+  filters: AdminSettlementListFilters,
+  page: number,
+  pageSize: number,
+  regionId: string | undefined,
+): Promise<AdminSettlementsPageResult> {
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const startDate = filters.startDate!
+  const endDate = filters.endDate!
+
+  let tourQuery = supabase
+    .from('tours')
+    .select(ADMIN_UNSUBMITTED_TOUR_SELECT)
+    .not('guide_id', 'is', null)
+    .neq('assignment_status', 'recalled')
+    .gte('start_date', startDate)
+    .lte('start_date', endDate)
+
+  if (regionId) tourQuery = tourQuery.eq('branch_id', regionId)
+
+  const search = filters.search?.trim()
+  if (search) {
+    const pattern = `%${escapeIlikePattern(search)}%`
+    const [toursRes, guidesRes] = await Promise.all([
+      supabase
+        .from('tours')
+        .select('id')
+        .or(`pattern.ilike.${pattern},tour_code.ilike.${pattern}`),
+      supabase
+        .from('profiles')
+        .select('id')
+        .or(
+          `full_name.ilike.${pattern},email.ilike.${pattern},korean_name.ilike.${pattern},vietnamese_name.ilike.${pattern}`,
+        ),
+    ])
+
+    const tourIds = (toursRes.data ?? []).map((t) => t.id as string)
+    const guideIds = (guidesRes.data ?? []).map((g) => g.id as string)
+    if (tourIds.length === 0 && guideIds.length === 0) {
+      return emptyAdminSettlementsPage(page, pageSize)
+    }
+
+    const orParts: string[] = []
+    if (tourIds.length > 0) orParts.push(`id.in.(${tourIds.join(',')})`)
+    if (guideIds.length > 0) orParts.push(`guide_id.in.(${guideIds.join(',')})`)
+    tourQuery = tourQuery.or(orParts.join(','))
+  }
+
+  const { data: tourRows, error: tourError } = await tourQuery
+  if (tourError) {
+    console.error('getAdminUnsubmittedSettlements tours:', tourError.message)
+    return emptyAdminSettlementsPage(page, pageSize)
+  }
+
+  const tours = (tourRows ?? []) as unknown as AdminUnsubmittedTourRow[]
+  if (tours.length === 0) return emptyAdminSettlementsPage(page, pageSize)
+
+  const tourIds = tours.map((t) => t.id)
+  const { data: settlementRows, error: settlementError } = await supabase
+    .from('settlements')
+    .select(ADMIN_SETTLEMENT_SELECT)
+    .in('tour_id', tourIds)
+
+  if (settlementError) {
+    console.error('getAdminUnsubmittedSettlements settlements:', settlementError.message)
+    return emptyAdminSettlementsPage(page, pageSize)
+  }
+
+  const merged = mergeAdminUnsubmittedListItems(
+    tours,
+    (settlementRows ?? []) as unknown as AdminSettlementListItem[],
+    search,
+  )
+  const total = merged.length
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
+
+  return {
+    items: merged.slice(from, to + 1),
+    total,
+    page,
+    pageSize,
+    totalPages,
+  }
+}
+
 /** 관리자 정산서 목록 (페이지네이션 + 검색) */
 export async function getAdminSettlements(
   filters?: AdminSettlementListFilters,
@@ -482,11 +583,20 @@ export async function getAdminSettlements(
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
+  const regionId = await resolveSettlementRegionFilter(filters)
+
+  if (
+    isAdminUnsubmittedOnlyStatusFilter(filters?.status) &&
+    filters?.startDate &&
+    filters?.endDate
+  ) {
+    return getAdminUnsubmittedSettlements(supabase, filters, page, pageSize, regionId)
+  }
+
   let q = supabase
     .from('settlements')
     .select(ADMIN_SETTLEMENT_SELECT, { count: 'exact' })
 
-  const regionId = await resolveSettlementRegionFilter(filters)
   if (regionId) q = q.eq('branch_id', regionId)
 
   if (filters?.startDate && filters?.endDate) {

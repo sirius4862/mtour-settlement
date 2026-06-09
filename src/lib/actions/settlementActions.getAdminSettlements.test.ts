@@ -72,3 +72,19 @@ describe('getAdminSettlements — settlement workflow separation', () => {
     expect(body).not.toContain('guide_confirmed_at')
   })
 })
+
+describe('getAdminSettlements — 미제출 (draft) includes tours without settlements', () => {
+  const actions = readFileSync('src/lib/actions/settlementActions.ts', 'utf8')
+
+  it('delegates draft+date-range filter to getAdminUnsubmittedSettlements', () => {
+    const start = actions.indexOf('export async function getAdminSettlements')
+    const body = actions.slice(start, start + 1200)
+    expect(body).toContain('getAdminUnsubmittedSettlements(supabase, filters, page, pageSize, regionId)')
+  })
+
+  it('keeps settlement-only query for non-draft status filters', () => {
+    const body = getAdminSettlementsBody()
+    expect(body).toContain(".from('settlements')")
+    expect(body).toContain('expandWorkflowStatusFilter(filters.status)')
+  })
+})

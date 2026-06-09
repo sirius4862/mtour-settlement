@@ -82,9 +82,9 @@ import {
 import {
   GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE,
   expandGuideHistoryStatusFilter,
-  guideHistorySinceDate,
   normalizeGuideHistoryPage,
   parseGuideHistoryPeriod,
+  resolveGuideHistoryDateRange,
   type GuideSettlementHistoryFilters,
   type GuideSettlementHistoryResult,
 } from '@/lib/guide/settlement-history'
@@ -311,17 +311,22 @@ export async function getMySettlementHistory(
   if (!user) return { items: [], total: 0, page, pageSize, totalPages: 0 }
 
   const period = parseGuideHistoryPeriod(filters?.period)
-  const since = guideHistorySinceDate(period)
+  const range = resolveGuideHistoryDateRange({
+    period,
+    from: filters?.from,
+    to: filters?.to,
+  })
   const search = filters?.search?.trim()
   let matchingTourIds: string[] | null = null
 
-  if (since || search) {
+  if (range.from || range.to || search) {
     let tourQuery = supabase
       .from('tours')
       .select('id')
       .eq('guide_id', user.id)
 
-    if (since) tourQuery = tourQuery.gte('start_date', since)
+    if (range.from) tourQuery = tourQuery.gte('start_date', range.from)
+    if (range.to) tourQuery = tourQuery.lte('start_date', range.to)
     if (search) {
       const pattern = `%${escapeIlikePattern(search)}%`
       tourQuery = tourQuery.or(`pattern.ilike.${pattern},tour_code.ilike.${pattern}`)

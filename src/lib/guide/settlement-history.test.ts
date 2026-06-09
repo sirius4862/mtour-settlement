@@ -3,13 +3,18 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SettlementWithTour } from '@/types'
 import {
+  GUIDE_HISTORY_EMPTY_MESSAGE,
+  GUIDE_HISTORY_PERIOD_HELPER,
   buildGuideHistoryUrl,
   expandGuideHistoryStatusFilter,
-  guideHistorySinceDate,
+  guideHistoryRecent30Days,
+  guideHistoryRecent7Days,
   matchesGuideHistoryFilters,
   normalizeGuideHistoryPage,
   parseGuideHistoryPeriod,
   parseGuideHistoryStatus,
+  resolveGuideHistoryDateRange,
+  tourStartDateInGuideHistoryRange,
 } from './settlement-history'
 
 const ROOT = process.cwd()
@@ -92,10 +97,67 @@ describe('guide settlement history filters', () => {
     expect(parseGuideHistoryStatus('nope')).toBe('')
     expect(parseGuideHistoryPeriod('7d')).toBe('7d')
     expect(parseGuideHistoryPeriod('30d')).toBe('30d')
-    expect(parseGuideHistoryPeriod('all')).toBe('all')
+    expect(parseGuideHistoryPeriod('current_month')).toBe('current_month')
+    expect(parseGuideHistoryPeriod('prev_month')).toBe('prev_month')
+    expect(parseGuideHistoryPeriod('custom')).toBe('custom')
+    expect(parseGuideHistoryPeriod('all')).toBe('7d')
     expect(parseGuideHistoryPeriod('bad')).toBe('7d')
     expect(normalizeGuideHistoryPage('3')).toBe(3)
     expect(normalizeGuideHistoryPage('-1')).toBe(1)
+  })
+
+  it('defaults to 최근 7일 when no query params', () => {
+    expect(parseGuideHistoryPeriod()).toBe('7d')
+    expect(buildGuideHistoryUrl({})).toBe('/guide/settlements')
+    expect(guideHistoryRecent7Days(now)).toEqual({ from: '2026-05-29', to: '2026-06-04' })
+    expect(resolveGuideHistoryDateRange({}, now)).toEqual(guideHistoryRecent7Days(now))
+  })
+
+  it('resolves 최근 30일 period', () => {
+    expect(guideHistoryRecent30Days(now)).toEqual({ from: '2026-05-06', to: '2026-06-04' })
+    expect(resolveGuideHistoryDateRange({ period: '30d' }, now)).toEqual(
+      guideHistoryRecent30Days(now),
+    )
+  })
+
+  it('resolves 이번 달 and 지난 달 periods', () => {
+    expect(resolveGuideHistoryDateRange({ period: 'current_month' }, now)).toEqual({
+      from: '2026-06-01',
+      to: '2026-06-30',
+    })
+    expect(resolveGuideHistoryDateRange({ period: 'prev_month' }, now)).toEqual({
+      from: '2026-05-01',
+      to: '2026-05-31',
+    })
+  })
+
+  it('falls back to 최근 7일 when custom period is missing from or to', () => {
+    const recent7 = guideHistoryRecent7Days(now)
+    expect(resolveGuideHistoryDateRange({ period: 'custom' }, now)).toEqual(recent7)
+    expect(resolveGuideHistoryDateRange({ period: 'custom', from: '2026-04-01' }, now)).toEqual(
+      recent7,
+    )
+    expect(resolveGuideHistoryDateRange({ period: 'custom', to: '2026-04-30' }, now)).toEqual(
+      recent7,
+    )
+  })
+
+  it('resolves 직접 설정 with start and end dates', () => {
+    expect(
+      resolveGuideHistoryDateRange(
+        { period: 'custom', from: '2026-04-01', to: '2026-04-30' },
+        now,
+      ),
+    ).toEqual({ from: '2026-04-01', to: '2026-04-30' })
+    expect(tourStartDateInGuideHistoryRange('2026-04-15', { from: '2026-04-01', to: '2026-04-30' })).toBe(
+      true,
+    )
+    expect(tourStartDateInGuideHistoryRange('2026-03-31', { from: '2026-04-01', to: '2026-04-30' })).toBe(
+      false,
+    )
+    expect(tourStartDateInGuideHistoryRange('2026-05-01', { from: '2026-04-01', to: '2026-04-30' })).toBe(
+      false,
+    )
   })
 
   it('expands guide status filters to legacy statuses without changing workflow values', () => {
@@ -111,38 +173,104 @@ describe('guide settlement history filters', () => {
     expect(expandGuideHistoryStatusFilter()).toBeNull()
   })
 
-  it('defaults recent history to 7 days', () => {
-    expect(guideHistorySinceDate('7d', now)).toBe('2026-05-28')
-    expect(parseGuideHistoryPeriod()).toBe('7d')
-  })
-
-  it('filters by status, period, and keyword', () => {
+  it('filters by status and period together', () => {
     const row = settlement({})
-    expect(matchesGuideHistoryFilters(row, { status: 'submitted', period: '90d', search: 'family' }, now)).toBe(true)
-    expect(matchesGuideHistoryFilters(row, { status: 'draft', period: '90d' }, now)).toBe(false)
-    expect(matchesGuideHistoryFilters(row, { period: '30d' }, now)).toBe(true)
-    expect(matchesGuideHistoryFilters(row, { period: 'all', search: 'DN-2026' }, now)).toBe(true)
-    expect(matchesGuideHistoryFilters(row, { period: 'all', search: 'missing' }, now)).toBe(false)
+    expect(
+      matchesGuideHistoryFilters(row, { status: 'submitted', period: '30d' }, now),
+    ).toBe(true)
+    expect(matchesGuideHistoryFilters(row, { status: 'draft', period: '30d' }, now)).toBe(false)
+    expect(
+      matchesGuideHistoryFilters(row, { status: 'submitted', period: '7d' }, now),
+    ).toBe(false)
   })
 
-  it('builds pagination and reset URLs for the history page', () => {
-    expect(buildGuideHistoryUrl({})).toBe('/guide/settlements')
-    expect(buildGuideHistoryUrl({ status: 'submitted', period: '90d', search: 'DN', page: 2 })).toBe(
-      '/guide/settlements?status=submitted&period=90d&search=DN&page=2',
+  it('filters by search keyword and period together', () => {
+    const row = settlement({})
+    expect(
+      matchesGuideHistoryFilters(row, { period: 'current_month', search: 'family' }, now),
+    ).toBe(false)
+    expect(
+      matchesGuideHistoryFilters(
+        settlement({
+          tour: { ...settlement({}).tour!, start_date: '2026-06-10' },
+        }),
+        { period: 'current_month', search: 'DN-2026' },
+        now,
+      ),
+    ).toBe(true)
+    expect(
+      matchesGuideHistoryFilters(row, { period: '30d', search: 'missing' }, now),
+    ).toBe(false)
+  })
+
+  it('filters by status, period, and search keyword together', () => {
+    const row = settlement({
+      tour: { ...settlement({}).tour!, start_date: '2026-06-02' },
+    })
+    expect(
+      matchesGuideHistoryFilters(
+        row,
+        { status: 'submitted', period: 'current_month', search: 'da nang' },
+        now,
+      ),
+    ).toBe(true)
+    expect(
+      matchesGuideHistoryFilters(
+        row,
+        { status: 'draft', period: 'current_month', search: 'da nang' },
+        now,
+      ),
+    ).toBe(false)
+  })
+
+  it('builds history URLs without default period and with custom dates', () => {
+    expect(buildGuideHistoryUrl({ status: 'submitted', period: '30d', search: 'DN', page: 2 })).toBe(
+      '/guide/settlements?status=submitted&period=30d&search=DN&page=2',
     )
-    expect(buildGuideHistoryUrl({ period: 'all' })).toBe('/guide/settlements')
+    expect(
+      buildGuideHistoryUrl({
+        period: 'custom',
+        from: '2026-04-01',
+        to: '2026-04-30',
+        search: '260403',
+      }),
+    ).toBe('/guide/settlements?period=custom&from=2026-04-01&to=2026-04-30&search=260403')
   })
 
   it('documents the required guide dashboard/history wiring', () => {
     const dashboard = readFileSync(join(ROOT, 'src/app/guide/page.tsx'), 'utf8')
     const historyPage = readFileSync(join(ROOT, 'src/app/guide/settlements/page.tsx'), 'utf8')
+    const filterForm = readFileSync(
+      join(ROOT, 'src/app/guide/settlements/GuideHistoryFilterForm.tsx'),
+      'utf8',
+    )
 
     expect(dashboard).toContain('전체 정산서 보기')
     expect(historyPage).toContain('getMySettlementHistory')
-    expect(historyPage).toContain('name="status"')
-    expect(historyPage).toContain('name="period"')
-    expect(historyPage).toContain('name="search"')
+    expect(historyPage).toContain('GuideHistoryFilterForm')
+    expect(historyPage).toContain('전체 정산서')
+    expect(historyPage).toContain('GUIDE_HISTORY_EMPTY_MESSAGE')
+    expect(historyPage).not.toContain('초기화')
+    expect(filterForm).toContain('name="status"')
+    expect(filterForm).toContain('name="period"')
+    expect(filterForm).toContain('name="search"')
+    expect(filterForm).toContain('name="from"')
+    expect(filterForm).toContain('name="to"')
+    expect(filterForm).toMatch(/name="from"[\s\S]*?required/)
+    expect(filterForm).toMatch(/name="to"[\s\S]*?required/)
+    expect(filterForm).toContain('GUIDE_HISTORY_PERIOD_HELPER')
+    expect(filterForm).not.toContain('초기화')
+    expect(filterForm).not.toContain('reset')
     expect(historyPage).toContain('settlementHref')
+  })
+
+  it('exposes helper and empty-state copy', () => {
+    expect(GUIDE_HISTORY_PERIOD_HELPER).toBe(
+      '기본 조회 기간은 최근 7일입니다. 기간을 변경하면 이전 정산서도 확인할 수 있습니다.',
+    )
+    expect(GUIDE_HISTORY_EMPTY_MESSAGE).toBe(
+      '선택한 기간에 조회되는 정산서가 없습니다. 기간 또는 검색어를 변경해보세요.',
+    )
   })
 
   it('documents the guide dashboard work-queue layout', () => {
@@ -187,7 +315,7 @@ describe('guide settlement history filters', () => {
     expect(dashboard).toContain('임시저장한 정산서가 있을 때 표시됩니다.')
   })
 
-  it('documents guide ownership enforcement in the server query', () => {
+  it('documents guide ownership enforcement and date-range filtering in the server query', () => {
     const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
 
     expect(actions).toContain('export async function getMySettlementHistory')
@@ -195,6 +323,9 @@ describe('guide settlement history filters', () => {
     expect(actions).toContain(".eq('guide_id', user.id)")
     expect(actions).toContain(".from('tours')")
     expect(actions).toContain(".eq('guide_id', user.id)")
+    expect(actions).toContain('resolveGuideHistoryDateRange')
+    expect(actions).toContain(".gte('start_date', range.from)")
+    expect(actions).toContain(".lte('start_date', range.to)")
   })
 
   it('keeps guide dashboard loading UI visible while sections load', () => {

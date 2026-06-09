@@ -4,21 +4,15 @@ import { getMySettlementHistory } from '@/lib/actions/settlementActions'
 import { STATUS_META, type SettlementStatus } from '@/types'
 import { getSettlementStatusDisplay } from '@/lib/settlement/status-display'
 import {
+  GUIDE_HISTORY_EMPTY_MESSAGE,
   GUIDE_HISTORY_STATUS_ORDER,
   buildGuideHistoryUrl,
   parseGuideHistoryPeriod,
   parseGuideHistoryStatus,
 } from '@/lib/guide/settlement-history'
+import { GuideHistoryFilterForm } from './GuideHistoryFilterForm'
 
 export const dynamic = 'force-dynamic'
-
-const PERIOD_OPTIONS = [
-  { value: '7d', label: '최근 7일' },
-  { value: '30d', label: '최근 30일' },
-  { value: '90d', label: '최근 90일' },
-  { value: '1y', label: '최근 1년' },
-  { value: 'all', label: '전체' },
-] as const
 
 function settlementHref(s: {
   id: string
@@ -43,15 +37,23 @@ export default async function SettlementsPage({
   const params = await searchParams
   const status = parseGuideHistoryStatus(params.status)
   const period = parseGuideHistoryPeriod(params.period)
+  const from = params.from?.trim() ?? ''
+  const to = params.to?.trim() ?? ''
   const search = params.search?.trim() ?? ''
   const page = Math.max(1, parseInt(params.page || '1', 10) || 1)
   const result = await getMySettlementHistory({
     status: status || undefined,
     period,
+    from: from || undefined,
+    to: to || undefined,
     search: search || undefined,
     page,
   })
-  const listParams = { status, period, search, page: 1 }
+  const listParams = { status, period, from, to, search, page: 1 }
+  const statusOptions = GUIDE_HISTORY_STATUS_ORDER.map((v) => ({
+    value: v,
+    label: STATUS_META[v].label,
+  }))
 
   return (
     <div className="px-4 py-5 space-y-4">
@@ -61,9 +63,6 @@ export default async function SettlementsPage({
             ← 대시보드
           </Link>
           <h1 className="text-lg font-bold text-gray-900 mt-1">전체 정산서</h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            오래된 정산서를 상태, 기간, 투어명/코드로 검색할 수 있습니다.
-          </p>
         </div>
         <Link
           href="/guide/settlements/new"
@@ -76,59 +75,14 @@ export default async function SettlementsPage({
         </Link>
       </div>
 
-      <form className="bg-white rounded-2xl border border-gray-100 p-3 space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-xs text-gray-500">
-            상태
-            <select
-              name="status"
-              defaultValue={status}
-              className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-800"
-            >
-              <option value="">전체</option>
-              {GUIDE_HISTORY_STATUS_ORDER.map((v) => (
-                <option key={v} value={v}>{STATUS_META[v].label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-gray-500">
-            기간
-            <select
-              name="period"
-              defaultValue={period}
-              className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-800"
-            >
-              {PERIOD_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <label className="block text-xs text-gray-500">
-          검색
-          <input
-            type="search"
-            name="search"
-            defaultValue={search}
-            placeholder="투어명 또는 투어코드"
-            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-800"
-          />
-        </label>
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-          >
-            조회
-          </button>
-          <Link
-            href="/guide/settlements"
-            className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white"
-          >
-            초기화
-          </Link>
-        </div>
-      </form>
+      <GuideHistoryFilterForm
+        status={status}
+        period={period}
+        from={from}
+        to={to}
+        search={search}
+        statusOptions={statusOptions}
+      />
 
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-gray-700">검색 결과</p>
@@ -140,8 +94,7 @@ export default async function SettlementsPage({
       {result.items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <p className="text-3xl mb-3">📋</p>
-          <p className="text-gray-600 font-medium">조회 결과가 없습니다</p>
-          <p className="text-sm text-gray-400 mt-1">필터를 바꾸거나 검색어를 지워보세요</p>
+          <p className="text-gray-600 font-medium">{GUIDE_HISTORY_EMPTY_MESSAGE}</p>
         </div>
       ) : (
         <div className="space-y-3">

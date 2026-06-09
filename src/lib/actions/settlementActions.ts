@@ -482,11 +482,15 @@ export async function getAdminSettlements(
   if (regionId) q = q.eq('branch_id', regionId)
 
   if (filters?.startDate && filters?.endDate) {
-    const { data: toursInRange, error: toursInRangeError } = await supabase
+    let tourDateQuery = supabase
       .from('tours')
       .select('id')
       .gte('start_date', filters.startDate)
       .lte('start_date', filters.endDate)
+
+    if (regionId) tourDateQuery = tourDateQuery.eq('branch_id', regionId)
+
+    const { data: toursInRange, error: toursInRangeError } = await tourDateQuery
 
     if (toursInRangeError) {
       console.error('getAdminSettlements tours date range:', toursInRangeError.message)

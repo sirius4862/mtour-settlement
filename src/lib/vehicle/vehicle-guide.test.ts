@@ -144,8 +144,8 @@ describe('guide check — UI states (source-level)', () => {
     expect(FORM_SRC).toContain('확인 완료')
   })
 
-  it('list shows the empty state message', () => {
-    expect(LIST_SRC).toContain('확인할 차량 리포트가 없습니다.')
+  it('list shows the period-filtered empty state message', () => {
+    expect(LIST_SRC).toContain('GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE')
   })
 })
 

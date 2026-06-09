@@ -8,6 +8,7 @@ import {
   validateGuideCheckForSubmit,
   type GuideCheckStatus,
 } from '@/lib/vehicle/guide-check'
+import { resolveGuideVehicleReportDateRange } from '@/lib/vehicle/guide-vehicle-report-list'
 import type { UserRole } from '@/types'
 
 // Operational-only view. NEVER includes settlement/payout/money fields.
@@ -108,15 +109,29 @@ async function getGuideCtx(): Promise<GuideCtx | null> {
  * guide's check status. Draft reports are never returned (RLS guide_select
  * requires status='submitted'; the explicit filter is defense-in-depth).
  */
-export async function getGuideVehicleReports(): Promise<GuideVehicleReportListItem[]> {
+export async function getGuideVehicleReports(options?: {
+  period?: string
+}): Promise<GuideVehicleReportListItem[]> {
   const ctx = await getGuideCtx()
   if (!ctx) return []
+
+  const range = resolveGuideVehicleReportDateRange({ period: options?.period })
+
+  const { data: tourRows } = await ctx.supabase
+    .from('tours')
+    .select('id')
+    .eq('guide_id', ctx.guideId)
+    .gte('start_date', range.from)
+    .lte('start_date', range.to)
+
+  const eligibleTourIds = (tourRows ?? []).map((t) => t.id as string)
+  if (eligibleTourIds.length === 0) return []
 
   const { data: reportRows } = await ctx.supabase
     .from('vehicle_route_reports')
     .select(REPORT_SELECT)
     .eq('status', 'submitted')
-    .limit(200)
+    .in('tour_id', eligibleTourIds)
 
   const reports = (reportRows ?? []) as unknown as Array<Record<string, unknown>>
   if (reports.length === 0) return []

@@ -1,6 +1,11 @@
 import Link from 'next/link'
 import { getGuideVehicleReports } from '@/lib/actions/vehicleGuideActions'
 import { guideCheckListStatusLabel } from '@/lib/vehicle/guide-check'
+import {
+  GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE,
+  parseGuideVehicleReportPeriod,
+} from '@/lib/vehicle/guide-vehicle-report-list'
+import { GuideVehicleReportPeriodFilter } from './GuideVehicleReportPeriodFilter'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,8 +17,14 @@ function periodText(start: string | null, end: string | null): string {
   return start || end || ''
 }
 
-export default async function GuideVehicleReportsPage() {
-  const reports = await getGuideVehicleReports()
+export default async function GuideVehicleReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>
+}) {
+  const params = await searchParams
+  const period = parseGuideVehicleReportPeriod(params.period)
+  const reports = await getGuideVehicleReports({ period })
 
   return (
     <div className="min-h-screen bg-[#FCFAF7] px-4 py-4 text-[#2B2118]" style={{ fontFamily: fontStack }}>
@@ -25,9 +36,11 @@ export default async function GuideVehicleReportsPage() {
           </p>
         </header>
 
+        <GuideVehicleReportPeriodFilter period={period} />
+
         {reports.length === 0 ? (
           <div className="flex min-h-[84px] flex-col items-center justify-center rounded-[22px] border border-[#E9DED2] bg-[#FFFDF9] px-4 py-6 text-center shadow-[0_4px_18px_rgba(43,33,24,0.025)]">
-            <p className="text-sm font-semibold text-[#2B2118]">확인할 차량 리포트가 없습니다.</p>
+            <p className="text-sm font-semibold text-[#2B2118]">{GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE}</p>
           </div>
         ) : (
           <ul className="space-y-2">

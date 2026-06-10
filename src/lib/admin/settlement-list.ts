@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { recentWeekRange } from '@/lib/admin/date-range-filter'
 import type { SettlementStatus } from '@/types'
 import type { GuideNameFields } from '@/lib/guide/display-name'
@@ -356,4 +357,72 @@ export const ADMIN_SETTLEMENT_SELECT = `
 /** Escape user input for PostgREST ilike patterns. */
 export function escapeIlikePattern(term: string): string {
   return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
+const ADMIN_SETTLEMENT_TOUR_SEARCH_COLUMNS = ['pattern', 'tour_code'] as const
+const ADMIN_SETTLEMENT_GUIDE_SEARCH_COLUMNS = [
+  'full_name',
+  'email',
+  'korean_name',
+  'vietnamese_name',
+] as const
+
+export type AdminSettlementSearchScope = {
+  tourIds: string[]
+  guideIds: string[]
+}
+
+export type AdminSettlementSearchOrTarget = 'tours' | 'settlements'
+
+/** PostgREST ilike pattern for admin settlement search (`%term%`, escaped). */
+export function buildAdminSettlementSearchIlikePattern(search: string): string {
+  return `%${escapeIlikePattern(search.trim())}%`
+}
+
+export function buildAdminSettlementTourSearchOr(ilikePattern: string): string {
+  return ADMIN_SETTLEMENT_TOUR_SEARCH_COLUMNS.map((col) => `${col}.ilike.${ilikePattern}`).join(
+    ',',
+  )
+}
+
+export function buildAdminSettlementGuideSearchOr(ilikePattern: string): string {
+  return ADMIN_SETTLEMENT_GUIDE_SEARCH_COLUMNS.map((col) => `${col}.ilike.${ilikePattern}`).join(
+    ',',
+  )
+}
+
+export function adminSettlementSearchHasMatches(scope: AdminSettlementSearchScope): boolean {
+  return scope.tourIds.length > 0 || scope.guideIds.length > 0
+}
+
+/**
+ * PostgREST `.or()` filter for admin settlement/tour queries after ILIKE pre-search.
+ * `tours` uses `id.in`; `settlements` uses `tour_id.in`.
+ */
+export function buildAdminSettlementSearchOrFilter(
+  scope: AdminSettlementSearchScope,
+  target: AdminSettlementSearchOrTarget,
+): string | null {
+  if (!adminSettlementSearchHasMatches(scope)) return null
+  const tourColumn = target === 'tours' ? 'id' : 'tour_id'
+  const orParts: string[] = []
+  if (scope.tourIds.length > 0) orParts.push(`${tourColumn}.in.(${scope.tourIds.join(',')})`)
+  if (scope.guideIds.length > 0) orParts.push(`guide_id.in.(${scope.guideIds.join(',')})`)
+  return orParts.join(',')
+}
+
+/** Resolve tour/guide IDs matching admin settlement list search fields. */
+export async function resolveAdminSettlementSearchScope(
+  supabase: SupabaseClient,
+  search: string,
+): Promise<AdminSettlementSearchScope> {
+  const ilikePattern = buildAdminSettlementSearchIlikePattern(search)
+  const [toursRes, guidesRes] = await Promise.all([
+    supabase.from('tours').select('id').or(buildAdminSettlementTourSearchOr(ilikePattern)),
+    supabase.from('profiles').select('id').or(buildAdminSettlementGuideSearchOr(ilikePattern)),
+  ])
+  return {
+    tourIds: (toursRes.data ?? []).map((row) => row.id as string),
+    guideIds: (guidesRes.data ?? []).map((row) => row.id as string),
+  }
 }

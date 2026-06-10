@@ -98,6 +98,22 @@ describe('mergeAdminUnsubmittedListItems', () => {
     expect(mergeAdminUnsubmittedListItems([tour], [], 'missing')).toHaveLength(0)
   })
 
+  it('filters by guide name and email on tour-only rows', () => {
+    expect(mergeAdminUnsubmittedListItems([tour], [], 'Kim Guide')).toHaveLength(1)
+    expect(mergeAdminUnsubmittedListItems([tour], [], 'kim@example.com')).toHaveLength(1)
+    expect(mergeAdminUnsubmittedListItems([tour], [], 'nobody')).toHaveLength(0)
+  })
+
+  it('still includes draft settlements and excludes non-draft after search', () => {
+    const merged = mergeAdminUnsubmittedListItems(
+      [tour, { ...tour, id: 'tour-2', tour_code: 'APR26-02' }],
+      [draftSettlement, submittedSettlement],
+      'APR26',
+    )
+    expect(merged.map((r) => r.tour?.tour_code).sort()).toEqual(['APR26-01', 'APR26-02'])
+    expect(merged.some((r) => r.id === submittedSettlement.id)).toBe(false)
+  })
+
   it('sorts by tour start_date', () => {
     const merged = mergeAdminUnsubmittedListItems(
       [
@@ -134,6 +150,15 @@ describe('getAdminSettlements unsubmitted path (source-level)', () => {
     expect(actions).toContain('getAdminUnsubmittedSettlements')
     expect(actions).toContain('isAdminUnsubmittedOnlyStatusFilter(filters?.status)')
     expect(actions).toContain('mergeAdminUnsubmittedListItems')
+  })
+
+  it('uses shared admin settlement search helper for DB pre-filter', () => {
+    const start = actions.indexOf('async function getAdminUnsubmittedSettlements')
+    const end = actions.indexOf('export async function getAdminSettlements', start)
+    const body = actions.slice(start, end)
+    expect(body).toContain('resolveAdminSettlementSearchScope')
+    expect(body).toContain("buildAdminSettlementSearchOrFilter(scope, 'tours')")
+    expect(body).not.toContain('pattern.ilike.${pattern},tour_code.ilike')
   })
 
   it('queries assigned non-recalled tours by start_date', () => {

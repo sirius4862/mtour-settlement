@@ -80,9 +80,12 @@ import {
   ADMIN_SETTLEMENT_SELECT,
   ACTION_NEEDED_STATUSES,
   aggregateSettlementStatusCounts,
+  adminSettlementSearchHasMatches,
+  buildAdminSettlementSearchOrFilter,
   escapeIlikePattern,
   expandAdminDashboardProgressStatuses,
   expandWorkflowStatusFilter,
+  resolveAdminSettlementSearchScope,
   sortAdminSettlementsByTourDate,
   sortActionNeededSettlements,
   type AdminSettlementListFilters,
@@ -574,30 +577,12 @@ async function getAdminUnsubmittedSettlements(
 
   const search = filters.search?.trim()
   if (search) {
-    const pattern = `%${escapeIlikePattern(search)}%`
-    const [toursRes, guidesRes] = await Promise.all([
-      supabase
-        .from('tours')
-        .select('id')
-        .or(`pattern.ilike.${pattern},tour_code.ilike.${pattern}`),
-      supabase
-        .from('profiles')
-        .select('id')
-        .or(
-          `full_name.ilike.${pattern},email.ilike.${pattern},korean_name.ilike.${pattern},vietnamese_name.ilike.${pattern}`,
-        ),
-    ])
-
-    const tourIds = (toursRes.data ?? []).map((t) => t.id as string)
-    const guideIds = (guidesRes.data ?? []).map((g) => g.id as string)
-    if (tourIds.length === 0 && guideIds.length === 0) {
+    const scope = await resolveAdminSettlementSearchScope(supabase, search)
+    if (!adminSettlementSearchHasMatches(scope)) {
       return emptyAdminSettlementsPage(page, pageSize)
     }
-
-    const orParts: string[] = []
-    if (tourIds.length > 0) orParts.push(`id.in.(${tourIds.join(',')})`)
-    if (guideIds.length > 0) orParts.push(`guide_id.in.(${guideIds.join(',')})`)
-    tourQuery = tourQuery.or(orParts.join(','))
+    const orFilter = buildAdminSettlementSearchOrFilter(scope, 'tours')
+    if (orFilter) tourQuery = tourQuery.or(orFilter)
   }
 
   const { data: tourRows, error: tourError } = await tourQuery
@@ -698,30 +683,12 @@ export async function getAdminSettlements(
 
   const search = filters?.search?.trim()
   if (search) {
-    const pattern = `%${escapeIlikePattern(search)}%`
-    const [toursRes, guidesRes] = await Promise.all([
-      supabase
-        .from('tours')
-        .select('id')
-        .or(`pattern.ilike.${pattern},tour_code.ilike.${pattern}`),
-      supabase
-        .from('profiles')
-        .select('id')
-        .or(
-          `full_name.ilike.${pattern},email.ilike.${pattern},korean_name.ilike.${pattern},vietnamese_name.ilike.${pattern}`,
-        ),
-    ])
-
-    const tourIds = (toursRes.data ?? []).map((t) => t.id as string)
-    const guideIds = (guidesRes.data ?? []).map((g) => g.id as string)
-    if (tourIds.length === 0 && guideIds.length === 0) {
+    const scope = await resolveAdminSettlementSearchScope(supabase, search)
+    if (!adminSettlementSearchHasMatches(scope)) {
       return { items: [], total: 0, page, pageSize, totalPages: 0 }
     }
-
-    const orParts: string[] = []
-    if (tourIds.length > 0) orParts.push(`tour_id.in.(${tourIds.join(',')})`)
-    if (guideIds.length > 0) orParts.push(`guide_id.in.(${guideIds.join(',')})`)
-    q = q.or(orParts.join(','))
+    const orFilter = buildAdminSettlementSearchOrFilter(scope, 'settlements')
+    if (orFilter) q = q.or(orFilter)
   }
 
   const { data, count, error } = await q

@@ -21,6 +21,11 @@ import {
   expandWorkflowStatusFilter,
   filterAdminSettlementRowsForList,
   isAdminDashboardProgressStatus,
+  adminSettlementSearchHasMatches,
+  buildAdminSettlementGuideSearchOr,
+  buildAdminSettlementSearchIlikePattern,
+  buildAdminSettlementSearchOrFilter,
+  buildAdminSettlementTourSearchOr,
   matchesAdminSettlementSearch,
   resolveAdminSettlementListMode,
   shouldFetchAdminSettlementRows,
@@ -311,11 +316,24 @@ describe('/admin/settlements search list behavior', () => {
     expect(filtered.map((r) => r.id)).toEqual(['late-submitted'])
   })
 
-  it('search works by tour name, tour code, guide name, and guide email', () => {
+  it('search matches tour name/pattern', () => {
     expect(matchesAdminSettlementSearch(listRows[0], 'ba na')).toBe(true)
+    expect(matchesAdminSettlementSearch(listRows[0], 'missing')).toBe(false)
+  })
+
+  it('search matches tour code', () => {
     expect(matchesAdminSettlementSearch(listRows[1], 'A-100')).toBe(true)
+    expect(matchesAdminSettlementSearch(listRows[1], 'Z-999')).toBe(false)
+  })
+
+  it('search matches guide name', () => {
     expect(matchesAdminSettlementSearch(listRows[2], 'Carol')).toBe(true)
+    expect(matchesAdminSettlementSearch(listRows[2], 'nobody')).toBe(false)
+  })
+
+  it('search matches guide email', () => {
     expect(matchesAdminSettlementSearch(listRows[3], 'daisy@example.com')).toBe(true)
+    expect(matchesAdminSettlementSearch(listRows[3], 'other@example.com')).toBe(false)
   })
 
   it('region + date range + status + search work together', () => {
@@ -478,6 +496,30 @@ describe('main admin dashboard settlement list behavior', () => {
     expect(list).toContain("timed('admin settlement list rows'")
     expect(dashboardLoading).toContain('관리자 대시보드 불러오는 중')
     expect(listLoading).toContain('정산서 목록 불러오는 중')
+  })
+})
+
+describe('admin settlement search helpers', () => {
+  it('builds tour and guide ILIKE or filters from escaped pattern', () => {
+    const pattern = buildAdminSettlementSearchIlikePattern('APR26%')
+    expect(pattern).toBe('%APR26\\%%')
+    expect(buildAdminSettlementTourSearchOr(pattern)).toBe(
+      'pattern.ilike.%APR26\\%%,tour_code.ilike.%APR26\\%%',
+    )
+    expect(buildAdminSettlementGuideSearchOr(pattern)).toContain('full_name.ilike.%APR26\\%%')
+    expect(buildAdminSettlementGuideSearchOr(pattern)).toContain('email.ilike.%APR26\\%%')
+  })
+
+  it('buildAdminSettlementSearchOrFilter uses id.in for tours and tour_id.in for settlements', () => {
+    const scope = { tourIds: ['tour-1', 'tour-2'], guideIds: ['guide-1'] }
+    expect(buildAdminSettlementSearchOrFilter(scope, 'tours')).toBe(
+      'id.in.(tour-1,tour-2),guide_id.in.(guide-1)',
+    )
+    expect(buildAdminSettlementSearchOrFilter(scope, 'settlements')).toBe(
+      'tour_id.in.(tour-1,tour-2),guide_id.in.(guide-1)',
+    )
+    expect(adminSettlementSearchHasMatches({ tourIds: [], guideIds: [] })).toBe(false)
+    expect(buildAdminSettlementSearchOrFilter({ tourIds: [], guideIds: [] }, 'tours')).toBeNull()
   })
 })
 

@@ -55,8 +55,12 @@ describe('getAdminSettlements — tours date pre-query branch scope', () => {
   it('does not change in-memory sort, slice pagination, or search paths', () => {
     expect(body).toContain('sortAdminSettlementsByTourDate')
     expect(body).toContain('.slice(from, to + 1)')
-    expect(body).toContain('escapeIlikePattern(search)')
+    expect(body).toContain('resolveAdminSettlementSearchScope')
+    expect(body).toContain("buildAdminSettlementSearchOrFilter(scope, 'settlements')")
     expect(body).not.toContain('.range(from, to)')
+    expect(body).not.toMatch(
+      /getAdminSettlements[\s\S]*?pattern\.ilike\.\$\{pattern\},tour_code\.ilike/,
+    )
   })
 })
 
@@ -86,6 +90,22 @@ describe('getAdminSettlements — 미제출 (draft) includes tours without settl
     const body = getAdminSettlementsBody()
     expect(body).toContain(".from('settlements')")
     expect(body).toContain('expandWorkflowStatusFilter(filters.status)')
+  })
+})
+
+describe('getAdminSettlements — shared admin search helper', () => {
+  const actions = readFileSync('src/lib/actions/settlementActions.ts', 'utf8')
+
+  it('uses resolveAdminSettlementSearchScope in unsubmitted and settlement list paths', () => {
+    const unsubmittedStart = actions.indexOf('async function getAdminUnsubmittedSettlements')
+    const unsubmittedEnd = actions.indexOf('export async function getAdminSettlements', unsubmittedStart)
+    const unsubmittedBody = actions.slice(unsubmittedStart, unsubmittedEnd)
+    const settlementsBody = getAdminSettlementsBody()
+
+    expect(unsubmittedBody).toContain('resolveAdminSettlementSearchScope(supabase, search)')
+    expect(unsubmittedBody).toContain("buildAdminSettlementSearchOrFilter(scope, 'tours')")
+    expect(settlementsBody).toContain('resolveAdminSettlementSearchScope(supabase, search)')
+    expect(settlementsBody).toContain("buildAdminSettlementSearchOrFilter(scope, 'settlements')")
   })
 })
 

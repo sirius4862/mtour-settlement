@@ -5,6 +5,7 @@ import {
   GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE,
   GUIDE_VEHICLE_REPORT_PERIOD_HELPER,
   buildGuideVehicleReportsUrl,
+  filterGuideVehicleReportsByPeriod,
   parseGuideVehicleReportPeriod,
   resolveGuideVehicleReportDateRange,
   tourStartDateInGuideVehicleReportRange,
@@ -24,7 +25,7 @@ describe('guide vehicle report list period filter', () => {
     })
   })
 
-  it('resolves period=7d, 30d, and 60d', () => {
+  it('resolves period=7d, 30d, 60d, and 180d', () => {
     expect(resolveGuideVehicleReportDateRange({ period: '7d' }, now)).toEqual({
       from: '2026-05-29',
       to: '2026-06-04',
@@ -37,8 +38,13 @@ describe('guide vehicle report list period filter', () => {
       from: '2026-04-06',
       to: '2026-06-04',
     })
+    expect(resolveGuideVehicleReportDateRange({ period: '180d' }, now)).toEqual({
+      from: '2025-12-07',
+      to: '2026-06-04',
+    })
     expect(buildGuideVehicleReportsUrl('30d')).toBe('/guide/vehicle-reports?period=30d')
     expect(buildGuideVehicleReportsUrl('60d')).toBe('/guide/vehicle-reports?period=60d')
+    expect(buildGuideVehicleReportsUrl('180d')).toBe('/guide/vehicle-reports?period=180d')
   })
 
   it('falls back to 최근 7일 for invalid period', () => {
@@ -58,13 +64,64 @@ describe('guide vehicle report list period filter', () => {
     expect(tourStartDateInGuideVehicleReportRange('2026-06-05', range7)).toBe(false)
   })
 
+  it('includes assigned April tours when the extended period includes April', () => {
+    const range180 = resolveGuideVehicleReportDateRange({ period: '180d' }, now)
+    expect(tourStartDateInGuideVehicleReportRange('2026-04-01', range180)).toBe(true)
+    expect(tourStartDateInGuideVehicleReportRange('2026-04-30', range180)).toBe(true)
+  })
+
+  it('still excludes tours outside the selected extended period', () => {
+    const range180 = resolveGuideVehicleReportDateRange({ period: '180d' }, now)
+    expect(tourStartDateInGuideVehicleReportRange('2025-12-06', range180)).toBe(false)
+    expect(tourStartDateInGuideVehicleReportRange('2026-06-05', range180)).toBe(false)
+  })
+
   it('exposes helper and empty-state copy', () => {
     expect(GUIDE_VEHICLE_REPORT_PERIOD_HELPER).toBe(
-      '기본 조회 기간은 최근 7일입니다. 가이드는 차량 리포트를 최대 최근 60일까지 확인할 수 있습니다.',
+      '가이드 미확인 리포트는 기간과 관계없이 항상 표시됩니다. 확인 완료 내역은 선택한 기간으로 조회합니다.',
     )
     expect(GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE).toBe(
-      '선택한 기간에 확인할 차량 리포트가 없습니다.',
+      '확인할 차량 리포트가 없습니다.',
     )
+  })
+})
+
+describe('filterGuideVehicleReportsByPeriod', () => {
+  const range7 = resolveGuideVehicleReportDateRange({ period: '7d' }, now)
+
+  it('always includes unchecked action-required reports outside the selected period', () => {
+    const filtered = filterGuideVehicleReportsByPeriod(
+      [
+        { start_date: '2026-04-01', checked: false, tour_id: 'april-1' },
+        { start_date: '2026-05-29', checked: false, tour_id: 'recent-1' },
+      ],
+      range7,
+    )
+
+    expect(filtered.map((r) => r.tour_id)).toEqual(['april-1', 'recent-1'])
+  })
+
+  it('filters checked history by the selected period', () => {
+    const filtered = filterGuideVehicleReportsByPeriod(
+      [
+        { start_date: '2026-04-01', checked: true, tour_id: 'old-checked' },
+        { start_date: '2026-05-29', checked: true, tour_id: 'recent-checked' },
+      ],
+      range7,
+    )
+
+    expect(filtered.map((r) => r.tour_id)).toEqual(['recent-checked'])
+  })
+
+  it('keeps recent 7/30/60/180 options working for checked history', () => {
+    const aprilChecked = { start_date: '2026-04-15', checked: true, tour_id: 'april' }
+    expect(filterGuideVehicleReportsByPeriod([aprilChecked], range7)).toHaveLength(0)
+    expect(
+      filterGuideVehicleReportsByPeriod(
+        [aprilChecked],
+        resolveGuideVehicleReportDateRange({ period: '180d' }, now),
+      ),
+    ).toHaveLength(1)
   })
 })
 
@@ -96,28 +153,40 @@ describe('guide vehicle report list page wiring', () => {
     expect(filter).not.toContain('이번 달')
     expect(filter).not.toContain('지난 달')
     expect(filter).toContain('GUIDE_VEHICLE_REPORT_PERIODS')
-    expect(filter).not.toContain('90d')
+    expect(filter).not.toContain('type="date"')
   })
 
-  it('bounds guide list loading by tour start_date before querying reports', () => {
+  it('loads assigned tours without date bounds and applies period only to checked history', () => {
     const start = actions.indexOf('export async function getGuideVehicleReports')
     const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
     const body = actions.slice(start, end)
 
     expect(body).toContain('resolveGuideVehicleReportDateRange')
+    expect(body).toContain('filterGuideVehicleReportsByPeriod')
     expect(body).toMatch(/\.from\(['"]tours['"]\)/)
     expect(body).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
-    expect(body).toMatch(/\.gte\(['"]start_date['"],\s*range\.from\)/)
-    expect(body).toMatch(/\.lte\(['"]start_date['"],\s*range\.to\)/)
+    expect(body).toMatch(/\.neq\(['"]assignment_status['"],\s*['"]recalled['"]\)/)
+    expect(body).not.toMatch(/\.gte\(['"]start_date['"],\s*range\.from\)/)
+    expect(body).not.toMatch(/\.lte\(['"]start_date['"],\s*range\.to\)/)
     expect(body).toMatch(/\.from\(['"]vehicle_route_reports['"]\)/)
     expect(body).toMatch(/\.in\(['"]tour_id['"],\s*eligibleTourIds\)/)
     expect(body.indexOf(".from('tours')")).toBeLessThan(body.indexOf(".from('vehicle_route_reports')"))
-    expect(body).not.toContain('tourStartDateInGuideVehicleReportRange')
     expect(body).not.toContain('.limit(200)')
     expect(body).not.toContain('.delete(')
   })
 
-  it('returns early when no eligible tours exist in the selected period', () => {
+  it('keeps guide ownership restriction while supporting the extended period', () => {
+    const start = actions.indexOf('export async function getGuideVehicleReports')
+    const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
+    const body = actions.slice(start, end)
+
+    expect(parseGuideVehicleReportPeriod('180d')).toBe('180d')
+    expect(body).toContain('resolveGuideVehicleReportDateRange')
+    expect(body).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
+    expect(body).toMatch(/\.eq\(['"]status['"],\s*['"]submitted['"]\)/)
+  })
+
+  it('returns early when the guide has no assigned tours', () => {
     const start = actions.indexOf('export async function getGuideVehicleReports')
     const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
     const body = actions.slice(start, end)

@@ -11,6 +11,7 @@ import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
   shouldShowAdminSettlementSections,
 } from '@/lib/settlement/settlement-form-sections'
+import { applyDraftSaveResult } from '@/lib/settlement/draft-save-flow'
 import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
 import { submitCurrentSettlement } from '@/lib/settlement/submit-flow'
 import {
@@ -70,6 +71,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const resetNew = useSettlementFormStore((s) => s.resetNew)
   const setTour = useSettlementFormStore((s) => s.setTour)
   const setSaving = useSettlementFormStore((s) => s.setSaving)
+  const bindSettlementId = useSettlementFormStore((s) => s.bindSettlementId)
   const markSaved = useSettlementFormStore((s) => s.markSaved)
   const mergeServerSync = useSettlementFormStore((s) => s.mergeServerSync)
   const setSaveError = useSettlementFormStore((s) => s.setSaveError)
@@ -183,15 +185,21 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         return false
       }
 
-      const result = await saveSettlementDraft(payload)
+      const result = applyDraftSaveResult(await saveSettlementDraft(payload), {
+        currentSettlementId: state.settlementId,
+        bindSettlementId,
+        markSaved,
+        mergeServerSync,
+        setSaveError,
+      })
 
-      if (result.ok && result.id) {
-        markSaved(result.id)
-        if (result.sync) mergeServerSync(result.sync)
+      if (result.ok && result.settlementId) {
+        if (mode === 'new' && managePending && result.becameExistingSettlement) {
+          router.replace(`/guide/settlements/${result.settlementId}/edit`)
+        }
         return true
       }
 
-      setSaveError(result.error ?? '저장 실패')
       return false
     } catch {
       setSaveError('네트워크 오류가 발생했습니다.')
@@ -199,7 +207,18 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     } finally {
       if (managePending) setPending(false)
     }
-  }, [isPreview, isAdminReview, runValidation, setSaving, markSaved, mergeServerSync, setSaveError])
+  }, [
+    isPreview,
+    isAdminReview,
+    mode,
+    router,
+    runValidation,
+    setSaving,
+    bindSettlementId,
+    markSaved,
+    mergeServerSync,
+    setSaveError,
+  ])
 
   const handleSendForConfirmation = useCallback(async () => {
     if (isPreview || !isAdminReview || !adminEdit) return

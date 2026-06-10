@@ -8,7 +8,10 @@ import {
   validateGuideCheckForSubmit,
   type GuideCheckStatus,
 } from '@/lib/vehicle/guide-check'
-import { resolveGuideVehicleReportDateRange } from '@/lib/vehicle/guide-vehicle-report-list'
+import {
+  filterGuideVehicleReportsByPeriod,
+  resolveGuideVehicleReportDateRange,
+} from '@/lib/vehicle/guide-vehicle-report-list'
 import type { UserRole } from '@/types'
 
 // Operational-only view. NEVER includes settlement/payout/money fields.
@@ -121,8 +124,7 @@ export async function getGuideVehicleReports(options?: {
     .from('tours')
     .select('id')
     .eq('guide_id', ctx.guideId)
-    .gte('start_date', range.from)
-    .lte('start_date', range.to)
+    .neq('assignment_status', 'recalled')
 
   const eligibleTourIds = (tourRows ?? []).map((t) => t.id as string)
   if (eligibleTourIds.length === 0) return []
@@ -148,18 +150,21 @@ export async function getGuideVehicleReports(options?: {
     checkedReportIds.add((row as { report_id: string }).report_id)
   }
 
-  const items = reports.map((r) => {
-    const tour = toTourInfo(r.tour as Record<string, unknown>)
-    return {
-      tour_id: r.tour_id as string,
-      report_id: r.id as string,
-      tour_code: tour.tour_code,
-      pattern: tour.pattern,
-      start_date: tour.start_date,
-      end_date: tour.end_date,
-      checked: checkedReportIds.has(r.id as string),
-    }
-  })
+  const items = filterGuideVehicleReportsByPeriod(
+    reports.map((r) => {
+      const tour = toTourInfo(r.tour as Record<string, unknown>)
+      return {
+        tour_id: r.tour_id as string,
+        report_id: r.id as string,
+        tour_code: tour.tour_code,
+        pattern: tour.pattern,
+        start_date: tour.start_date,
+        end_date: tour.end_date,
+        checked: checkedReportIds.has(r.id as string),
+      }
+    }),
+    range,
+  )
 
   // Unchecked first, then by start date for stable ordering.
   items.sort((a, b) => {

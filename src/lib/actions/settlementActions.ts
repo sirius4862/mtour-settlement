@@ -87,6 +87,7 @@ import {
   expandWorkflowStatusFilter,
   paginateSortedAdminSettlementRows,
   resolveAdminSettlementSearchScope,
+  shouldApplyAdminSettlementDateFilter,
   sortActionNeededSettlements,
   type AdminSettlementListFilters,
   type AdminSettlementListItem,
@@ -245,20 +246,16 @@ async function persistSettlementCalcSummary(
 
 // ── 투어 조회 ──────────────────────────────────────────────────
 
-/** 가이드의 미정산 투어 목록 (90일 이내) */
+/** 가이드의 미정산 배정 투어 목록 (기간 제한 없음 — 지연 제출 backlog 포함). */
 export async function getAvailableTours(): Promise<Tour[]> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return []
 
-  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-    .toISOString().slice(0, 10)
-
   const { data: tours } = await supabase
     .from('tours').select('*')
     .eq('guide_id', user.id)
     .neq('assignment_status', 'recalled')
-    .gte('start_date', since)
     .order('start_date', { ascending: false })
 
   if (!tours?.length) return []
@@ -560,16 +557,11 @@ async function getAdminUnsubmittedSettlements(
   pageSize: number,
   regionId: string | undefined,
 ): Promise<AdminSettlementsPageResult> {
-  const startDate = filters.startDate!
-  const endDate = filters.endDate!
-
   let tourQuery = supabase
     .from('tours')
     .select(ADMIN_UNSUBMITTED_TOUR_SELECT)
     .not('guide_id', 'is', null)
     .neq('assignment_status', 'recalled')
-    .gte('start_date', startDate)
-    .lte('start_date', endDate)
 
   if (regionId) tourQuery = tourQuery.eq('branch_id', regionId)
 
@@ -623,11 +615,9 @@ export async function getAdminSettlements(
   const regionId = await resolveSettlementRegionFilter(filters)
 
   if (
-    isAdminUnsubmittedOnlyStatusFilter(filters?.status) &&
-    filters?.startDate &&
-    filters?.endDate
+    isAdminUnsubmittedOnlyStatusFilter(filters?.status)
   ) {
-    return getAdminUnsubmittedSettlements(supabase, filters, page, pageSize, regionId)
+    return getAdminUnsubmittedSettlements(supabase, filters ?? {}, page, pageSize, regionId)
   }
 
   let q = supabase
@@ -636,7 +626,11 @@ export async function getAdminSettlements(
 
   if (regionId) q = q.eq('branch_id', regionId)
 
-  if (filters?.startDate && filters?.endDate) {
+  if (
+    filters?.startDate &&
+    filters?.endDate &&
+    shouldApplyAdminSettlementDateFilter(filters)
+  ) {
     let tourDateQuery = supabase
       .from('tours')
       .select('id')
@@ -733,7 +727,18 @@ export async function getAdminDashboardStats(filters?: AdminSettlementListFilter
     return aggregateSettlementStatusCounts([])
   }
 
-  return aggregateSettlementStatusCounts(data ?? [])
+  const stats = aggregateSettlementStatusCounts(data ?? [])
+  const unsubmitted = await getAdminUnsubmittedSettlements(
+    supabase,
+    { regionId: filters?.regionId },
+    1,
+    1,
+    regionId,
+  )
+
+  return stats.map((row) =>
+    row.status === 'draft' ? { ...row, count: unsubmitted.total } : row,
+  )
 }
 
 // ── 정산서 생성 / 임시저장 ─────────────────────────────────────
@@ -796,14 +801,20 @@ export async function upsertSettlement(payload: {
 
   type WriteResult = { error: { message: string; code?: string } | null; id?: string }
 
-  if (!payload.id) {
-    const { data: existingForTour } = await supabase
+  const findExistingSettlementForTour = async () => {
+    const { data } = await supabase
       .from('settlements')
       .select('id')
       .eq('tour_id', payload.tour_id)
+      .eq('guide_id', profile.id)
       .maybeSingle()
+    return data as { id: string } | null
+  }
+
+  if (!payload.id) {
+    const existingForTour = await findExistingSettlementForTour()
     if (existingForTour) {
-      return { ok: false, error: SETTLEMENT_DUPLICATE_TOUR_ERROR }
+      return { ok: false, id: existingForTour.id, error: SETTLEMENT_DUPLICATE_TOUR_ERROR }
     }
   }
 
@@ -854,7 +865,12 @@ export async function upsertSettlement(payload: {
   const writeResult = await writeSettlement(base)
   if (writeResult.error) {
     if (!payload.id && isPgUniqueViolation(writeResult.error)) {
-      return { ok: false, error: SETTLEMENT_DUPLICATE_TOUR_ERROR }
+      const existingForTour = await findExistingSettlementForTour()
+      return {
+        ok: false,
+        id: existingForTour?.id,
+        error: SETTLEMENT_DUPLICATE_TOUR_ERROR,
+      }
     }
     logServerError('[upsertSettlement] write failed', writeResult.error)
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
@@ -1242,7 +1258,7 @@ export async function saveSettlementDraft(
   })
 
   if (!headerResult.ok || !headerResult.id) {
-    return { ok: false, error: headerResult.error ?? '헤더 저장 실패' }
+    return { ok: false, id: headerResult.id, error: headerResult.error ?? '헤더 저장 실패' }
   }
 
   const itemsResult = await saveSettlementItems(headerResult.id, payloadToSave)

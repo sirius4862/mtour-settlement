@@ -170,6 +170,17 @@ describe('guide dashboard loader wiring', () => {
 })
 
 describe('guide dashboard page wiring', () => {
+  it('loads assigned tours without a recent-date cutoff', () => {
+    const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
+    const start = actions.indexOf('export async function getAvailableTours')
+    const end = actions.indexOf('const LINE_ITEM_TABLES', start)
+    const body = actions.slice(start, end)
+
+    expect(body).not.toContain('90 * 24 * 60 * 60 * 1000')
+    expect(body).not.toContain(".gte('start_date', since)")
+    expect(body).toContain(".neq('assignment_status', 'recalled')")
+  })
+
   it('loads dashboard sections from getGuideDashboardSettlements', () => {
     const dashboard = readFileSync(join(ROOT, 'src/app/guide/page.tsx'), 'utf8')
 
@@ -179,6 +190,7 @@ describe('guide dashboard page wiring', () => {
     expect(dashboard).not.toContain('settlements.slice(0, 3)')
     expect(dashboard).toContain('draft: draftSettlements')
     expect(dashboard).toContain('배정된 투어')
+    expect(dashboard).toContain('정산서가 없는 배정 투어만 표시됩니다.')
     expect(dashboard).toContain('작성중')
     expect(dashboard).toContain('수정 필요')
     expect(dashboard).toContain('최종 확인 필요')

@@ -81,10 +81,12 @@ describe('getAdminSettlements — settlement workflow separation', () => {
 describe('getAdminSettlements — 미제출 (draft) includes tours without settlements', () => {
   const actions = readFileSync('src/lib/actions/settlementActions.ts', 'utf8')
 
-  it('delegates draft+date-range filter to getAdminUnsubmittedSettlements', () => {
+  it('delegates draft filter to getAdminUnsubmittedSettlements even without a date range', () => {
     const start = actions.indexOf('export async function getAdminSettlements')
     const body = actions.slice(start, start + 1200)
-    expect(body).toContain('getAdminUnsubmittedSettlements(supabase, filters, page, pageSize, regionId)')
+    expect(body).toContain('isAdminUnsubmittedOnlyStatusFilter(filters?.status)')
+    expect(body).not.toContain('filters?.startDate &&\n    filters?.endDate')
+    expect(body).toContain('getAdminUnsubmittedSettlements(supabase, filters ?? {}, page, pageSize, regionId)')
   })
 
   it('paginates unsubmitted merge results via shared helper', () => {
@@ -99,6 +101,52 @@ describe('getAdminSettlements — 미제출 (draft) includes tours without settl
     const body = getAdminSettlementsBody()
     expect(body).toContain(".from('settlements')")
     expect(body).toContain('expandWorkflowStatusFilter(filters.status)')
+  })
+
+  it('keeps unsubmitted backlog loader period-independent', () => {
+    const start = actions.indexOf('async function getAdminUnsubmittedSettlements')
+    const end = actions.indexOf('export async function getAdminSettlements', start)
+    const body = actions.slice(start, end)
+
+    expect(body).not.toContain('if (filters.startDate && filters.endDate)')
+    expect(body).not.toContain(".gte('start_date', filters.startDate)")
+  })
+
+  it('skips settlement date pre-query for active backlog status filters', () => {
+    const body = getAdminSettlementsBody()
+    expect(body).toContain('shouldApplyAdminSettlementDateFilter(filters)')
+    expect(body).toMatch(
+      /if\s*\([\s\S]*?filters\?\.startDate[\s\S]*?filters\?\.endDate[\s\S]*?shouldApplyAdminSettlementDateFilter\(filters\)/,
+    )
+  })
+})
+
+describe('getAdminDashboardStats — period-independent 미제출 backlog', () => {
+  const actions = readFileSync('src/lib/actions/settlementActions.ts', 'utf8')
+  const start = actions.indexOf('export async function getAdminDashboardStats')
+  const end = actions.indexOf('// ── 정산서 생성', start)
+  const body = actions.slice(start, end)
+
+  it('replaces the draft card count with the unsubmitted backlog total', () => {
+    expect(body).toContain('getAdminUnsubmittedSettlements(')
+    expect(body).toContain("row.status === 'draft' ? { ...row, count: unsubmitted.total } : row")
+  })
+
+  it('does not pass dashboard yearMonth/date filters to the unsubmitted backlog count', () => {
+    const callStart = body.indexOf('const unsubmitted = await getAdminUnsubmittedSettlements')
+    const callEnd = body.indexOf('return stats.map', callStart)
+    const callBlock = body.slice(callStart, callEnd)
+
+    expect(callBlock).toContain('{ regionId: filters?.regionId }')
+    expect(callBlock).not.toContain('yearMonth')
+    expect(callBlock).not.toContain('startDate')
+    expect(callBlock).not.toContain('endDate')
+  })
+
+  it('keeps region scope shared with dashboard stats and backlog count', () => {
+    expect(body).toContain('const regionId = await resolveSettlementRegionFilter(filters)')
+    expect(body).toContain('if (regionId) q = q.eq(\'branch_id\', regionId)')
+    expect(body).toContain('regionId,')
   })
 })
 

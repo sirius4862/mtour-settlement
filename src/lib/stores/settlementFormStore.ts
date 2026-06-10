@@ -58,6 +58,7 @@ interface SettlementFormActions {
   duplicateCompanyExpenseRow: (clientId: string) => void
   softDeleteCompanyExpenseRow: (clientId: string) => void
   updateCompanyExpenseRow: (clientId: string, patch: Partial<DraftCompanyExpenseRow>) => void
+  bindSettlementId: (id: string) => void
   markSaved: (id: string) => void
   setSaving: () => void
   setSaveError: (msg: string) => void
@@ -182,6 +183,8 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
           ),
           dirty: true,
         })),
+
+      bindSettlementId: (id) => set({ settlementId: id }),
 
       markSaved: (id) =>
         set({

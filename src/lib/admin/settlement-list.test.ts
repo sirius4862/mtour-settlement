@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   ACTION_NEEDED_STATUSES,
+  isAdminSettlementBacklogStatusFilter,
+  shouldApplyAdminSettlementDateFilter,
   ADMIN_DASHBOARD_STATUS_ORDER,
   ADMIN_DASHBOARD_PAID_HISTORY_LABEL,
   ADMIN_DASHBOARD_PROGRESS_ALL_LABEL,
@@ -123,6 +125,32 @@ describe('expandWorkflowStatusFilter', () => {
     ])
     expect(expandWorkflowStatusFilter('draft')).toEqual(['draft'])
     expect(expandWorkflowStatusFilter('paid')).toEqual(['paid'])
+  })
+})
+
+describe('admin settlement backlog date policy', () => {
+  it('treats dashboard progress statuses as backlog filters', () => {
+    expect(isAdminSettlementBacklogStatusFilter('draft')).toBe(true)
+    expect(isAdminSettlementBacklogStatusFilter('submitted')).toBe(true)
+    expect(isAdminSettlementBacklogStatusFilter('edit_requested')).toBe(true)
+    expect(isAdminSettlementBacklogStatusFilter('pending_guide_confirmation')).toBe(true)
+    expect(isAdminSettlementBacklogStatusFilter('paid')).toBe(false)
+    expect(isAdminSettlementBacklogStatusFilter(undefined)).toBe(false)
+  })
+
+  it('skips date filters for backlog statuses and dashboard progress view', () => {
+    expect(shouldApplyAdminSettlementDateFilter({ status: 'draft' })).toBe(false)
+    expect(shouldApplyAdminSettlementDateFilter({ status: 'submitted' })).toBe(false)
+    expect(shouldApplyAdminSettlementDateFilter({ status: 'edit_requested' })).toBe(false)
+    expect(
+      shouldApplyAdminSettlementDateFilter({ status: 'pending_guide_confirmation' }),
+    ).toBe(false)
+    expect(shouldApplyAdminSettlementDateFilter({ dashboardProgressOnly: true })).toBe(false)
+  })
+
+  it('keeps date filters for paid/completed history and unset status searches', () => {
+    expect(shouldApplyAdminSettlementDateFilter({ status: 'paid' })).toBe(true)
+    expect(shouldApplyAdminSettlementDateFilter({})).toBe(true)
   })
 })
 
@@ -468,6 +496,18 @@ describe('main admin dashboard settlement list behavior', () => {
     expect(source).toContain('dashboardProgressOnly: view === \'all\' ? true : undefined')
     expect(source).not.toContain('isAdminDashboardProgressStatus')
     expect(source).not.toContain('settlements.items.filter')
+  })
+
+  it('loads dashboard backlog stats and lists without date filters', () => {
+    const source = readFileSync('src/app/admin/page.tsx', 'utf8')
+
+    expect(source).toContain('getAdminDashboardStats({ regionId: regionId || undefined })')
+    expect(source).toContain('getAdminSettlements({')
+    expect(source).toContain('status: activeStatus || undefined')
+    expect(source).toContain('regionId: regionId || undefined')
+    expect(source).not.toContain('startDate')
+    expect(source).not.toContain('endDate')
+    expect(source).not.toContain('yearMonth')
   })
 
   it('places dashboard view actions in the status header, not the list header', () => {

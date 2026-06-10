@@ -47,8 +47,14 @@ describe('upsertSettlement — duplicate tour guard (source-level)', () => {
   it('pre-checks existing settlement by tour_id before insert', () => {
     expect(body).toContain("from('settlements')")
     expect(body).toContain(".eq('tour_id', payload.tour_id)")
+    expect(body).toContain(".eq('guide_id', profile.id)")
     expect(body).toContain('if (existingForTour)')
     expect(body).toContain('SETTLEMENT_DUPLICATE_TOUR_ERROR')
+  })
+
+  it('returns the accessible existing settlement id for duplicate-create recovery', () => {
+    expect(body).toContain('id: existingForTour.id')
+    expect(body).toContain('id: existingForTour?.id')
   })
 
   it('handles DB unique violation 23505 gracefully on insert', () => {

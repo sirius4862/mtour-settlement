@@ -29,6 +29,29 @@ export const ADMIN_DASHBOARD_STATUS_ORDER: SettlementStatus[] = [
   'pending_guide_confirmation',
 ]
 
+/** Dashboard/list filters that represent operational backlog, not completed history. */
+export const ADMIN_SETTLEMENT_BACKLOG_STATUS_FILTERS = [
+  ...ADMIN_DASHBOARD_STATUS_ORDER,
+] as const satisfies readonly SettlementStatus[]
+
+export function isAdminSettlementBacklogStatusFilter(status?: string): boolean {
+  if (!status) return false
+  return (ADMIN_SETTLEMENT_BACKLOG_STATUS_FILTERS as readonly string[]).includes(status)
+}
+
+/**
+ * Date filters apply to paid/completed history only.
+ * Backlog statuses and dashboard progress views stay period-independent.
+ */
+export function shouldApplyAdminSettlementDateFilter(filters?: {
+  status?: string
+  dashboardProgressOnly?: boolean
+}): boolean {
+  if (filters?.dashboardProgressOnly) return false
+  if (isAdminSettlementBacklogStatusFilter(filters?.status)) return false
+  return true
+}
+
 export type AdminSettlementListMode = 'none' | 'status' | 'all'
 
 export function resolveAdminSettlementListMode(params: {

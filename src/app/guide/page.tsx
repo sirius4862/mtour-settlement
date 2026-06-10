@@ -98,7 +98,7 @@ export default async function GuidePage() {
           {availableTours.length === 0 ? (
             <EmptyState
               message="정산 가능한 투어가 없습니다."
-              helper="90일 이내 · 미정산 투어만 표시됩니다."
+              helper="정산서가 없는 배정 투어만 표시됩니다."
             />
           ) : (
             availableTours.map((t) => (

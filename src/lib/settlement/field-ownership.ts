@@ -281,8 +281,10 @@ export function mergeGuideOptionRowsForSave(
   incoming: DraftOptionRow[],
   existing: DraftOptionRow[] | null | undefined,
 ): DraftOptionRow[] {
-  const guideOptions = incoming.filter((r) => !r.is_extra_vehicle)
-  const existingExtra = (existing ?? []).filter((r) => r.is_extra_vehicle && !r.deleted)
+  const guideOptions = (incoming ?? []).filter((r) => r.is_extra_vehicle !== true)
+  const existingExtra = (existing ?? []).filter(
+    (r) => r.is_extra_vehicle === true && !r.deleted,
+  )
   return [...guideOptions, ...existingExtra]
 }
 

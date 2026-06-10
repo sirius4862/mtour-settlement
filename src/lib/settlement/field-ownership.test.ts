@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyHotelRow } from './defaults'
+import { emptyHotelRow, emptyOptionRow } from './defaults'
 import {
   ADMIN_STRICT_HEADER_KEYS,
   canEditHeaderField,
@@ -11,6 +11,7 @@ import {
   mergeAdminHotelRowsForSave,
   mergeGuideHeaderForSave,
   mergeGuideHotelRowsForSave,
+  mergeGuideOptionRowsForSave,
   pickAdminHeaderFields,
 } from './field-ownership'
 
@@ -235,5 +236,34 @@ describe('canEditHotelUnitPrices', () => {
     expect(canEditHotelUnitPrices('admin')).toBe(true)
     expect(canEditHotelUnitPrices('guide')).toBe(false)
     expect(canEditHotelUnitPrices('readOnly')).toBe(false)
+  })
+})
+
+describe('mergeGuideOptionRowsForSave', () => {
+  it('keeps guide option rows and preserves admin extra-vehicle rows from DB', () => {
+    const incoming = [
+      {
+        ...emptyOptionRow(false),
+        clientId: 'opt-1',
+        option_name: '보트투어',
+        unit_price_usd: 25,
+        pax: 8,
+      },
+    ]
+    const existing = [
+      {
+        ...emptyOptionRow(true),
+        id: 'extra-1',
+        clientId: 'extra-1',
+        expense_usd: 35,
+        expense_vnd: 780000,
+      },
+    ]
+
+    const merged = mergeGuideOptionRowsForSave(incoming, existing)
+
+    expect(merged.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+    expect(merged.filter((r) => r.is_extra_vehicle === true)).toHaveLength(1)
+    expect(merged[0]?.option_name).toBe('보트투어')
   })
 })

@@ -35,10 +35,17 @@ export function resolveNewSettlementBinding(
   const hasExistingSettlement = persisted.settlementId != null
 
   if (selectedTourId) {
+    const sameTour = persisted.tourId === selectedTourId
+
+    // Resume an orphan draft created by a prior partial save for this exact tour.
+    if (hasExistingSettlement && sameTour && !guideChanged) {
+      return { reset: false, bindTourId: selectedTourId }
+    }
+
     const sameCleanDraft =
       !hasExistingSettlement &&
       !guideChanged &&
-      persisted.tourId === selectedTourId
+      sameTour
     if (sameCleanDraft) {
       return { reset: false, bindTourId: selectedTourId }
     }

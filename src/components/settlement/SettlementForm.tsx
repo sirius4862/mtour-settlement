@@ -195,9 +195,21 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
       if (result.ok && result.settlementId) {
         if (mode === 'new' && managePending && result.becameExistingSettlement) {
+          // Drop session draft before edit route so server hydration cannot merge with stale rows.
+          useSettlementFormStore.persist.clearStorage()
           router.replace(`/guide/settlements/${result.settlementId}/edit`)
         }
         return true
+      }
+
+      if (
+        mode === 'new' &&
+        managePending &&
+        result.settlementId &&
+        result.becameExistingSettlement
+      ) {
+        useSettlementFormStore.persist.clearStorage()
+        router.replace(`/guide/settlements/${result.settlementId}/edit`)
       }
 
       return false

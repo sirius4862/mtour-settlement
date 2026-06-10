@@ -61,6 +61,20 @@ describe('resolveNewSettlementBinding', () => {
     expect(decision.bindTourId).toBe(TOUR_260426GA)
   })
 
+  it('resumes an orphan draft for the same tour after a partial save failure', () => {
+    const decision = resolveNewSettlementBinding(
+      {
+        settlementId: 'settlement-april-orphan',
+        tourId: TOUR_260426GA,
+        guideName: GUIDE,
+      },
+      TOUR_260426GA,
+      GUIDE,
+    )
+    expect(decision.reset).toBe(false)
+    expect(decision.bindTourId).toBe(TOUR_260426GA)
+  })
+
   it('resets when switching to a different assigned tour even without an existing settlement', () => {
     const decision = resolveNewSettlementBinding(
       { settlementId: null, tourId: TOUR_260426GA, guideName: GUIDE },

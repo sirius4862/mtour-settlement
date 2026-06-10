@@ -65,11 +65,11 @@ describe('guide workflow RLS regression', () => {
 
   it('persistSettlementLineItems does not use upsert on line-item tables', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
-    const fnMatch = source.match(
-      /async function persistSettlementLineItems[\s\S]*?\n\}/,
-    )
-    expect(fnMatch).toBeTruthy()
-    const fnBody = fnMatch![0]
+    const start = source.indexOf('async function persistSettlementLineItems')
+    const end = source.indexOf('/** Admin-only — guide save must never call this.', start)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const fnBody = source.slice(start, end)
     expect(fnBody).toContain('persistGuideLineItemTable')
     expect(fnBody).not.toContain('.upsert(')
     expect(fnBody).not.toContain('.select(')
@@ -112,9 +112,16 @@ describe('guide workflow RLS regression', () => {
             const deleteChain = {
               eq(col: string) {
                 if (col === 'settlement_id') {
-                  return Promise.resolve({ error: null, count: 1 })
+                  return deleteChain
                 }
                 return deleteChain
+              },
+              not() {
+                calls.push(`orphan-delete:${table}`)
+                return Promise.resolve({ error: null, count: 0 })
+              },
+              then(onFulfilled?: (v: { error: null; count: number }) => unknown) {
+                return Promise.resolve({ error: null, count: 0 }).then(onFulfilled)
               },
             }
             return deleteChain

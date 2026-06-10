@@ -88,7 +88,17 @@ export function stateFromSettlementFull(
       })
     }),
     shoppings: full.shoppings.map(withClientId),
-    options: full.options.map(withClientId),
+    options: full.options.map((o) => ({
+      clientId: o.id || newClientId(),
+      id: o.id,
+      option_date: o.option_date,
+      option_name: o.option_name ?? '',
+      unit_price_usd: o.unit_price_usd ?? 0,
+      pax: o.pax ?? 0,
+      expense_usd: o.expense_usd ?? 0,
+      expense_vnd: o.expense_vnd ?? 0,
+      is_extra_vehicle: o.is_extra_vehicle === true,
+    })),
     companyExpenses: (full.company_expenses ?? []).map((row) =>
       withClientId({
         id: row.id,
@@ -212,7 +222,7 @@ export function toDraftPayload(state: SettlementFormState): SettlementDraftPaylo
     others: state.others,
     companyExpenses: state.companyExpenses ?? [],
     shoppings: state.shoppings,
-    options: state.options,
+    options: state.options ?? [],
   }
 }
 
@@ -225,6 +235,7 @@ export function sanitizeGuideDraftPayload(
     return {
       ...payload,
       header: mergeGuideHeaderForSave(payload.header, null),
+      options: payload.options ?? [],
     }
   }
 
@@ -234,7 +245,7 @@ export function sanitizeGuideDraftPayload(
     header: mergeGuideHeaderForSave(payload.header, pickAdminHeaderFields(existingState.header)),
     hotels: mergeGuideHotelRowsForSave(payload.hotels, existingState.hotels),
     shoppings: mergeGuideShoppingRowsForSave(payload.shoppings, existingState.shoppings),
-    options: mergeGuideOptionRowsForSave(payload.options, existingState.options),
+    options: mergeGuideOptionRowsForSave(payload.options ?? [], existingState.options),
   }
 }
 
@@ -259,18 +270,52 @@ export function sanitizeAdminDraftPayload(
   }
 }
 
-/** Merge DB ids back into draft rows after save (by active-row index). */
-export function mergeRowIds<T extends { clientId: string; id?: string; deleted?: boolean }>(
-  draftRows: T[],
-  serverRows: { id: string }[],
-): T[] {
-  const active = draftRows.filter((r) => !r.deleted)
-  return draftRows.map((row) => {
-    if (row.deleted) return row
-    const idx = active.indexOf(row)
-    const server = idx >= 0 ? serverRows[idx] : undefined
-    return server ? { ...row, id: server.id } : row
-  })
+/** Map server line items to draft rows after save — server is authoritative. */
+export function draftLineItemsFromSync(
+  sync: Pick<
+    SettlementSyncPayload,
+    'hotels' | 'meals' | 'entrances' | 'others' | 'company_expenses' | 'shoppings' | 'options'
+  >,
+): Pick<
+  SettlementFormState,
+  'hotels' | 'meals' | 'entrances' | 'others' | 'companyExpenses' | 'shoppings' | 'options'
+> {
+  return {
+    hotels: sync.hotels.map(withClientId),
+    meals: sync.meals.map(withClientId),
+    entrances: sync.entrances.map(withClientId),
+    others: sync.others.map((o) => {
+      const amounts = normalizeOtherAmountsFromDb(o)
+      return withClientId({
+        id: o.id,
+        description: o.description,
+        amount_usd: amounts.amount_usd,
+        amount_vnd: amounts.amount_vnd,
+        note: o.note ?? null,
+      })
+    }),
+    shoppings: sync.shoppings.map(withClientId),
+    options: sync.options.map((o) => ({
+      clientId: o.id || newClientId(),
+      id: o.id,
+      option_date: o.option_date,
+      option_name: o.option_name ?? '',
+      unit_price_usd: o.unit_price_usd ?? 0,
+      pax: o.pax ?? 0,
+      expense_usd: o.expense_usd ?? 0,
+      expense_vnd: o.expense_vnd ?? 0,
+      is_extra_vehicle: o.is_extra_vehicle === true,
+    })),
+    companyExpenses: (sync.company_expenses ?? []).map((row) =>
+      withClientId({
+        id: row.id,
+        description: row.description,
+        amount_usd: row.amount_usd,
+        amount_vnd: row.amount_vnd,
+        note: row.note ?? null,
+      }),
+    ),
+  }
 }
 
 export type SettlementSyncPayload = {
@@ -286,19 +331,13 @@ export type SettlementSyncPayload = {
 }
 
 export function mergeServerSync(
-  state: SettlementFormState,
+  _state: SettlementFormState,
   sync: SettlementSyncPayload,
 ): Partial<SettlementFormState> {
   return {
     settlementStatus: sync.status,
     receipts: sync.receipts,
-    hotels: mergeRowIds(state.hotels, sync.hotels),
-    meals: mergeRowIds(state.meals, sync.meals),
-    entrances: mergeRowIds(state.entrances, sync.entrances),
-    others: mergeRowIds(state.others, sync.others),
-    companyExpenses: mergeRowIds(state.companyExpenses ?? [], sync.company_expenses ?? []),
-    shoppings: mergeRowIds(state.shoppings, sync.shoppings),
-    options: mergeRowIds(state.options, sync.options),
+    ...draftLineItemsFromSync(sync),
   }
 }
 
@@ -449,8 +488,8 @@ export function buildOptionDbRows(rows: DraftOptionRow[], settlementId: string, 
     total_sale_usd: calcOptionTotalSaleUsd(r),
     expense_usd: r.expense_usd,
     expense_vnd: r.expense_vnd,
-    com_usd: r.is_extra_vehicle ? 0 : calcOptionRowComUsd(r, rate),
-    is_extra_vehicle: !!r.is_extra_vehicle,
+    com_usd: r.is_extra_vehicle === true ? 0 : calcOptionRowComUsd(r, rate),
+    is_extra_vehicle: r.is_extra_vehicle === true,
     sort_order: i,
   }))
 }

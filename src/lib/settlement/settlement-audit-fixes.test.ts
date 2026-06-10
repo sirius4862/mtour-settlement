@@ -111,3 +111,27 @@ describe('audit triage — duplicate tour UX message', () => {
     expect(SETTLEMENT_DUPLICATE_TOUR_ERROR).toContain('이미 정산서')
   })
 })
+
+describe('saveSettlementDraft — stale line-item id hardening (source-level)', () => {
+  const body = actionBody('saveSettlementDraft')
+
+  it('strips all line-item ids on first create', () => {
+    expect(body).toContain('stripAllLineItemIdsForCreate')
+    expect(body).toMatch(/else\s*\{[\s\S]*stripAllLineItemIdsForCreate/)
+  })
+
+  it('strips orphan line-item ids before retrying an existing settlement', () => {
+    expect(body).toContain('stripOrphanLineItemIdsFromPayload')
+    expect(body).toContain('collectKnownLineItemIds(existing)')
+  })
+
+  it('returns the header id when child-item save fails', () => {
+    expect(body).toContain('return { ok: false, id: headerResult.id, error: itemsResult.error }')
+  })
+
+  it('logs child-item failures with step diagnostics', () => {
+    expect(body).toContain("formatSettlementSaveStepLog('persist_line_items'")
+    const actions = readFileSync(ACTIONS_PATH, 'utf8')
+    expect(actions).toContain('formatLineItemPersistStepLog')
+  })
+})

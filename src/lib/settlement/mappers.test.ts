@@ -315,38 +315,30 @@ describe('DB round-trip mappers', () => {
     })
   })
 
-  it('mergeServerSync assigns DB ids to draft rows by active index', () => {
+  it('mergeServerSync replaces draft line items with server rows', () => {
     const state = stateFromSettlementFull(mockSettlementFull(), 'Guide')
-    state.hotels.push({
-      clientId: 'new-hotel',
-      hotel_name: 'New',
-      check_in_date: null,
-      nights: 1,
-      sgl_count: 1,
-      twn_count: 0,
-      trp_count: 0,
-      unit_price_sgl_usd: 10,
-      unit_price_trp_usd: 0,
-      guide_amount_usd: 0,
-    })
+    const serverHotel = {
+      ...mockSettlementFull().hotels[0]!,
+      id: 'hotel-server-1',
+      hotel_name: 'Server Hotel',
+    }
 
     const sync = {
       status: state.settlementStatus!,
       receipts: [],
-      hotels: [
-        ...state.hotels.filter((h) => !h.deleted).slice(0, 2).map((h, i) => ({ ...h, id: `hotel-${i}` })),
-        { id: 'hotel-new', settlement_id: SETTLEMENT_ID } as SettlementFull['hotels'][number],
-      ],
-      meals: state.meals,
-      entrances: state.entrances,
-      others: state.others,
+      hotels: [serverHotel],
+      meals: mockSettlementFull().meals,
+      entrances: mockSettlementFull().entrances,
+      others: mockSettlementFull().others,
       company_expenses: [],
-      shoppings: state.shoppings,
-      options: state.options,
+      shoppings: mockSettlementFull().shoppings,
+      options: mockSettlementFull().options,
     }
 
     const merged = mergeServerSync(state, sync as unknown as SettlementSyncPayload)
-    expect(merged.hotels?.find((h) => h.clientId === 'new-hotel')?.id).toBe('hotel-new')
+    expect(merged.hotels).toHaveLength(1)
+    expect(merged.hotels?.[0]?.id).toBe('hotel-server-1')
+    expect(merged.hotels?.[0]?.hotel_name).toBe('Server Hotel')
   })
 })
 

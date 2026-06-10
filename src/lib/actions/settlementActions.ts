@@ -6,7 +6,19 @@ import {
   GUIDE_LINE_ITEM_TABLES,
   explicitDeleteIdsFromDraft,
   persistGuideLineItemTable,
+  type LineItemPersistStep,
 } from '@/lib/settlement/guide-line-item-persist'
+import {
+  collectKnownLineItemIds,
+  diagnoseDraftLineItemDuplicates,
+  normalizeDraftLineItemPayload,
+  stripAllLineItemIdsForCreate,
+  stripOrphanLineItemIdsFromPayload,
+} from '@/lib/settlement/line-item-persist-prep'
+import {
+  formatLineItemPersistStepLog,
+  formatSettlementSaveStepLog,
+} from '@/lib/settlement/save-step-diagnostics'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
 import { resolveSettlementOperatingBranchId } from '@/lib/guide/assignment'
 import {
@@ -872,7 +884,14 @@ export async function upsertSettlement(payload: {
         error: SETTLEMENT_DUPLICATE_TOUR_ERROR,
       }
     }
-    logServerError('[upsertSettlement] write failed', writeResult.error)
+    logServerError(
+      '[upsertSettlement] write failed',
+      writeResult.error,
+      formatSettlementSaveStepLog('upsert_settlement_header', {
+        settlementId: payload.id,
+        tourId: payload.tour_id,
+      }),
+    )
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
   }
   const settlementId = payload.id ?? writeResult.id
@@ -1091,7 +1110,12 @@ async function persistSettlementLineItems(
     SettlementDraftPayload,
     'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options' | 'exchange_rate'
   >,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{
+  ok: boolean
+  error?: string
+  failedTable?: string
+  failedStep?: LineItemPersistStep
+}> {
   const rate = payload.exchange_rate
 
   const itemTables: {
@@ -1133,7 +1157,14 @@ async function persistSettlementLineItems(
 
   for (const { table, rows, deleteIds } of itemTables) {
     const result = await persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)
-    if (!result.ok) return result
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.error,
+        failedTable: result.table,
+        failedStep: result.step,
+      }
+    }
   }
 
   return { ok: true }
@@ -1189,7 +1220,13 @@ export async function saveSettlementItems(
 
   const result = await persistSettlementLineItems(supabase, settlementId, payload)
   if (!result.ok) {
-    logServerError('[saveSettlementItems] persist failed', result.error, { settlementId })
+    logServerError(
+      '[saveSettlementItems] persist failed',
+      result.error,
+      formatLineItemPersistStepLog(result.failedTable ?? 'unknown', result.failedStep ?? 'insert', {
+        settlementId,
+      }),
+    )
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
   }
 
@@ -1215,7 +1252,14 @@ export async function saveSettlementDraft(
   error?: string
 }> {
   const monetary = validateSettlementDraftPayload(payload)
-  if (!monetary.ok) return monetary
+  if (!monetary.ok) {
+    logServerError(
+      '[saveSettlementDraft] validation failed',
+      monetary.error,
+      formatSettlementSaveStepLog('validate_draft_payload'),
+    )
+    return monetary
+  }
 
   let payloadToSave = payload
   let preservedTourFeeUsd = 0
@@ -1228,12 +1272,37 @@ export async function saveSettlementDraft(
       audience: useGuideRead ? 'guide' : 'admin',
     })
     if (!existing) {
+      logServerError(
+        '[saveSettlementDraft] existing settlement missing',
+        'not_found',
+        formatSettlementSaveStepLog('load_existing_settlement', {
+          settlementId: payload.settlementId,
+        }),
+      )
       return { ok: false, error: '정산서를 불러올 수 없습니다. 저장을 중단했습니다.' }
     }
     preservedTourFeeUsd = existing.tour_fee_usd ?? 0
     payloadToSave = sanitizeGuideDraftPayload(payload, existing)
+    payloadToSave = stripOrphanLineItemIdsFromPayload(
+      payloadToSave,
+      collectKnownLineItemIds(existing),
+    )
   } else {
-    payloadToSave = sanitizeGuideDraftPayload(payload, null)
+    payloadToSave = stripAllLineItemIdsForCreate(sanitizeGuideDraftPayload(payload, null))
+  }
+
+  payloadToSave = normalizeDraftLineItemPayload(payloadToSave)
+  const duplicateFindings = diagnoseDraftLineItemDuplicates(payloadToSave)
+  if (duplicateFindings.length > 0) {
+    logServerError(
+      '[saveSettlementDraft] duplicate line items in payload (normalized before save)',
+      'duplicate_line_items',
+      formatSettlementSaveStepLog('validate_draft_payload', {
+        duplicates: duplicateFindings,
+        settlementId: payloadToSave.settlementId,
+        tourId: payloadToSave.tourId,
+      }),
+    )
   }
 
   const headerResult = await upsertSettlement({
@@ -1258,11 +1327,27 @@ export async function saveSettlementDraft(
   })
 
   if (!headerResult.ok || !headerResult.id) {
+    logServerError(
+      '[saveSettlementDraft] header save failed',
+      headerResult.error ?? 'header_failed',
+      formatSettlementSaveStepLog('upsert_settlement_header', {
+        settlementId: headerResult.id,
+        tourId: payloadToSave.tourId,
+      }),
+    )
     return { ok: false, id: headerResult.id, error: headerResult.error ?? '헤더 저장 실패' }
   }
 
   const itemsResult = await saveSettlementItems(headerResult.id, payloadToSave)
   if (!itemsResult.ok) {
+    logServerError(
+      '[saveSettlementDraft] child items failed after header save',
+      itemsResult.error,
+      formatSettlementSaveStepLog('persist_line_items', {
+        settlementId: headerResult.id,
+        tourId: payloadToSave.tourId,
+      }),
+    )
     return { ok: false, id: headerResult.id, error: itemsResult.error }
   }
 

@@ -85,8 +85,8 @@ import {
   escapeIlikePattern,
   expandAdminDashboardProgressStatuses,
   expandWorkflowStatusFilter,
+  paginateSortedAdminSettlementRows,
   resolveAdminSettlementSearchScope,
-  sortAdminSettlementsByTourDate,
   sortActionNeededSettlements,
   type AdminSettlementListFilters,
   type AdminSettlementListItem,
@@ -560,8 +560,6 @@ async function getAdminUnsubmittedSettlements(
   pageSize: number,
   regionId: string | undefined,
 ): Promise<AdminSettlementsPageResult> {
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
   const startDate = filters.startDate!
   const endDate = filters.endDate!
 
@@ -610,16 +608,8 @@ async function getAdminUnsubmittedSettlements(
     (settlementRows ?? []) as unknown as AdminSettlementListItem[],
     search,
   )
-  const total = merged.length
-  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
 
-  return {
-    items: merged.slice(from, to + 1),
-    total,
-    page,
-    pageSize,
-    totalPages,
-  }
+  return paginateSortedAdminSettlementRows(merged, { page, pageSize })
 }
 
 /** 관리자 정산서 목록 (페이지네이션 + 검색) */
@@ -629,8 +619,6 @@ export async function getAdminSettlements(
   const supabase = await createClient()
   const pageSize = filters?.pageSize ?? ADMIN_SETTLEMENT_PAGE_SIZE
   const page = Math.max(1, filters?.page ?? 1)
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
 
   const regionId = await resolveSettlementRegionFilter(filters)
 
@@ -697,18 +685,10 @@ export async function getAdminSettlements(
     return { items: [], total: 0, page, pageSize, totalPages: 0 }
   }
 
-  const total = count ?? 0
-  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
-
-  return {
-    items: sortAdminSettlementsByTourDate(
-      (data ?? []) as unknown as AdminSettlementListItem[],
-    ).slice(from, to + 1),
-    total,
-    page,
-    pageSize,
-    totalPages,
-  }
+  return paginateSortedAdminSettlementRows(
+    (data ?? []) as unknown as AdminSettlementListItem[],
+    { page, pageSize, total: count ?? 0 },
+  )
 }
 
 /** 대시보드 처리 필요 큐 (우선순위 정렬) */

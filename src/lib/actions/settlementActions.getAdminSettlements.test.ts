@@ -52,12 +52,13 @@ describe('getAdminSettlements — tours date pre-query branch scope', () => {
     expect(tourQueryIdx).toBeGreaterThan(settlementsBranchIdx)
   })
 
-  it('does not change in-memory sort, slice pagination, or search paths', () => {
-    expect(body).toContain('sortAdminSettlementsByTourDate')
-    expect(body).toContain('.slice(from, to + 1)')
+  it('uses shared in-memory pagination helper and defers DB .range()', () => {
+    expect(body).toContain('paginateSortedAdminSettlementRows')
+    expect(body).not.toContain('sortAdminSettlementsByTourDate')
+    expect(body).not.toContain('.slice(from, to + 1)')
+    expect(body).not.toContain('.range(from, to)')
     expect(body).toContain('resolveAdminSettlementSearchScope')
     expect(body).toContain("buildAdminSettlementSearchOrFilter(scope, 'settlements')")
-    expect(body).not.toContain('.range(from, to)')
     expect(body).not.toMatch(
       /getAdminSettlements[\s\S]*?pattern\.ilike\.\$\{pattern\},tour_code\.ilike/,
     )
@@ -84,6 +85,14 @@ describe('getAdminSettlements — 미제출 (draft) includes tours without settl
     const start = actions.indexOf('export async function getAdminSettlements')
     const body = actions.slice(start, start + 1200)
     expect(body).toContain('getAdminUnsubmittedSettlements(supabase, filters, page, pageSize, regionId)')
+  })
+
+  it('paginates unsubmitted merge results via shared helper', () => {
+    const start = actions.indexOf('async function getAdminUnsubmittedSettlements')
+    const end = actions.indexOf('export async function getAdminSettlements', start)
+    const body = actions.slice(start, end)
+    expect(body).toContain('paginateSortedAdminSettlementRows(merged, { page, pageSize })')
+    expect(body).not.toContain('.slice(from, to + 1)')
   })
 
   it('keeps settlement-only query for non-draft status filters', () => {

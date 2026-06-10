@@ -8,6 +8,7 @@ import {
   ADMIN_SETTLEMENT_DATE_ORDER_ERROR,
   ADMIN_SETTLEMENT_DATE_RANGE_MAX_ERROR,
   ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
+  ADMIN_SETTLEMENT_LIST_DB_PAGINATION_DEFERRED_REASONS,
   ADMIN_SETTLEMENT_NO_STATUS_SUBTITLE,
   actionNeededStatusPriority,
   aggregateSettlementStatusCounts,
@@ -27,6 +28,7 @@ import {
   buildAdminSettlementSearchOrFilter,
   buildAdminSettlementTourSearchOr,
   matchesAdminSettlementSearch,
+  paginateSortedAdminSettlementRows,
   resolveAdminSettlementListMode,
   shouldFetchAdminSettlementRows,
   sortAdminSettlementsByTourDate,
@@ -535,5 +537,65 @@ describe('sortAdminSettlementsByTourDate', () => {
     const sorted = sortAdminSettlementsByTourDate(rows)
 
     expect(sorted.map((r) => r.id)).toEqual(['oldest', 'same-a', 'same-b', 'late'])
+  })
+})
+
+describe('paginateSortedAdminSettlementRows', () => {
+  const rows = [
+    { id: 'row-1', tour: { start_date: '2026-06-01', tour_code: 'A-001' } },
+    { id: 'row-2', tour: { start_date: '2026-06-02', tour_code: 'B-001' } },
+    { id: 'row-3', tour: { start_date: '2026-06-03', tour_code: 'C-001' } },
+    { id: 'row-4', tour: { start_date: '2026-06-04', tour_code: 'D-001' } },
+    { id: 'row-5', tour: { start_date: '2026-06-05', tour_code: 'E-001' } },
+  ]
+
+  it('returns page 1 and page 2 in tour-date order with correct totals', () => {
+    const page1 = paginateSortedAdminSettlementRows(rows, { page: 1, pageSize: 2 })
+    const page2 = paginateSortedAdminSettlementRows(rows, { page: 2, pageSize: 2 })
+
+    expect(page1.items.map((r) => r.id)).toEqual(['row-1', 'row-2'])
+    expect(page2.items.map((r) => r.id)).toEqual(['row-3', 'row-4'])
+    expect(page1.total).toBe(5)
+    expect(page2.total).toBe(5)
+    expect(page1.totalPages).toBe(3)
+    expect(page2.page).toBe(2)
+  })
+
+  it('uses explicit total when provided (DB count path)', () => {
+    const page = paginateSortedAdminSettlementRows(rows, {
+      page: 1,
+      pageSize: 2,
+      total: 99,
+    })
+
+    expect(page.items).toHaveLength(2)
+    expect(page.total).toBe(99)
+    expect(page.totalPages).toBe(50)
+  })
+
+  it('composes with search/date/status-filtered rows without changing order', () => {
+    const filtered = filterAdminSettlementRowsForList(listRows, {
+      startDate: '2026-06-01',
+      endDate: '2026-06-30',
+      status: 'submitted',
+    })
+    const page = paginateSortedAdminSettlementRows(filtered, { page: 1, pageSize: 10 })
+
+    expect(page.items.map((r) => r.id)).toEqual(['late-submitted'])
+    expect(page.total).toBe(1)
+  })
+})
+
+describe('admin settlement list DB pagination deferral', () => {
+  it('documents why DB .range() is not applied yet', () => {
+    expect(ADMIN_SETTLEMENT_LIST_DB_PAGINATION_DEFERRED_REASONS).toContain(
+      'ordering requires tours.start_date via embed order',
+    )
+    expect(ADMIN_SETTLEMENT_LIST_DB_PAGINATION_DEFERRED_REASONS).toContain(
+      '미제출 path merges synthetic rows in memory',
+    )
+    expect(ADMIN_SETTLEMENT_LIST_DB_PAGINATION_DEFERRED_REASONS).toContain(
+      'date filter uses large tour_id IN lists',
+    )
   })
 })

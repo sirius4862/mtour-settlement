@@ -259,6 +259,53 @@ export function sortAdminSettlementsByTourDate<
   })
 }
 
+/**
+ * Why admin settlement list DB `.range()` is deferred (first safe step only):
+ * - Visible ordering is `tours.start_date` → `tour_code` → settlement `id`.
+ * - PostgREST parent-row ordering needs embed syntax e.g. `.order('tours(start_date)')` (v11+).
+ * - The legacy `foreignTable` option sorts embedded rows only, not parent settlements.
+ * - 미제출 merges synthetic tour-only rows in memory; no safe server pagination without a view/RPC.
+ * - Date filtering still uses a tours id pre-query + `settlements.tour_id IN (...)`.
+ */
+export const ADMIN_SETTLEMENT_LIST_DB_PAGINATION_DEFERRED_REASONS = [
+  'ordering requires tours.start_date via embed order',
+  '미제출 path merges synthetic rows in memory',
+  'date filter uses large tour_id IN lists',
+] as const
+
+export type AdminSettlementTourSortableRow = {
+  id: string
+  tour: { start_date: string | null; tour_code: string | null } | null
+}
+
+/** In-memory sort + slice used by admin settlement list until DB pagination is safe. */
+export function paginateSortedAdminSettlementRows<T extends AdminSettlementTourSortableRow>(
+  rows: T[],
+  options: { page: number; pageSize: number; total?: number },
+): {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+} {
+  const page = Math.max(1, options.page)
+  const pageSize = options.pageSize
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const sorted = sortAdminSettlementsByTourDate(rows)
+  const total = options.total ?? sorted.length
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
+
+  return {
+    items: sorted.slice(from, to + 1),
+    total,
+    page,
+    pageSize,
+    totalPages,
+  }
+}
+
 export type AdminSettlementFilterableRow = {
   id: string
   status: string

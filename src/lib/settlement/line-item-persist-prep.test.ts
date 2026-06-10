@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SettlementFull } from '@/types'
 import { stateFromMock, toDraftPayload } from './mappers'
 import {
+  buildLineItemDeleteIds,
   collectKnownLineItemIds,
   stripAllLineItemIdsForCreate,
   stripOrphanLineItemIdsFromPayload,
@@ -43,5 +44,17 @@ describe('line-item persist prep', () => {
     expect(stripped.hotels[0]?.id).toBeUndefined()
     expect(stripped.others[0]?.id).toBeUndefined()
     expect(known.has('db-hotel-1')).toBe(true)
+  })
+
+  it('buildLineItemDeleteIds removes DB orphans not kept in payload', () => {
+    const deleteIds = buildLineItemDeleteIds(
+      [
+        { id: 'meal-keep', restaurant_name: 'A' } as never,
+        { id: 'meal-del', deleted: true },
+      ],
+      ['meal-keep', 'meal-orphan'],
+    )
+    expect(deleteIds).toEqual(expect.arrayContaining(['meal-del', 'meal-orphan']))
+    expect(deleteIds).not.toContain('meal-keep')
   })
 })

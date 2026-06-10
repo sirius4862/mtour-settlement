@@ -169,3 +169,33 @@ export function lineItemSections(payload: LineItemPayload): LineItemPayload {
     options: payload.options,
   }
 }
+
+/** DB ids the payload will keep (active rows with ids). */
+export function keepLineItemIdsFromPayload(
+  rows: Array<{ id?: string; deleted?: boolean }>,
+): Set<string> {
+  const keepIds = new Set<string>()
+  for (const row of rows) {
+    if (!row.deleted && row.id) keepIds.add(row.id)
+  }
+  return keepIds
+}
+
+/**
+ * Ids to delete before insert/update: soft-deleted draft rows + DB orphans
+ * (known from pre-loaded settlement, not bulk SELECT on base tables).
+ */
+export function buildLineItemDeleteIds(
+  draftRows: Array<{ id?: string; deleted?: boolean }>,
+  existingIds: string[],
+): string[] {
+  const keepIds = keepLineItemIdsFromPayload(draftRows)
+  const ids: string[] = []
+  for (const row of draftRows) {
+    if (row.deleted && row.id) ids.push(row.id)
+  }
+  for (const id of existingIds) {
+    if (!keepIds.has(id)) ids.push(id)
+  }
+  return [...new Set(ids)]
+}

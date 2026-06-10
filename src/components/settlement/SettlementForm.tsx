@@ -63,7 +63,7 @@ interface Props {
 export function SettlementForm({ tours, guideName, mode, initialFull, initialTourId, formRole = 'guide', adminEdit }: Props) {
   const router = useRouter()
   const hydrated = useRef(false)
-  const [pending, setPending] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'submit' | null>(null)
   const [openSectionId, setOpenSectionId] = useState('basic')
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([])
 
@@ -168,7 +168,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
     const state = useSettlementFormStore.getState()
     const managePending = options?.managePending !== false
-    if (managePending) setPending(true)
+    if (managePending) setPendingAction('save')
     setSaving()
 
     try {
@@ -217,7 +217,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       setSaveError('네트워크 오류가 발생했습니다.')
       return false
     } finally {
-      if (managePending) setPending(false)
+      if (managePending) setPendingAction(null)
     }
   }, [
     isPreview,
@@ -250,7 +250,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     const id = useSettlementFormStore.getState().settlementId
     if (!id) return
 
-    setPending(true)
+    setPendingAction('send')
     try {
       const result = await sendForConfirmation(id)
       if (result.ok) {
@@ -261,7 +261,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     } catch {
       setSaveError('네트워크 오류가 발생했습니다.')
     } finally {
-      setPending(false)
+      setPendingAction(null)
     }
   }, [isPreview, isAdminReview, adminEdit, canSendForConfirmation, handleSave, router, setSaveError])
 
@@ -282,7 +282,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       return
     }
 
-    setPending(true)
+    setPendingAction('submit')
     try {
       const result = await submitCurrentSettlement({
         getSettlementId: () => useSettlementFormStore.getState().settlementId,
@@ -302,7 +302,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     } catch {
       setSaveError('네트워크 오류가 발생했습니다.')
     } finally {
-      setPending(false)
+      setPendingAction(null)
     }
   }, [isPreview, isAdminReview, handleSave, router, runValidation, setSaveError])
 
@@ -553,7 +553,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           onSave={handleSave}
           onSubmit={handleSubmit}
           onSendForConfirmation={isAdminReview ? handleSendForConfirmation : undefined}
-          pending={pending}
+          pendingAction={pendingAction}
           hideSubmit={isAdminReview}
           showSendForConfirmation={canSendForConfirmation}
           saveLabel="임시저장"

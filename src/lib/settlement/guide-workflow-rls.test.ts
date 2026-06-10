@@ -57,9 +57,9 @@ describe('guide workflow RLS regression', () => {
     }
   })
 
-  it('persistSettlementLineItems passes explicit soft-delete ids to persist helper', () => {
+  it('persistSettlementLineItems passes explicit delete ids to persist helper', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
-    expect(source).toContain('explicitDeleteIdsFromDraft')
+    expect(source).toContain('buildLineItemDeleteIds')
     expect(source).toContain('persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)')
   })
 
@@ -81,6 +81,24 @@ describe('guide workflow RLS regression', () => {
     expect(source).toContain(".update(patch)")
     expect(source).not.toContain('.upsert(')
     expect(source).not.toContain('.select(')
+  })
+
+  it('persistGuideLineItemTable avoids bulk settlement_id NOT IN delete (guide RLS)', () => {
+    const source = readRepoFile('src/lib/settlement/guide-line-item-persist.ts')
+    expect(source).not.toContain(".not('id', 'in'")
+    expect(source).not.toContain('count: \'exact\'')
+    expect(source).toContain(".in('id', chunk)")
+  })
+
+  it('saveAdminSettlementEdits passes existing settlement for delete-id computation', () => {
+    const source = readRepoFile('src/lib/actions/settlementActions.ts')
+    const start = source.indexOf('export async function saveAdminSettlementEdits')
+    const end = source.indexOf('// ── 관리자 액션', start)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    expect(source.slice(start, end)).toContain(
+      'persistSettlementLineItems(supabase, settlementId, sanitized, existing)',
+    )
   })
 
   it('line-item SQL fix covers all guide-editable tables without guide base SELECT', () => {
@@ -110,18 +128,16 @@ describe('guide workflow RLS regression', () => {
           delete() {
             calls.push(`delete:${table}`)
             const deleteChain = {
-              eq(col: string) {
-                if (col === 'settlement_id') {
-                  return deleteChain
-                }
+              in(col: string, ids: string[]) {
+                if (col === 'id') calls.push(`delete-in:${table}:${ids.length}`)
                 return deleteChain
               },
-              not() {
-                calls.push(`orphan-delete:${table}`)
-                return Promise.resolve({ error: null, count: 0 })
-              },
-              then(onFulfilled?: (v: { error: null; count: number }) => unknown) {
-                return Promise.resolve({ error: null, count: 0 }).then(onFulfilled)
+              eq(col: string) {
+                if (col === 'settlement_id') {
+                  calls.push(`delete-by-settlement:${table}`)
+                  return Promise.resolve({ error: null })
+                }
+                return deleteChain
               },
             }
             return deleteChain

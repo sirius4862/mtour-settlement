@@ -26,3 +26,29 @@ export function formatLineItemPersistStepLog(
 ): Record<string, unknown> {
   return { saveStep: 'persist_line_items', table, lineItemStep: step, ...extra }
 }
+
+export type SettlementSaveTiming = {
+  step: SettlementSaveStep | 'persist_line_items_table' | 'persist_company_expenses'
+  ms: number
+  table?: string
+  requestCount?: number
+  deleteIds?: number
+  inserts?: number
+  updates?: number
+}
+
+/** Dev/server timing log — never surfaced to users. */
+export function logSettlementSaveTimings(
+  context: string,
+  timings: SettlementSaveTiming[],
+  extra?: Record<string, unknown>,
+): void {
+  const totalMs = timings.reduce((sum, t) => sum + t.ms, 0)
+  const totalRequests = timings.reduce((sum, t) => sum + (t.requestCount ?? 0), 0)
+  console.info(context, {
+    ...extra,
+    totalMs,
+    totalRequests,
+    steps: timings,
+  })
+}

@@ -24,7 +24,7 @@ export function SettlementFormFooter({
   onSave,
   onSubmit,
   onSendForConfirmation,
-  pending,
+  pendingAction = null,
   hideSubmit = false,
   showSendForConfirmation = false,
   saveLabel = '임시저장',
@@ -41,15 +41,18 @@ export function SettlementFormFooter({
   onSave: () => void
   onSubmit: () => void
   onSendForConfirmation?: () => void
-  pending: boolean
+  pendingAction?: 'save' | 'send' | 'submit' | null
   hideSubmit?: boolean
   showSendForConfirmation?: boolean
   saveLabel?: string
   submitLabel?: string
   sendForConfirmationLabel?: string
 }) {
+  const isSaving = pendingAction === 'save' || saveStatus === 'saving'
   const statusLabel =
-    saveStatus === 'saving' ? '저장 중…'
+    isSaving ? '저장 중…'
+    : pendingAction === 'send' ? '처리 중…'
+    : pendingAction === 'submit' ? '저장 후 제출 중…'
     : saveStatus === 'saved' && !dirty ? `저장됨 ${lastSavedAt ? formatTime(lastSavedAt) : ''}`
     : saveStatus === 'error' ? (saveError ?? '저장 실패')
     : dirty ? '변경됨' : '저장됨'
@@ -144,29 +147,29 @@ export function SettlementFormFooter({
           <button
             type="button"
             onClick={onSave}
-            disabled={pending}
+            disabled={pendingAction !== null}
             className="flex-1 min-h-12 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            {pending ? '저장 중…' : saveLabel}
+            {pendingAction === 'save' ? '저장 중…' : saveLabel}
           </button>
           {hideSubmit && showSendForConfirmation && onSendForConfirmation && (
             <button
               type="button"
               onClick={onSendForConfirmation}
-              disabled={pending}
+              disabled={pendingAction !== null}
               className="flex-1 min-h-12 py-3 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-50"
             >
-              {pending ? '처리 중…' : sendForConfirmationLabel}
+              {pendingAction === 'send' ? '처리 중…' : sendForConfirmationLabel}
             </button>
           )}
           {!hideSubmit && (
           <button
             type="button"
             onClick={onSubmit}
-            disabled={pending}
+            disabled={pendingAction !== null}
             className="flex-1 min-h-12 py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
-            {pending ? '저장 후 제출 중…' : submitLabel}
+            {pendingAction === 'submit' ? '저장 후 제출 중…' : submitLabel}
           </button>
           )}
         </div>

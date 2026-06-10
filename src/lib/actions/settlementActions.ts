@@ -4,11 +4,11 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import {
   GUIDE_LINE_ITEM_TABLES,
-  explicitDeleteIdsFromDraft,
   persistGuideLineItemTable,
   type LineItemPersistStep,
 } from '@/lib/settlement/guide-line-item-persist'
 import {
+  buildLineItemDeleteIds,
   collectKnownLineItemIds,
   diagnoseDraftLineItemDuplicates,
   normalizeDraftLineItemPayload,
@@ -18,7 +18,10 @@ import {
 import {
   formatLineItemPersistStepLog,
   formatSettlementSaveStepLog,
+  logSettlementSaveTimings,
+  type SettlementSaveTiming,
 } from '@/lib/settlement/save-step-diagnostics'
+import { timed } from '@/lib/server/perf'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
 import { resolveSettlementOperatingBranchId } from '@/lib/guide/assignment'
 import {
@@ -1110,11 +1113,14 @@ async function persistSettlementLineItems(
     SettlementDraftPayload,
     'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options' | 'exchange_rate'
   >,
+  existing: SettlementFull | null = null,
 ): Promise<{
   ok: boolean
   error?: string
   failedTable?: string
   failedStep?: LineItemPersistStep
+  timings?: SettlementSaveTiming[]
+  totalRequests?: number
 }> {
   const rate = payload.exchange_rate
 
@@ -1126,48 +1132,90 @@ async function persistSettlementLineItems(
     {
       table: 'hotel_items',
       rows: buildHotelDbRows(payload.hotels, settlementId),
-      deleteIds: explicitDeleteIdsFromDraft(payload.hotels),
+      deleteIds: buildLineItemDeleteIds(
+        payload.hotels,
+        existing?.hotels.map((r) => r.id) ?? [],
+      ),
     },
     {
       table: 'meal_items',
       rows: buildMealDbRows(payload.meals, settlementId),
-      deleteIds: explicitDeleteIdsFromDraft(payload.meals),
+      deleteIds: buildLineItemDeleteIds(
+        payload.meals,
+        existing?.meals.map((r) => r.id) ?? [],
+      ),
     },
     {
       table: 'entrance_items',
       rows: buildEntranceDbRows(payload.entrances, settlementId),
-      deleteIds: explicitDeleteIdsFromDraft(payload.entrances),
+      deleteIds: buildLineItemDeleteIds(
+        payload.entrances,
+        existing?.entrances.map((r) => r.id) ?? [],
+      ),
     },
     {
       table: 'other_expense_items',
       rows: buildOtherDbRows(payload.others, settlementId),
-      deleteIds: explicitDeleteIdsFromDraft(payload.others),
+      deleteIds: buildLineItemDeleteIds(
+        payload.others,
+        existing?.others.map((r) => r.id) ?? [],
+      ),
     },
     {
       table: 'shopping_items',
       rows: buildShoppingDbRows(payload.shoppings, settlementId),
-      deleteIds: explicitDeleteIdsFromDraft(payload.shoppings),
+      deleteIds: buildLineItemDeleteIds(
+        payload.shoppings,
+        existing?.shoppings.map((r) => r.id) ?? [],
+      ),
     },
     {
       table: 'option_items',
       rows: buildOptionDbRows(payload.options, settlementId, rate),
-      deleteIds: explicitDeleteIdsFromDraft(payload.options),
+      deleteIds: buildLineItemDeleteIds(
+        payload.options,
+        existing?.options.map((r) => r.id) ?? [],
+      ),
     },
   ]
 
-  for (const { table, rows, deleteIds } of itemTables) {
-    const result = await persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)
-    if (!result.ok) {
-      return {
-        ok: false,
-        error: result.error,
-        failedTable: result.table,
-        failedStep: result.step,
+  const tableResults = await Promise.all(
+    itemTables.map(async ({ table, rows, deleteIds }) => {
+      const { toInsert, toUpdate } = splitDbRowsForPersist(rows)
+      const started = performance.now()
+      const result = await persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)
+      const timing: SettlementSaveTiming = {
+        step: 'persist_line_items_table',
+        table,
+        ms: Math.round(performance.now() - started),
+        requestCount: result.requestCount,
+        deleteIds: deleteIds.length,
+        inserts: toInsert.length,
+        updates: toUpdate.length,
       }
+      return { result, timing }
+    }),
+  )
+
+  const failed = tableResults.find((r) => !r.result.ok)
+  if (failed && !failed.result.ok) {
+    return {
+      ok: false,
+      error: failed.result.error,
+      failedTable: failed.result.table,
+      failedStep: failed.result.step,
+      timings: tableResults.map((r) => r.timing),
     }
   }
 
-  return { ok: true }
+  return {
+    ok: true,
+    timings: tableResults.map((r) => r.timing),
+    totalRequests: tableResults.reduce(
+      (sum, r) => sum + (r.result.ok ? r.result.requestCount : 0),
+      0,
+    ),
+  }
 }
 
 /** Admin-only — guide save must never call this. */
@@ -1206,6 +1254,7 @@ export async function saveSettlementItems(
     SettlementDraftPayload,
     'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options' | 'exchange_rate'
   >,
+  existing: SettlementFull | null = null,
 ): Promise<{ ok: boolean; error?: string }> {
   const monetary = validateSettlementItemsPayload(payload)
   if (!monetary.ok) return monetary
@@ -1218,7 +1267,7 @@ export async function saveSettlementItems(
   const editable = await assertEditableSettlement(supabase, settlementId, profile.id)
   if (!editable) return { ok: false, error: '수정할 수 없는 정산서입니다.' }
 
-  const result = await persistSettlementLineItems(supabase, settlementId, payload)
+  const result = await persistSettlementLineItems(supabase, settlementId, payload, existing)
   if (!result.ok) {
     logServerError(
       '[saveSettlementItems] persist failed',
@@ -1263,6 +1312,7 @@ export async function saveSettlementDraft(
 
   let payloadToSave = payload
   let preservedTourFeeUsd = 0
+  let existingForItemPersist: SettlementFull | null = null
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
   const useGuideRead = profile.role === 'guide'
@@ -1282,6 +1332,7 @@ export async function saveSettlementDraft(
       return { ok: false, error: '정산서를 불러올 수 없습니다. 저장을 중단했습니다.' }
     }
     preservedTourFeeUsd = existing.tour_fee_usd ?? 0
+    existingForItemPersist = existing
     payloadToSave = sanitizeGuideDraftPayload(payload, existing)
     payloadToSave = stripOrphanLineItemIdsFromPayload(
       payloadToSave,
@@ -1338,7 +1389,11 @@ export async function saveSettlementDraft(
     return { ok: false, id: headerResult.id, error: headerResult.error ?? '헤더 저장 실패' }
   }
 
-  const itemsResult = await saveSettlementItems(headerResult.id, payloadToSave)
+  const itemsResult = await saveSettlementItems(
+    headerResult.id,
+    payloadToSave,
+    existingForItemPersist,
+  )
   if (!itemsResult.ok) {
     logServerError(
       '[saveSettlementDraft] child items failed after header save',
@@ -1393,6 +1448,7 @@ export async function saveAdminSettlementEdits(
   if (!payload.settlementId) {
     return { ok: false, error: '정산서 ID가 필요합니다.' }
   }
+  const settlementId = payload.settlementId
 
   const supabase = await createClient()
   const regionAccess = await requireAdminSettlementRegionAccess(
@@ -1442,19 +1498,38 @@ export async function saveAdminSettlementEdits(
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
   }
 
-  const itemsResult = await persistSettlementLineItems(supabase, payload.settlementId, sanitized)
+  const saveTimings: SettlementSaveTiming[] = []
+  const itemsResult = await timed('saveAdminSettlementEdits.persist_line_items', async () =>
+    persistSettlementLineItems(supabase, settlementId, sanitized, existing),
+  )
+  if (itemsResult.timings) saveTimings.push(...itemsResult.timings)
   if (!itemsResult.ok) {
     logServerError('[saveAdminSettlementEdits] line items failed', itemsResult.error, {
       settlementId: payload.settlementId,
+      ...formatLineItemPersistStepLog(
+        itemsResult.failedTable ?? 'unknown',
+        itemsResult.failedStep ?? 'insert',
+        { settlementId: payload.settlementId },
+      ),
     })
+    if (saveTimings.length > 0) {
+      logSettlementSaveTimings('[saveAdminSettlementEdits] timings (failed)', saveTimings, {
+        settlementId: payload.settlementId,
+      })
+    }
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
   }
 
+  const companyStarted = performance.now()
   const companyResult = await persistCompanyExpenseItems(
     supabase,
     payload.settlementId,
     sanitized.companyExpenses ?? [],
   )
+  saveTimings.push({
+    step: 'persist_company_expenses',
+    ms: Math.round(performance.now() - companyStarted),
+  })
   if (!companyResult.ok) {
     logServerError('[saveAdminSettlementEdits] company expenses failed', companyResult.error, {
       settlementId: payload.settlementId,
@@ -1462,9 +1537,24 @@ export async function saveAdminSettlementEdits(
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
   }
 
-  await persistSettlementCalcSummary(supabase, payload.settlementId)
-
+  const loadStarted = performance.now()
   const savedFull = await getSettlementFull(payload.settlementId)
+  saveTimings.push({
+    step: 'load_post_save_full',
+    ms: Math.round(performance.now() - loadStarted),
+  })
+
+  const calcStarted = performance.now()
+  await persistSettlementCalcSummary(supabase, payload.settlementId, savedFull)
+  saveTimings.push({
+    step: 'persist_calc_summary',
+    ms: Math.round(performance.now() - calcStarted),
+  })
+
+  logSettlementSaveTimings('[saveAdminSettlementEdits] timings', saveTimings, {
+    settlementId: payload.settlementId,
+    lineItemRequests: itemsResult.totalRequests,
+  })
   if (!savedFull) {
     revalidateSettlementPaths(payload.settlementId)
     return { ok: true }
@@ -1499,7 +1589,7 @@ export async function saveAdminSettlementEdits(
   return {
     ok: true,
     sync: {
-      status: (await getSettlementFull(payload.settlementId))?.status ?? savedFull.status,
+      status: savedFull?.status ?? currentStatus,
       receipts: savedFull.receipts,
       hotels: savedFull.hotels,
       meals: savedFull.meals,

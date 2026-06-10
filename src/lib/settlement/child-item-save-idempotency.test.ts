@@ -32,6 +32,8 @@ import {
 
 import {
 
+  buildLineItemDeleteIds,
+
   collectKnownLineItemIds,
 
   diagnoseDraftLineItemDuplicates,
@@ -60,24 +62,6 @@ type DbRow = Record<string, unknown> & { id: string; settlement_id: string }
 
 
 
-function parseKeepIds(notInValue: string): string[] {
-
-  return notInValue
-
-    .replace(/^\(/, '')
-
-    .replace(/\)$/, '')
-
-    .split(',')
-
-    .map((s) => s.trim().replace(/^"/, '').replace(/"$/, ''))
-
-    .filter(Boolean)
-
-}
-
-
-
 function createInMemoryLineItemDb(initial: Record<string, DbRow[]> = {}) {
 
   const tables = new Map<string, DbRow[]>(Object.entries(initial))
@@ -102,83 +86,53 @@ function createInMemoryLineItemDb(initial: Record<string, DbRow[]> = {}) {
 
       return {
 
-        delete(_opts?: { count?: string }) {
+        delete() {
 
           let settlementId: string | undefined
 
-          let rowId: string | undefined
+          let rowIds: string[] | null = null
 
-          let keepIds: string[] | undefined
+          const applyDelete = () => {
 
+            if (!settlementId || !rowIds) return chain
 
+            const rows = tableRows(table)
+
+            const idSet = new Set(rowIds)
+
+            tables.set(
+
+              table,
+
+              rows.filter(
+
+                (row) => !(idSet.has(row.id) && row.settlement_id === settlementId),
+
+              ),
+
+            )
+
+            return Promise.resolve({ error: null })
+
+          }
 
           const chain = {
 
-            eq(col: string, val: string) {
+            in(col: string, vals: string[]) {
 
-              if (col === 'settlement_id') {
-
-                settlementId = val
-
-                if (rowId) return finalize()
-
-                return chain
-
-              }
-
-              if (col === 'id') {
-
-                rowId = val
-
-                if (settlementId) return finalize()
-
-                return chain
-
-              }
+              if (col === 'id') rowIds = vals
 
               return chain
 
             },
 
-            not(col: string, _op: string, val: string) {
+            eq(col: string, val: string) {
 
-              if (col === 'id') keepIds = parseKeepIds(val)
+              if (col === 'settlement_id') settlementId = val
 
-              return finalize()
-
-            },
-
-            then(onFulfilled?: (value: { error: null; count: number }) => unknown) {
-
-              return finalize().then(onFulfilled)
+              return applyDelete()
 
             },
-
-          }
-
-
-
-          function finalize() {
-
-            const rows = tableRows(table)
-
-            const before = rows.length
-
-            const kept = rows.filter((row) => {
-
-              if (settlementId && row.settlement_id !== settlementId) return true
-
-              if (rowId && row.id !== rowId) return true
-
-              if (keepIds && keepIds.includes(row.id)) return true
-
-              return false
-
-            })
-
-            tables.set(table, kept)
-
-            return Promise.resolve({ error: null, count: before - kept.length })
 
           }
 
@@ -402,17 +356,63 @@ async function persistAllGuideSections(
 
   payload: ReturnType<typeof toDraftPayload>,
 
+  existingIds: {
+
+    meals?: string[]
+
+    entrances?: string[]
+
+    others?: string[]
+
+    shoppings?: string[]
+
+    options?: string[]
+
+  } = {},
+
 ) {
 
   const sections = [
 
-    { table: 'meal_items', rows: buildMealDbRows(payload.meals, settlementId) },
+    {
 
-    { table: 'entrance_items', rows: buildEntranceDbRows(payload.entrances, settlementId) },
+      table: 'meal_items',
 
-    { table: 'other_expense_items', rows: buildOtherDbRows(payload.others, settlementId) },
+      rows: buildMealDbRows(payload.meals, settlementId),
 
-    { table: 'shopping_items', rows: buildShoppingDbRows(payload.shoppings, settlementId) },
+      deleteIds: buildLineItemDeleteIds(payload.meals, existingIds.meals ?? []),
+
+    },
+
+    {
+
+      table: 'entrance_items',
+
+      rows: buildEntranceDbRows(payload.entrances, settlementId),
+
+      deleteIds: buildLineItemDeleteIds(payload.entrances, existingIds.entrances ?? []),
+
+    },
+
+    {
+
+      table: 'other_expense_items',
+
+      rows: buildOtherDbRows(payload.others, settlementId),
+
+      deleteIds: buildLineItemDeleteIds(payload.others, existingIds.others ?? []),
+
+    },
+
+    {
+
+      table: 'shopping_items',
+
+      rows: buildShoppingDbRows(payload.shoppings, settlementId),
+
+      deleteIds: buildLineItemDeleteIds(payload.shoppings, existingIds.shoppings ?? []),
+
+    },
 
     {
 
@@ -420,15 +420,29 @@ async function persistAllGuideSections(
 
       rows: buildOptionDbRows(payload.options, settlementId, payload.exchange_rate),
 
+      deleteIds: buildLineItemDeleteIds(payload.options, existingIds.options ?? []),
+
     },
 
   ] as const
 
 
 
-  for (const { table, rows } of sections) {
+  for (const { table, rows, deleteIds } of sections) {
 
-    const result = await persistGuideLineItemTable(db.supabase as never, table, settlementId, rows, [])
+    const result = await persistGuideLineItemTable(
+
+      db.supabase as never,
+
+      table,
+
+      settlementId,
+
+      rows,
+
+      deleteIds,
+
+    )
 
     expect(result.ok).toBe(true)
 
@@ -558,6 +572,26 @@ function settlementFullFromDb(
 
 
 
+function existingIdsFromDb(db: ReturnType<typeof createInMemoryLineItemDb>, settlementId: string) {
+
+  return {
+
+    meals: db.rows('meal_items', settlementId).map((r) => r.id as string),
+
+    entrances: db.rows('entrance_items', settlementId).map((r) => r.id as string),
+
+    others: db.rows('other_expense_items', settlementId).map((r) => r.id as string),
+
+    shoppings: db.rows('shopping_items', settlementId).map((r) => r.id as string),
+
+    options: db.rows('option_items', settlementId).map((r) => r.id as string),
+
+  }
+
+}
+
+
+
 function prepareCreatePayload(state: SettlementFormState) {
 
   return normalizeDraftLineItemPayload(
@@ -626,7 +660,17 @@ describe('child item save idempotency — server persist', () => {
 
     await persistAllGuideSections(db, SETTLEMENT_ID, payload)
 
-    await persistAllGuideSections(db, SETTLEMENT_ID, payload)
+    await persistAllGuideSections(
+
+      db,
+
+      SETTLEMENT_ID,
+
+      payload,
+
+      existingIdsFromDb(db, SETTLEMENT_ID),
+
+    )
 
 
 
@@ -664,7 +708,17 @@ describe('child item save idempotency — server persist', () => {
 
     const editPayload = prepareEditPayload(hydrated, existing)
 
-    await persistAllGuideSections(db, SETTLEMENT_ID, editPayload)
+    await persistAllGuideSections(
+
+      db,
+
+      SETTLEMENT_ID,
+
+      editPayload,
+
+      existingIdsFromDb(db, SETTLEMENT_ID),
+
+    )
 
 
 
@@ -675,6 +729,104 @@ describe('child item save idempotency — server persist', () => {
     expect(meals[0]?.restaurant_name).toBe('식당B')
 
     expect(meals[0]?.unit_price_vnd).toBe(120000)
+
+  })
+
+
+
+  it('G: many rows across sections stay idempotent on second save', async () => {
+
+    const db = createInMemoryLineItemDb()
+
+    const state = oneRowPerSectionState()
+
+    for (let i = 0; i < 24; i++) {
+
+      state.meals.push({
+
+        ...emptyMealRow(),
+
+        clientId: `meal-${i}`,
+
+        restaurant_name: `식당-${i}`,
+
+        pax: 10,
+
+        unit_price_vnd: 100000 + i,
+
+      })
+
+      state.entrances.push({
+
+        ...emptyEntranceRow(),
+
+        clientId: `ent-${i}`,
+
+        attraction_name: `입장-${i}`,
+
+        pax: 10,
+
+        unit_price_vnd: 50000 + i,
+
+      })
+
+      state.shoppings.push({
+
+        ...emptyShoppingRow(),
+
+        clientId: `shop-${i}`,
+
+        shop_name: `쇼핑-${i}`,
+
+        sale_usd: 100 + i,
+
+        com_usd: 10,
+
+      })
+
+      state.options.push({
+
+        ...emptyOptionRow(false),
+
+        clientId: `opt-${i}`,
+
+        option_name: `옵션-${i}`,
+
+        unit_price_usd: 20 + i,
+
+        pax: 8,
+
+      })
+
+    }
+
+
+
+    const payload = prepareCreatePayload(state)
+
+    await persistAllGuideSections(db, SETTLEMENT_ID, payload)
+
+    await persistAllGuideSections(
+
+      db,
+
+      SETTLEMENT_ID,
+
+      payload,
+
+      existingIdsFromDb(db, SETTLEMENT_ID),
+
+    )
+
+
+
+    expect(db.count('meal_items', SETTLEMENT_ID)).toBe(25)
+
+    expect(db.count('entrance_items', SETTLEMENT_ID)).toBe(25)
+
+    expect(db.count('shopping_items', SETTLEMENT_ID)).toBe(25)
+
+    expect(db.count('option_items', SETTLEMENT_ID)).toBe(25)
 
   })
 
@@ -850,7 +1002,17 @@ describe('child item save idempotency — redirect/new route flow', () => {
 
     const secondPayload = prepareEditPayload(state, existing)
 
-    await persistAllGuideSections(db, SETTLEMENT_ID, secondPayload)
+    await persistAllGuideSections(
+
+      db,
+
+      SETTLEMENT_ID,
+
+      secondPayload,
+
+      existingIdsFromDb(db, SETTLEMENT_ID),
+
+    )
 
 
 
@@ -952,7 +1114,17 @@ describe('child item save idempotency — payload diagnostics', () => {
 
     for (let i = 0; i < 3; i++) {
 
-      await persistAllGuideSections(db, SETTLEMENT_ID, payload)
+      await persistAllGuideSections(
+
+        db,
+
+        SETTLEMENT_ID,
+
+        payload,
+
+        i === 0 ? {} : existingIdsFromDb(db, SETTLEMENT_ID),
+
+      )
 
     }
 

@@ -76,6 +76,14 @@ describe('guide vehicle report list page wiring', () => {
   )
   const actions = readFileSync(join(ROOT, 'src/lib/actions/vehicleGuideActions.ts'), 'utf8')
 
+  it('keeps guide vehicle reports list loading UI visible while page loads', () => {
+    const loading = readFileSync(join(ROOT, 'src/app/guide/vehicle-reports/loading.tsx'), 'utf8')
+
+    expect(loading).toContain('차량 리포트 확인 불러오는 중')
+    expect(loading).toContain('bg-[#FCFAF7]')
+    expect(loading).toContain('animate-pulse')
+  })
+
   it('wires period filter without reset or custom date inputs', () => {
     expect(listPage).toContain('GuideVehicleReportPeriodFilter')
     expect(listPage).toContain('parseGuideVehicleReportPeriod')

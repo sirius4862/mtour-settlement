@@ -340,6 +340,14 @@ describe('guide settlement history filters', () => {
     expect(loading).toContain('bg-[#FBE1CC]')
   })
 
+  it('keeps guide settlements list loading UI visible while page loads', () => {
+    const loading = readFileSync(join(ROOT, 'src/app/guide/settlements/loading.tsx'), 'utf8')
+
+    expect(loading).toContain('전체 정산서 불러오는 중')
+    expect(loading).toContain('rounded-2xl')
+    expect(loading).toContain('animate-pulse')
+  })
+
   it('uses a narrow guide dashboard settlement select instead of full rows', () => {
     const helper = readFileSync(join(ROOT, 'src/lib/guide/dashboard-settlements.ts'), 'utf8')
 

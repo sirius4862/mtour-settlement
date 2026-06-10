@@ -88,3 +88,26 @@ describe('getAdminSettlements — 미제출 (draft) includes tours without settl
     expect(body).toContain('expandWorkflowStatusFilter(filters.status)')
   })
 })
+
+describe('getAdminSettlements — dashboard view=all progress filter', () => {
+  const body = getAdminSettlementsBody()
+
+  it('applies expandAdminDashboardProgressStatuses before search and fetch', () => {
+    const statusIdx = body.indexOf('if (filters?.status)')
+    const progressIdx = body.indexOf('filters?.dashboardProgressOnly')
+    const searchIdx = body.indexOf('const search = filters?.search?.trim()')
+    const fetchIdx = body.indexOf('const { data, count, error } = await q')
+
+    expect(progressIdx).toBeGreaterThan(statusIdx)
+    expect(progressIdx).toBeLessThan(searchIdx)
+    expect(searchIdx).toBeLessThan(fetchIdx)
+    expect(body).toContain('expandAdminDashboardProgressStatuses()')
+    expect(body).toContain("q.in('status', [...statuses])")
+  })
+
+  it('does not post-filter dashboard rows in admin page', () => {
+    const page = readFileSync('src/app/admin/page.tsx', 'utf8')
+    expect(page).toContain('dashboardProgressOnly')
+    expect(page).not.toContain('isAdminDashboardProgressStatus')
+  })
+})

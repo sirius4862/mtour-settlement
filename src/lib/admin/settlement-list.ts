@@ -87,6 +87,17 @@ export function isAdminDashboardProgressStatus(status: string): boolean {
   return ADMIN_DASHBOARD_STATUS_ORDER.includes(normalizeStatusForDashboard(status))
 }
 
+/** Raw DB statuses included in dashboard `view=all` (진행 전체 보기). */
+export function expandAdminDashboardProgressStatuses(): SettlementStatus[] {
+  const statuses = new Set<SettlementStatus>()
+  for (const workflowStatus of ADMIN_DASHBOARD_STATUS_ORDER) {
+    for (const status of expandWorkflowStatusFilter(workflowStatus)) {
+      statuses.add(status)
+    }
+  }
+  return [...statuses]
+}
+
 function dateOnly(value: Date): string {
   return value.toISOString().slice(0, 10)
 }
@@ -331,6 +342,8 @@ export interface AdminSettlementListFilters {
   regionId?: string
   page?: number
   pageSize?: number
+  /** Dashboard `view=all` — restrict to progress workflow statuses before pagination. */
+  dashboardProgressOnly?: boolean
 }
 
 export const ADMIN_SETTLEMENT_SELECT = `

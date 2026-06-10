@@ -17,6 +17,7 @@ import {
   countActionNeededFromRows,
   countActionNeededFromStats,
   defaultAdminSettlementDateRange,
+  expandAdminDashboardProgressStatuses,
   expandWorkflowStatusFilter,
   filterAdminSettlementRowsForList,
   isAdminDashboardProgressStatus,
@@ -387,6 +388,66 @@ describe('main admin dashboard settlement list behavior', () => {
     expect(isAdminDashboardProgressStatus('pending_guide_confirmation')).toBe(true)
     expect(isAdminDashboardProgressStatus('paid')).toBe(false)
     expect(isAdminDashboardProgressStatus('approved')).toBe(true)
+    expect(isAdminDashboardProgressStatus('recalled')).toBe(false)
+  })
+
+  it('expands dashboard progress statuses to include legacy DB values', () => {
+    expect(expandAdminDashboardProgressStatuses()).toEqual(
+      expect.arrayContaining([
+        'draft',
+        'submitted',
+        'edit_requested',
+        'rejected',
+        'clarification_requested',
+        'pending_guide_confirmation',
+        'approved',
+      ]),
+    )
+    expect(expandAdminDashboardProgressStatuses()).toHaveLength(7)
+    expect(expandAdminDashboardProgressStatuses()).not.toContain('paid')
+    expect(expandAdminDashboardProgressStatuses()).not.toContain('recalled')
+  })
+
+  it('filters dashboard view=all progress statuses before pagination, not after slice', () => {
+    const progressRows = Array.from({ length: 30 }, (_, i) => ({
+      id: `progress-${i}`,
+      status: 'draft',
+      tour: {
+        start_date: `2026-06-${String(i + 1).padStart(2, '0')}`,
+        tour_code: `P-${i}`,
+      },
+    }))
+    const paidRows = Array.from({ length: 30 }, (_, i) => ({
+      id: `paid-${i}`,
+      status: 'paid',
+      tour: {
+        start_date: `2026-05-${String(i + 1).padStart(2, '0')}`,
+        tour_code: `X-${i}`,
+      },
+    }))
+    const allRows = [...progressRows, ...paidRows]
+    const pageSize = 25
+
+    const progressOnly = allRows.filter((row) => isAdminDashboardProgressStatus(row.status))
+    const sortedProgress = sortAdminSettlementsByTourDate(progressOnly)
+    const page1FilteredFirst = sortedProgress.slice(0, pageSize)
+
+    const sortedAll = sortAdminSettlementsByTourDate(allRows)
+    const page1SliceThenFilter = sortedAll
+      .slice(0, pageSize)
+      .filter((row) => isAdminDashboardProgressStatus(row.status))
+
+    expect(progressOnly).toHaveLength(30)
+    expect(page1FilteredFirst).toHaveLength(25)
+    expect(page1SliceThenFilter.length).toBeLessThan(25)
+  })
+
+  it('passes dashboardProgressOnly to getAdminSettlements for view=all', () => {
+    const source = readFileSync('src/app/admin/page.tsx', 'utf8')
+
+    expect(source).toContain('dashboardProgressOnly: view === \'all\' ? true : undefined')
+    expect(source).not.toContain('isAdminDashboardProgressStatus')
+    expect(source).not.toContain('settlements.items.filter')
   })
 
   it('places dashboard view actions in the status header, not the list header', () => {

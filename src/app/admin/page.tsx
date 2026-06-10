@@ -14,7 +14,6 @@ import {
   ADMIN_DASHBOARD_STATUS_ORDER,
   ADMIN_SETTLEMENT_EMPTY_STATUS_MESSAGE,
   buildAdminDashboardListSubtitle,
-  isAdminDashboardProgressStatus,
   shouldFetchAdminSettlementRows,
 } from '@/lib/admin/settlement-list'
 import {
@@ -72,6 +71,7 @@ export default async function AdminPage({
           getAdminSettlements({
             status: activeStatus || undefined,
             regionId: regionId || undefined,
+            dashboardProgressOnly: view === 'all' ? true : undefined,
             page,
           }),
         )
@@ -95,10 +95,7 @@ export default async function AdminPage({
     view,
   })
   const statsByStatus = new Map(stats.map((s) => [s.status, s.count]))
-  const displayItems =
-    view === 'all'
-      ? settlements.items.filter((s) => isAdminDashboardProgressStatus(s.status))
-      : settlements.items
+  const displayItems = settlements.items
 
   return (
     <div className="space-y-6">

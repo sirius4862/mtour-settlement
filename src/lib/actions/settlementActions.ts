@@ -81,6 +81,7 @@ import {
   ACTION_NEEDED_STATUSES,
   aggregateSettlementStatusCounts,
   escapeIlikePattern,
+  expandAdminDashboardProgressStatuses,
   expandWorkflowStatusFilter,
   sortAdminSettlementsByTourDate,
   sortActionNeededSettlements,
@@ -690,6 +691,9 @@ export async function getAdminSettlements(
   if (filters?.status) {
     const statuses = expandWorkflowStatusFilter(filters.status)
     q = statuses.length === 1 ? q.eq('status', statuses[0]) : q.in('status', [...statuses])
+  } else if (filters?.dashboardProgressOnly) {
+    const statuses = expandAdminDashboardProgressStatuses()
+    q = q.in('status', [...statuses])
   }
 
   const search = filters?.search?.trim()

@@ -15,6 +15,10 @@ import { applyDraftSaveResult } from '@/lib/settlement/draft-save-flow'
 import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
 import { submitCurrentSettlement } from '@/lib/settlement/submit-flow'
 import {
+  logSubmitFlowAction,
+  type SettlementFormAction,
+} from '@/lib/settlement/submit-flow-diagnostics'
+import {
   firstErrorSection,
   validateSettlementForm,
   validationErrors,
@@ -157,19 +161,30 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     return { ok: errors.length === 0, errors }
   }, [isAdminReview])
 
-  const handleSave = useCallback(async (options?: { managePending?: boolean }): Promise<boolean> => {
+  const handleSave = useCallback(async (options?: {
+    managePending?: boolean
+    action?: SettlementFormAction
+  }): Promise<boolean> => {
     if (isPreview) return false
 
+    const action: SettlementFormAction = options?.action ?? 'save_only'
     const { ok, errors } = runValidation('draft')
     if (!ok) {
-      setSaveError(errors[0]?.message ?? '입력 내용을 확인해주세요.')
+      const message = errors[0]?.message ?? '입력 내용을 확인해주세요.'
+      setSaveError(message)
+      logSubmitFlowAction({
+        action,
+        validationStep: 'draft',
+        settlementId: useSettlementFormStore.getState().settlementId,
+        error: message,
+      })
       return false
     }
 
     const state = useSettlementFormStore.getState()
     const managePending = options?.managePending !== false
     if (managePending) setPendingAction('save')
-    setSaving()
+    if (managePending) setSaving()
 
     try {
       const payload = toDraftPayload(state)
@@ -181,7 +196,14 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           if (result.sync) mergeServerSync(result.sync)
           return true
         }
-        setSaveError(result.error ?? '저장 실패')
+        const message = result.error ?? '저장 실패'
+        setSaveError(message)
+        logSubmitFlowAction({
+          action,
+          saveStep: 'admin_save',
+          settlementId: state.settlementId,
+          error: message,
+        })
         return false
       }
 
@@ -212,9 +234,23 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         router.replace(`/guide/settlements/${result.settlementId}/edit`)
       }
 
+      const message = useSettlementFormStore.getState().saveError ?? '저장 실패'
+      logSubmitFlowAction({
+        action,
+        saveStep: 'save_settlement_draft',
+        settlementId: result.settlementId ?? state.settlementId,
+        error: message,
+      })
       return false
     } catch {
-      setSaveError('네트워크 오류가 발생했습니다.')
+      const message = '네트워크 오류가 발생했습니다.'
+      setSaveError(message)
+      logSubmitFlowAction({
+        action,
+        saveStep: 'client_exception',
+        settlementId: useSettlementFormStore.getState().settlementId,
+        error: message,
+      })
       return false
     } finally {
       if (managePending) setPendingAction(null)
@@ -286,7 +322,15 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     try {
       const result = await submitCurrentSettlement({
         getSettlementId: () => useSettlementFormStore.getState().settlementId,
-        saveDraft: () => handleSave({ managePending: false }),
+        saveDraft: async () => {
+          const ok = await handleSave({ managePending: false, action: 'save_then_submit' })
+          if (ok) return { ok: true as const }
+          return {
+            ok: false as const,
+            error: useSettlementFormStore.getState().saveError ?? undefined,
+            saveStep: 'client_handle_save',
+          }
+        },
         submitWithDraft: (id) =>
           submitSettlement(id, toDraftPayload(useSettlementFormStore.getState())),
         submitSaved: (id) => submitSettlement(id),
@@ -298,7 +342,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         return
       }
 
-      setSaveError(result.error ?? '제출 실패')
+      if (result.error) setSaveError(result.error)
     } catch {
       setSaveError('네트워크 오류가 발생했습니다.')
     } finally {

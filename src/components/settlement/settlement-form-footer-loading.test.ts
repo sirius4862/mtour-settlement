@@ -15,6 +15,7 @@ describe('SettlementFormFooter loading states', () => {
     expect(footer).toContain("pendingAction === 'send' ? '처리 중…'")
     expect(footer).not.toMatch(/pending \? '저장 중…'/)
     expect(footer).not.toMatch(/pending \? '처리 중…'/)
+    expect(footer).toContain("pendingAction !== 'submit'")
   })
 
   it('SettlementForm tracks save and process actions separately', () => {

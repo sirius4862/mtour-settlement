@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyFormState } from './mappers'
-import { emptyHotelRow } from './defaults'
+import { emptyHotelRow, emptyMealRow } from './defaults'
 import { hasGuideOwnedLineItemData } from './field-ownership'
 import { validateSettlementForm, validationErrors } from './validation'
 
@@ -52,6 +52,28 @@ describe('validateSettlementForm', () => {
     }
     const errors = validationErrors(validateSettlementForm(state, 'submit', 'guide'))
     expect(errors.length).toBe(0)
+  })
+
+  it('does not block draft or submit when company deposit would be negative (Q75)', () => {
+    const state = {
+      ...emptyFormState('테스트'),
+      tourId: 't1',
+      tour: { id: 't1' } as never,
+      exchange_rate: 26000,
+      meals: [
+        {
+          ...emptyMealRow(),
+          clientId: 'm1',
+          restaurant_name: 'Expensive',
+          pax: 20,
+          unit_price_vnd: 1_000_000,
+        },
+      ],
+    }
+    const draftErrors = validationErrors(validateSettlementForm(state, 'draft', 'guide'))
+    const submitErrors = validationErrors(validateSettlementForm(state, 'submit', 'guide'))
+    expect(draftErrors.length).toBe(0)
+    expect(submitErrors.length).toBe(0)
   })
 
   it('warns that admin-only fields are filled after submit', () => {

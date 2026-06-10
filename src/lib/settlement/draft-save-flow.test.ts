@@ -82,11 +82,11 @@ describe('applyDraftSaveResult', () => {
       if (h.state.settlementId) {
         updates += 1
         h.apply({ ok: true, id: h.state.settlementId })
-        return true
+        return { ok: true as const }
       }
       inserts += 1
       h.apply({ ok: true, id: 'settlement-1' })
-      return true
+      return { ok: true as const }
     })
     const submitSaved = vi.fn(async () => ({ ok: true }))
     const submitWithDraft = vi.fn(async () => ({ ok: true }))

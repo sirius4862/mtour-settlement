@@ -16,7 +16,12 @@ function activeRows<T extends { deleted?: boolean }>(rows: T[] | undefined): T[]
   return (rows ?? []).filter((r) => !r.deleted)
 }
 
-/** Validate form before draft save or submit. Errors block the action; warnings are informational. */
+/**
+ * Validate form before draft save or submit. Errors block the action; warnings are informational.
+ *
+ * Business rule: negative 회사입금액 (Q75) is valid when guide spending exceeds company deposit.
+ * Q75 is calculated in calc.ts and shown as a footer warning only — never validated here.
+ */
 export function validateSettlementForm(
   state: SettlementFormState,
   intent: ValidationIntent,

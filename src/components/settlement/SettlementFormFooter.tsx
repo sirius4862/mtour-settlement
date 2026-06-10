@@ -48,7 +48,8 @@ export function SettlementFormFooter({
   submitLabel?: string
   sendForConfirmationLabel?: string
 }) {
-  const isSaving = pendingAction === 'save' || saveStatus === 'saving'
+  const isSaving =
+    pendingAction === 'save' || (saveStatus === 'saving' && pendingAction !== 'submit')
   const statusLabel =
     isSaving ? '저장 중…'
     : pendingAction === 'send' ? '처리 중…'

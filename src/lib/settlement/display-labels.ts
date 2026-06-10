@@ -5,6 +5,7 @@ export type SummaryAudience = 'guide' | 'admin'
 export const GUIDE_PAYOUT_FLOOR_WARNING =
   '가이드 정산금액이 마이너스라 지급액은 $0으로 처리됩니다.'
 
+/** Informational only — must not block draft save, submit, or admin save. */
 export const Q75_NEGATIVE_WARNING =
   '가이드 사용액이 회사 입금액보다 많습니다. 회사입금이 마이너스입니다.'
 

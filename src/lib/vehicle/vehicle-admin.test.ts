@@ -9,7 +9,11 @@ import {
 import {
   canChangeVehicleAssignment,
   deriveVehicleAssignmentStatus,
+  isVehicleAssignmentGuideCheckIssue,
   VEHICLE_ASSIGNMENT_LOCKED_MESSAGE,
+  vehicleAssignmentAssignedBadgeLabel,
+  vehicleAssignmentGuideCheckBadgeLabel,
+  vehicleAssignmentReportBadgeLabel,
   vehicleAssignmentStatusLabel,
 } from './assignment-status'
 
@@ -43,6 +47,42 @@ describe('vehicle assignment status (pure)', () => {
     expect(canChangeVehicleAssignment('none')).toBe(true)
     expect(canChangeVehicleAssignment('draft')).toBe(false)
     expect(canChangeVehicleAssignment('submitted')).toBe(false)
+  })
+})
+
+describe('admin assignment dashboard — three-axis status badges (pure)', () => {
+  it('assignment axis: 미배정 / 배정완료', () => {
+    expect(vehicleAssignmentAssignedBadgeLabel(false)).toBe('미배정')
+    expect(vehicleAssignmentAssignedBadgeLabel(true)).toBe('배정완료')
+  })
+
+  it('report axis: 리포트 미작성 / 작성중 / 제출완료', () => {
+    expect(vehicleAssignmentReportBadgeLabel('none')).toBe('리포트 미작성')
+    expect(vehicleAssignmentReportBadgeLabel('draft')).toBe('작성중')
+    expect(vehicleAssignmentReportBadgeLabel('submitted')).toBe('제출완료')
+  })
+
+  it('guide-check axis is hidden until a report is submitted', () => {
+    expect(vehicleAssignmentGuideCheckBadgeLabel('none', null)).toBeNull()
+    expect(vehicleAssignmentGuideCheckBadgeLabel('draft', null)).toBeNull()
+    expect(vehicleAssignmentGuideCheckBadgeLabel('draft', 'no_issue')).toBeNull()
+  })
+
+  it('submitted report with no guide check shows 가이드 미확인', () => {
+    expect(vehicleAssignmentGuideCheckBadgeLabel('submitted', null)).toBe('가이드 미확인')
+    expect(vehicleAssignmentGuideCheckBadgeLabel('submitted', undefined)).toBe('가이드 미확인')
+  })
+
+  it('guide-check axis: 이상없음 / 이상있음 for submitted reports', () => {
+    expect(vehicleAssignmentGuideCheckBadgeLabel('submitted', 'no_issue')).toBe('이상없음')
+    expect(vehicleAssignmentGuideCheckBadgeLabel('submitted', 'issue_reported')).toBe('이상있음')
+  })
+
+  it('flags only submitted + issue_reported as a warning state', () => {
+    expect(isVehicleAssignmentGuideCheckIssue('submitted', 'issue_reported')).toBe(true)
+    expect(isVehicleAssignmentGuideCheckIssue('submitted', 'no_issue')).toBe(false)
+    expect(isVehicleAssignmentGuideCheckIssue('submitted', null)).toBe(false)
+    expect(isVehicleAssignmentGuideCheckIssue('draft', 'issue_reported')).toBe(false)
   })
 })
 
@@ -216,6 +256,36 @@ describe('admin vehicle assignment UI (source-level)', () => {
     expect(ASSIGN_TABLE_SRC).toContain('리포트 보기')
     expect(ASSIGN_TABLE_SRC).toContain('adminVehicleReportDetailHref')
     expect(ADMIN_REPORT_DETAIL_SRC).toContain('requireAdmin')
+  })
+
+  it('renders the three status axes via pure badge helpers', () => {
+    expect(ASSIGN_TABLE_SRC).toContain('vehicleAssignmentAssignedBadgeLabel')
+    expect(ASSIGN_TABLE_SRC).toContain('vehicleAssignmentReportBadgeLabel')
+    expect(ASSIGN_TABLE_SRC).toContain('vehicleAssignmentGuideCheckBadgeLabel')
+    expect(ASSIGN_TABLE_SRC).toContain('isVehicleAssignmentGuideCheckIssue')
+  })
+
+  it('keeps the existing assign/clear actions and date filter wiring', () => {
+    expect(ASSIGN_TABLE_SRC).toContain('assignVehicleCompanyToTour')
+    expect(ASSIGN_TABLE_SRC).toContain('clearVehicleCompanyFromTour')
+    expect(ASSIGN_TABLE_SRC).toContain('canChangeVehicleAssignment')
+    expect(ASSIGN_PAGE_SRC).toContain('getAdminVehicleAssignmentTours(dateFilter)')
+  })
+
+  it('adds no report-submission or guide check-write actions to the assignment UI', () => {
+    expect(ASSIGN_TABLE_SRC).not.toMatch(/submitVehicleReport|saveVehicleReport/)
+    expect(ASSIGN_TABLE_SRC).not.toMatch(/submitGuideCheck|saveGuideCheck|guideCheck.*submit/i)
+    expect(ASSIGN_TABLE_SRC).not.toMatch(/from\(['"]vehicle_report_checks['"]\)/)
+    expect(ASSIGN_TABLE_SRC).not.toMatch(/from\(['"]vehicle_route_reports['"]\)/)
+  })
+
+  it('loads guide-check status batched by submitted report ids (no N+1, bounded)', () => {
+    const body = vehicleAssignmentListFnBody()
+    expect(body).toContain("from('vehicle_report_checks')")
+    expect(body).toContain('.in(\'report_id\', submittedReportIds)')
+    expect(body).toContain('submittedReportIds')
+    // guide-check load only runs when there is at least one submitted report
+    expect(body).toContain('if (submittedReportIds.length > 0)')
   })
 })
 

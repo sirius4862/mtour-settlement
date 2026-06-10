@@ -9,6 +9,12 @@ import {
 } from '@/lib/settlement/guide-line-item-persist'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
 import { resolveSettlementOperatingBranchId } from '@/lib/guide/assignment'
+import {
+  EMPTY_GUIDE_DASHBOARD_SETTLEMENTS,
+  GUIDE_DASHBOARD_RECENT_LIMIT,
+  GUIDE_DASHBOARD_SETTLEMENT_SELECT,
+  type GuideDashboardSettlements,
+} from '@/lib/guide/dashboard-settlements'
 import { createClient } from '@/lib/supabase/server'
 import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
 import type {
@@ -304,6 +310,63 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
   return (data ?? []).map((row) =>
     sanitizeSettlementForGuide(row as unknown as SettlementWithTour),
   ) as SettlementWithTour[]
+}
+
+/** 가이드 대시보드 — 작업 큐·최근 정산서만 bounded 로드 (전체 이력 미조회). */
+export async function getGuideDashboardSettlements(): Promise<GuideDashboardSettlements> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return EMPTY_GUIDE_DASHBOARD_SETTLEMENTS
+
+  const useGuideRead = await shouldUseGuideReadTables('guide')
+  const table = tableForAudience('settlements', useGuideRead)
+
+  const baseQuery = () =>
+    supabase
+      .from(table)
+      .select(GUIDE_DASHBOARD_SETTLEMENT_SELECT)
+      .eq('guide_id', user.id)
+
+  const [draftRes, editRes, pendingRes, recentRes] = await Promise.all([
+    baseQuery().eq('status', 'draft').order('created_at', { ascending: false }),
+    baseQuery()
+      .eq('status', 'edit_requested')
+      .order('created_at', { ascending: false }),
+    baseQuery()
+      .eq('status', 'pending_guide_confirmation')
+      .is('guide_confirmed_at', null)
+      .order('created_at', { ascending: false }),
+    baseQuery()
+      .order('created_at', { ascending: false })
+      .limit(GUIDE_DASHBOARD_RECENT_LIMIT),
+  ])
+
+  const mapRows = (rows: unknown[] | null | undefined): SettlementWithTour[] =>
+    (rows ?? []).map((row) =>
+      sanitizeSettlementForGuide(row as SettlementWithTour),
+    ) as SettlementWithTour[]
+
+  if (draftRes.error) {
+    console.error('getGuideDashboardSettlements draft:', draftRes.error.message)
+  }
+  if (editRes.error) {
+    console.error('getGuideDashboardSettlements edit_requested:', editRes.error.message)
+  }
+  if (pendingRes.error) {
+    console.error('getGuideDashboardSettlements pending:', pendingRes.error.message)
+  }
+  if (recentRes.error) {
+    console.error('getGuideDashboardSettlements recent:', recentRes.error.message)
+  }
+
+  return {
+    draft: mapRows(draftRes.data),
+    editRequested: mapRows(editRes.data),
+    pendingConfirmation: mapRows(pendingRes.data),
+    recent: mapRows(recentRes.data),
+  }
 }
 
 /** 가이드 본인 정산서 이력 검색 (소유권은 guide_id로 강제). */

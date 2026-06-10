@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SettlementWithTour } from '@/types'
+import { GUIDE_DASHBOARD_SETTLEMENT_SELECT } from './dashboard-settlements'
 import {
   GUIDE_HISTORY_EMPTY_MESSAGE,
   GUIDE_HISTORY_PERIOD_HELPER,
@@ -297,12 +298,11 @@ describe('guide settlement history filters', () => {
     expect(pendingConfirmation).toBeGreaterThan(editRequested)
     expect(recent).toBeGreaterThan(pendingConfirmation)
 
-    expect(dashboard).toContain("settlements.filter((s) => s.status === 'draft')")
+    expect(dashboard).toContain('getGuideDashboardSettlements')
+    expect(dashboard).toContain('draft: draftSettlements')
     expect(dashboard).toContain('이어 작성하기 →')
     expect(dashboard).toContain('href={`/guide/settlements/${s.id}/edit`}')
-    expect(dashboard).toContain("s.status === 'pending_guide_confirmation' && s.guide_confirmed_at == null")
     expect(dashboard).toContain('href={`/guide/settlements/${s.id}/confirm`}')
-    expect(dashboard).toContain('settlements.slice(0, 3)')
     expect(dashboard).toContain('href="/guide/settlements"')
   })
 
@@ -341,12 +341,10 @@ describe('guide settlement history filters', () => {
   })
 
   it('uses a narrow guide dashboard settlement select instead of full rows', () => {
-    const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
+    const helper = readFileSync(join(ROOT, 'src/lib/guide/dashboard-settlements.ts'), 'utf8')
 
-    expect(actions).toContain('export async function getMySettlements')
-    expect(actions).toContain(
-      "'id,tour_id,guide_id,branch_id,status,reject_reason,guide_confirmed_at,calc_summary_json,created_at,updated_at,tour:tours(id,tour_code,pattern,start_date,end_date)'",
-    )
-    expect(actions).not.toContain(".select('*, tour:tours(*)')\n    .eq('guide_id', user.id)")
+    expect(helper).toContain('GUIDE_DASHBOARD_SETTLEMENT_SELECT')
+    expect(helper).toContain(GUIDE_DASHBOARD_SETTLEMENT_SELECT)
+    expect(GUIDE_DASHBOARD_SETTLEMENT_SELECT).not.toContain('calc_summary_json')
   })
 })

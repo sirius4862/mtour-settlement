@@ -1,7 +1,7 @@
 ﻿import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { requireGuide } from '@/lib/auth/session'
-import { getAvailableTours, getMySettlements } from '@/lib/actions/settlementActions'
+import { getAvailableTours, getGuideDashboardSettlements } from '@/lib/actions/settlementActions'
 import { tourLabel } from '@/lib/settlement/mappers'
 import { timed } from '@/lib/server/perf'
 import type { SettlementStatus } from '@/types'
@@ -69,18 +69,17 @@ function EmptyState({ message, helper }: { message: string; helper: string }) {
 
 export default async function GuidePage() {
   const session = await timed('guide dashboard auth/profile', () => requireGuide())
-  const [availableTours, settlements] = await Promise.all([
+  const [availableTours, dashboardSettlements] = await Promise.all([
     timed('guide dashboard assigned tours', () => getAvailableTours()),
-    timed('guide dashboard settlement list', () => getMySettlements()),
+    timed('guide dashboard settlements', () => getGuideDashboardSettlements()),
   ])
 
-  const draftSettlements = settlements.filter((s) => s.status === 'draft')
-  const editRequested = settlements.filter((s) => s.status === 'edit_requested')
-  const pendingConfirmation = settlements.filter(
-    (s) => s.status === 'pending_guide_confirmation' && s.guide_confirmed_at == null,
-  )
-
-  const recent = settlements.slice(0, 3)
+  const {
+    draft: draftSettlements,
+    editRequested,
+    pendingConfirmation,
+    recent,
+  } = dashboardSettlements
 
   return (
     <div className={pageShell} style={{ fontFamily: fontStack }}>

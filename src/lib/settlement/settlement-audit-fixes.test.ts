@@ -122,7 +122,7 @@ describe('saveSettlementDraft — stale line-item id hardening (source-level)', 
 
   it('strips orphan line-item ids before retrying an existing settlement', () => {
     expect(body).toContain('stripOrphanLineItemIdsFromPayload')
-    expect(body).toContain('collectKnownLineItemIds(existing)')
+    expect(body).toContain('collectKnownLineItemIds(existingForItemPersist)')
   })
 
   it('returns the header id when child-item save fails', () => {

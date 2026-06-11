@@ -16,11 +16,30 @@ describe('settlement save performance and stability (source-level)', () => {
     const body = source.slice(start, end)
 
     expect(body).toContain('persistSettlementLineItems(')
-    expect(body).not.toContain('saveSettlementItems(')
+    expect(body).not.toContain('saveSettlementItems')
     expect(body).toContain('load_post_save_full')
     expect(body).toContain('persistSettlementCalcSummary(supabase, headerResult.id, full)')
     expect(body).toContain("logSettlementSaveTimings('[saveSettlementDraft] timings'")
-    expect((body.match(/getSettlementFull\(/g) ?? []).length).toBe(2)
+    expect((body.match(/getSettlementFull\(/g) ?? []).length).toBe(1)
+    expect(body).toContain('logGetSettlementFullTimings(')
+    expect(body).toContain("callPurpose: 'post_save_reload'")
+  })
+
+  it('getSettlementFull instruments per-table query timings', () => {
+    const source = readRepoFile('src/lib/actions/settlementActions.ts')
+    const start = source.indexOf('export async function getSettlementFull')
+    const end = source.indexOf('function emptyAdminSettlementsPage', start)
+    const body = source.slice(start, end)
+
+    expect(body).toContain('createGetSettlementFullTimer')
+    expect(body).toContain('timer.timedQuery(')
+    expect(body).toContain('logGetSettlementFullTimings(')
+    expect(readRepoFile('src/lib/settlement/get-settlement-full-diagnostics.ts')).toContain(
+      'parallelismRatio',
+    )
+    expect(readRepoFile('src/lib/settlement/get-settlement-full-diagnostics.ts')).toContain(
+      'appearsParallel',
+    )
   })
 
   it('guide line-item persist keeps batched known-id delete and avoids unsafe bulk patterns', () => {

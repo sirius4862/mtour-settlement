@@ -17,6 +17,17 @@ import {
   stripOrphanLineItemIdsFromPayload,
 } from '@/lib/settlement/line-item-persist-prep'
 import {
+  buildGetSettlementFullTimingLog,
+  createGetSettlementFullTimer,
+  logGetSettlementFullTimings,
+  type GetSettlementFullCallPurpose,
+  type GetSettlementFullQueryTiming,
+} from '@/lib/settlement/get-settlement-full-diagnostics'
+import {
+  mergeGuideHeaderForSave,
+  pickAdminHeaderFields,
+} from '@/lib/settlement/field-ownership'
+import {
   formatLineItemPersistStepLog,
   formatSettlementSaveStepLog,
   logSettlementSaveTimings,
@@ -469,19 +480,36 @@ export async function getSettlementFullForGuide(id: string): Promise<SettlementF
   return sanitizeSettlementFullForGuide(full)
 }
 
-/** 정산서 상세 + 모든 항목 */
-export async function getSettlementFull(
-  id: string,
-  options?: { audience?: 'guide' | 'admin' },
-): Promise<SettlementFull | null> {
-  const supabase = await createClient()
-  const useGuideRead = await shouldUseGuideReadTables(options?.audience)
+type GetSettlementFullOptions = {
+  audience?: 'guide' | 'admin'
+  callPurpose?: GetSettlementFullCallPurpose
+}
 
+type SettlementLineItemRows = Pick<
+  SettlementFull,
+  'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options' | 'receipts' | 'company_expenses'
+>
+
+type SettlementCoreLoad = {
+  settlement: Record<string, unknown>
+  settlementQueryMs: number
+  useGuideRead: boolean
+}
+
+async function loadSettlementCore(
+  supabase: SupabaseClient,
+  id: string,
+  options?: GetSettlementFullOptions,
+): Promise<SettlementCoreLoad | null> {
+  const useGuideRead = await shouldUseGuideReadTables(options?.audience)
+  const settlementStarted = performance.now()
   const { data: s, error: settlementError } = await supabase
     .from(tableForAudience('settlements', useGuideRead))
     .select('*, tour:tours(*)')
     .eq('id', id)
     .single()
+  const settlementQueryMs = Math.round(performance.now() - settlementStarted)
+
   if (settlementError || !s) {
     if (settlementError) {
       console.error('[getSettlementFull] settlements:', settlementError.message)
@@ -502,23 +530,34 @@ export async function getSettlementFull(
     return null
   }
 
-  const fetchRows = async (
-    table: LineItemTable,
-    orderColumn: string,
-    ascending = true,
-  ) => {
-    const { data, error } = await supabase
-      .from(tableForAudience(table, useGuideRead))
-      .select('*')
-      .eq('settlement_id', id)
-      .order(orderColumn, { ascending })
-    if (error) {
-      console.error(`[getSettlementFull] ${table}:`, error.message)
-      return []
-    }
-    return data ?? []
+  return { settlement: s, settlementQueryMs, useGuideRead }
+}
+
+async function loadSettlementLineItemRows(
+  supabase: SupabaseClient,
+  id: string,
+  useGuideRead: boolean,
+): Promise<
+  SettlementLineItemRows & { parallelBatchMs: number; queryTimings: GetSettlementFullQueryTiming[] }
+> {
+  const timer = createGetSettlementFullTimer()
+
+  const fetchRows = async (table: LineItemTable, orderColumn: string, ascending = true) => {
+    return timer.timedQuery(table, async () => {
+      const { data, error } = await supabase
+        .from(tableForAudience(table, useGuideRead))
+        .select('*')
+        .eq('settlement_id', id)
+        .order(orderColumn, { ascending })
+      if (error) {
+        console.error(`[getSettlementFull] ${table}:`, error.message)
+        return []
+      }
+      return data ?? []
+    })
   }
 
+  timer.startParallelBatch()
   const [
     hotels, meals, entrances, others, shoppings, optionItems, receipts,
   ] = await Promise.all([
@@ -530,14 +569,18 @@ export async function getSettlementFull(
     fetchRows('option_items', 'sort_order'),
     fetchRows('receipts', 'created_at'),
   ])
+  const parallelBatchMs = timer.endParallelBatch()
 
   let companyExpenses: SettlementFull['company_expenses'] = []
+  let extraQueryMs = 0
   if (!useGuideRead) {
+    const companyStarted = performance.now()
     const { data, error } = await supabase
       .from('company_expense_items')
       .select('*')
       .eq('settlement_id', id)
       .order('sort_order', { ascending: true })
+    extraQueryMs = Math.round(performance.now() - companyStarted)
     if (error) {
       console.error('[getSettlementFull] company_expense_items:', error.message)
     } else {
@@ -546,7 +589,6 @@ export async function getSettlementFull(
   }
 
   return {
-    ...s,
     hotels,
     meals,
     entrances,
@@ -555,7 +597,162 @@ export async function getSettlementFull(
     options: optionItems,
     company_expenses: companyExpenses,
     receipts,
+    parallelBatchMs,
+    queryTimings: timer.queries,
+  }
+}
+
+function assembleSettlementFull(
+  settlement: Record<string, unknown>,
+  rows: SettlementLineItemRows,
+): SettlementFull {
+  return {
+    ...settlement,
+    hotels: rows.hotels,
+    meals: rows.meals,
+    entrances: rows.entrances,
+    others: rows.others,
+    shoppings: rows.shoppings,
+    options: rows.options,
+    company_expenses: rows.company_expenses,
+    receipts: rows.receipts,
   } as SettlementFull
+}
+
+function buildGuideHeaderUpsertFromDraft(
+  payload: SettlementDraftPayload,
+  settlementId: string,
+  tourFeeUsd: number,
+  adminHeaderSource: ReturnType<typeof pickAdminHeaderFields>,
+) {
+  const header = mergeGuideHeaderForSave(payload.header, adminHeaderSource)
+  return {
+    id: settlementId,
+    tour_id: payload.tourId,
+    exchange_rate: payload.exchange_rate,
+    advance_vnd: payload.header.advance_vnd,
+    tour_fee_usd: tourFeeUsd,
+    ground_fee_usd: header.ground_fee_usd ?? 0,
+    charming_other_usd: header.charming_other_usd,
+    tip_received_usd: header.tip_received_usd,
+    ...externalReceivableDbFields(header),
+    vehicle_fee_usd: header.vehicle_fee_usd,
+    head_tax_usd: header.head_tax_usd,
+    seoul_biz_fee_usd: header.seoul_biz_fee_usd,
+    tc_guide_usd: header.tc_guide_usd,
+    tc_company_usd: header.tc_company_usd,
+    megugi_usd: header.megugi_usd,
+    guide_daily_fee_usd: header.guide_daily_fee_usd,
+    settlement_ratio: header.settlement_ratio,
+    guide_note: header.guide_note,
+  }
+}
+
+/** 정산서 상세 + 모든 항목 */
+export async function getSettlementFull(
+  id: string,
+  options?: GetSettlementFullOptions,
+): Promise<SettlementFull | null> {
+  const supabase = await createClient()
+  const useGuideRead = await shouldUseGuideReadTables(options?.audience)
+  const callPurpose = options?.callPurpose ?? 'unknown'
+
+  const settlementStarted = performance.now()
+  const { data: s, error: settlementError } = await supabase
+    .from(tableForAudience('settlements', useGuideRead))
+    .select('*, tour:tours(*)')
+    .eq('id', id)
+    .single()
+  const settlementQueryMs = Math.round(performance.now() - settlementStarted)
+
+  if (settlementError || !s) {
+    if (settlementError) {
+      console.error('[getSettlementFull] settlements:', settlementError.message)
+    }
+    return null
+  }
+
+  const profile = await getProfile()
+  const adminScope = await getAdminRegionScope()
+  if (
+    evaluateAdminSettlementReadAccess({
+      scope: adminScope,
+      settlementBranchId: s.branch_id as string,
+      callerRole: profile?.role,
+      audience: options?.audience,
+    }) === 'deny'
+  ) {
+    return null
+  }
+
+  const timer = createGetSettlementFullTimer()
+  const fetchRows = async (table: LineItemTable, orderColumn: string, ascending = true) => {
+    return timer.timedQuery(table, async () => {
+      const { data, error } = await supabase
+        .from(tableForAudience(table, useGuideRead))
+        .select('*')
+        .eq('settlement_id', id)
+        .order(orderColumn, { ascending })
+      if (error) {
+        console.error(`[getSettlementFull] ${table}:`, error.message)
+        return []
+      }
+      return data ?? []
+    })
+  }
+
+  timer.startParallelBatch()
+  const [
+    hotels, meals, entrances, others, shoppings, optionItems, receipts,
+  ] = await Promise.all([
+    fetchRows('hotel_items', 'sort_order'),
+    fetchRows('meal_items', 'sort_order'),
+    fetchRows('entrance_items', 'sort_order'),
+    fetchRows('other_expense_items', 'sort_order'),
+    fetchRows('shopping_items', 'sort_order'),
+    fetchRows('option_items', 'sort_order'),
+    fetchRows('receipts', 'created_at'),
+  ])
+  const parallelBatchMs = timer.endParallelBatch()
+
+  let companyExpenses: SettlementFull['company_expenses'] = []
+  let extraQueryMs = 0
+  if (!useGuideRead) {
+    const companyStarted = performance.now()
+    const { data, error } = await supabase
+      .from('company_expense_items')
+      .select('*')
+      .eq('settlement_id', id)
+      .order('sort_order', { ascending: true })
+    extraQueryMs = Math.round(performance.now() - companyStarted)
+    if (error) {
+      console.error('[getSettlementFull] company_expense_items:', error.message)
+    } else {
+      companyExpenses = data ?? []
+    }
+  }
+
+  logGetSettlementFullTimings(
+    buildGetSettlementFullTimingLog({
+      settlementId: id,
+      callPurpose,
+      settlementQueryMs,
+      parallelBatchMs,
+      parallelQueries: timer.queries,
+      extraQueryMs: extraQueryMs > 0 ? extraQueryMs : undefined,
+    }),
+  )
+
+  return assembleSettlementFull(s, {
+    hotels,
+    meals,
+    entrances,
+    others,
+    shoppings,
+    options: optionItems,
+    company_expenses: companyExpenses,
+    receipts,
+  })
 }
 
 function emptyAdminSettlementsPage(
@@ -1266,45 +1463,6 @@ async function persistCompanyExpenseItems(
   return { ok: true }
 }
 
-export async function saveSettlementItems(
-  settlementId: string,
-  payload: Pick<
-    SettlementDraftPayload,
-    'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options' | 'exchange_rate'
-  >,
-  existing: SettlementFull | null = null,
-): Promise<{ ok: boolean; error?: string }> {
-  const monetary = validateSettlementItemsPayload(payload)
-  if (!monetary.ok) return monetary
-
-  const profile = await getProfile()
-  if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
-  if (profile.role !== 'guide') return { ok: false, error: '가이드 권한이 필요합니다.' }
-
-  const supabase = await createClient()
-  const editable = await assertEditableSettlement(supabase, settlementId, profile.id)
-  if (!editable) return { ok: false, error: '수정할 수 없는 정산서입니다.' }
-
-  const result = await persistSettlementLineItems(supabase, settlementId, payload, existing)
-  if (!result.ok) {
-    logServerError(
-      '[saveSettlementItems] persist failed',
-      result.error,
-      formatLineItemPersistStepLog(result.failedTable ?? 'unknown', result.failedStep ?? 'insert', {
-        settlementId,
-      }),
-    )
-    return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
-  }
-
-  await persistSettlementCalcSummary(supabase, settlementId)
-
-  revalidatePath('/guide/settlements')
-  revalidatePath(`/guide/settlements/${settlementId}`)
-  revalidatePath(`/guide/settlements/${settlementId}/edit`)
-  return { ok: true }
-}
-
 /**
  * DB write path:
  * 1. settlements — upsert header (insert or update draft)
@@ -1334,12 +1492,15 @@ export async function saveSettlementDraft(
   const profile = await getProfile()
   if (!profile) return { ok: false, error: '로그인이 필요합니다.' }
   const useGuideRead = profile.role === 'guide'
+  const saveTimings: SettlementSaveTiming[] = []
+  let headerResult: Awaited<ReturnType<typeof upsertSettlement>> = { ok: false }
 
   if (payload.settlementId) {
-    const existing = await getSettlementFull(payload.settlementId, {
+    const supabase = await createClient()
+    const coreLoad = await loadSettlementCore(supabase, payload.settlementId, {
       audience: useGuideRead ? 'guide' : 'admin',
     })
-    if (!existing) {
+    if (!coreLoad) {
       logServerError(
         '[saveSettlementDraft] existing settlement missing',
         'not_found',
@@ -1349,12 +1510,54 @@ export async function saveSettlementDraft(
       )
       return { ok: false, error: '정산서를 불러올 수 없습니다. 저장을 중단했습니다.' }
     }
-    preservedTourFeeUsd = existing.tour_fee_usd ?? 0
-    existingForItemPersist = existing
-    payloadToSave = sanitizeGuideDraftPayload(payload, existing)
+
+    const editable = await assertEditableSettlement(supabase, payload.settlementId, profile.id)
+    if (!editable) {
+      return { ok: false, id: payload.settlementId, error: '수정할 수 없는 정산서입니다.' }
+    }
+
+    preservedTourFeeUsd = (coreLoad.settlement.tour_fee_usd as number | undefined) ?? 0
+    const headerUpsertInput = buildGuideHeaderUpsertFromDraft(
+      payload,
+      payload.settlementId,
+      preservedTourFeeUsd,
+      pickAdminHeaderFields(coreLoad.settlement),
+    )
+
+    const preLoadParallelStarted = performance.now()
+    const headerStarted = performance.now()
+    const [headerResultEdit, lineRows] = await Promise.all([
+      upsertSettlement(headerUpsertInput),
+      loadSettlementLineItemRows(supabase, payload.settlementId, coreLoad.useGuideRead),
+    ])
+    headerResult = headerResultEdit
+    const headerMs = Math.round(performance.now() - headerStarted)
+    const preLoadParallelMs = Math.round(performance.now() - preLoadParallelStarted)
+
+    saveTimings.push({ step: 'upsert_settlement_header', ms: headerMs })
+    saveTimings.push({
+      step: 'load_existing_settlement',
+      ms: coreLoad.settlementQueryMs + preLoadParallelMs,
+    })
+
+    logGetSettlementFullTimings(
+      buildGetSettlementFullTimingLog({
+        settlementId: payload.settlementId,
+        callPurpose: 'pre_load',
+        settlementQueryMs: coreLoad.settlementQueryMs,
+        parallelBatchMs: preLoadParallelMs,
+        parallelQueries: [
+          ...lineRows.queryTimings,
+          { query: 'upsert_settlement_header', ms: headerMs, startedOffsetMs: 0 },
+        ],
+      }),
+    )
+
+    existingForItemPersist = assembleSettlementFull(coreLoad.settlement, lineRows)
+    payloadToSave = sanitizeGuideDraftPayload(payload, existingForItemPersist)
     payloadToSave = stripOrphanLineItemIdsFromPayload(
       payloadToSave,
-      collectKnownLineItemIds(existing),
+      collectKnownLineItemIds(existingForItemPersist),
     )
   } else {
     payloadToSave = stripAllLineItemIdsForCreate(sanitizeGuideDraftPayload(payload, null))
@@ -1374,33 +1577,33 @@ export async function saveSettlementDraft(
     )
   }
 
-  const saveTimings: SettlementSaveTiming[] = []
-
-  const headerStarted = performance.now()
-  const headerResult = await upsertSettlement({
-    id: payloadToSave.settlementId ?? undefined,
-    tour_id: payloadToSave.tourId,
-    exchange_rate: payloadToSave.exchange_rate,
-    advance_vnd: payloadToSave.header.advance_vnd,
-    tour_fee_usd: preservedTourFeeUsd,
-    ground_fee_usd: payloadToSave.header.ground_fee_usd ?? 0,
-    charming_other_usd: payloadToSave.header.charming_other_usd,
-    tip_received_usd: payloadToSave.header.tip_received_usd,
-    ...externalReceivableDbFields(payloadToSave.header),
-    vehicle_fee_usd: payloadToSave.header.vehicle_fee_usd,
-    head_tax_usd: payloadToSave.header.head_tax_usd,
-    seoul_biz_fee_usd: payloadToSave.header.seoul_biz_fee_usd,
-    tc_guide_usd: payloadToSave.header.tc_guide_usd,
-    tc_company_usd: payloadToSave.header.tc_company_usd,
-    megugi_usd: payloadToSave.header.megugi_usd,
-    guide_daily_fee_usd: payloadToSave.header.guide_daily_fee_usd,
-    settlement_ratio: payloadToSave.header.settlement_ratio,
-    guide_note: payloadToSave.header.guide_note,
-  })
-  saveTimings.push({
-    step: 'upsert_settlement_header',
-    ms: Math.round(performance.now() - headerStarted),
-  })
+  if (!payload.settlementId) {
+    const headerStarted = performance.now()
+    headerResult = await upsertSettlement({
+      id: payloadToSave.settlementId ?? undefined,
+      tour_id: payloadToSave.tourId,
+      exchange_rate: payloadToSave.exchange_rate,
+      advance_vnd: payloadToSave.header.advance_vnd,
+      tour_fee_usd: preservedTourFeeUsd,
+      ground_fee_usd: payloadToSave.header.ground_fee_usd ?? 0,
+      charming_other_usd: payloadToSave.header.charming_other_usd,
+      tip_received_usd: payloadToSave.header.tip_received_usd,
+      ...externalReceivableDbFields(payloadToSave.header),
+      vehicle_fee_usd: payloadToSave.header.vehicle_fee_usd,
+      head_tax_usd: payloadToSave.header.head_tax_usd,
+      seoul_biz_fee_usd: payloadToSave.header.seoul_biz_fee_usd,
+      tc_guide_usd: payloadToSave.header.tc_guide_usd,
+      tc_company_usd: payloadToSave.header.tc_company_usd,
+      megugi_usd: payloadToSave.header.megugi_usd,
+      guide_daily_fee_usd: payloadToSave.header.guide_daily_fee_usd,
+      settlement_ratio: payloadToSave.header.settlement_ratio,
+      guide_note: payloadToSave.header.guide_note,
+    })
+    saveTimings.push({
+      step: 'upsert_settlement_header',
+      ms: Math.round(performance.now() - headerStarted),
+    })
+  }
 
   if (!headerResult.ok || !headerResult.id) {
     logServerError(
@@ -1427,9 +1630,11 @@ export async function saveSettlementDraft(
   }
 
   const supabase = await createClient()
-  const editable = await assertEditableSettlement(supabase, headerResult.id, profile.id)
-  if (!editable) {
-    return { ok: false, id: headerResult.id, error: '수정할 수 없는 정산서입니다.' }
+  if (!payload.settlementId) {
+    const editable = await assertEditableSettlement(supabase, headerResult.id, profile.id)
+    if (!editable) {
+      return { ok: false, id: headerResult.id, error: '수정할 수 없는 정산서입니다.' }
+    }
   }
 
   const itemsResult = await persistSettlementLineItems(
@@ -1458,7 +1663,10 @@ export async function saveSettlementDraft(
   }
 
   const loadStarted = performance.now()
-  const full = await getSettlementFull(headerResult.id, { audience: 'guide' })
+  const full = await getSettlementFull(headerResult.id, {
+    audience: 'guide',
+    callPurpose: 'post_save_reload',
+  })
   saveTimings.push({
     step: 'load_post_save_full',
     ms: Math.round(performance.now() - loadStarted),

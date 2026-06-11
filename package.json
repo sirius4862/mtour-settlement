@@ -18,6 +18,7 @@
     "db:migrate:admin-send-confirmation": "node scripts/apply-admin-send-confirmation-rpc.mjs",
     "test:workflow-staging": "node scripts/staging-workflow-v1-automation.mjs",
     "verify:deploy": "node scripts/verify-deploy.mjs",
+    "measure:settlement-save": "node scripts/measure-settlement-save-performance.mjs",
     "db:migrate:external-receivable": "node scripts/apply-external-receivable-migration.mjs"
   },
   "dependencies": {

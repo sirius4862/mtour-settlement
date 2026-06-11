@@ -10,7 +10,73 @@ This is a **measurement/reporting tool only**. It does not change save behavior,
 2. Guide test credentials (never commit these).
 3. Temporarily enable server debug timings on the target deployment.
 
-## Enable `SAVE_TIMING_DEBUG` on Vercel Production
+## Full automated workflow (recommended)
+
+The wrapper script manages Vercel Production env toggling, redeploys, measurement, cleanup, and summary output.
+
+```bash
+PERF_BASE_URL=https://mtour-settlement.vercel.app \
+PERF_GUIDE_EMAIL=your-guide@example.com \
+PERF_GUIDE_PASSWORD='your-password' \
+PERF_SETTLEMENT_EDIT_URL=/guide/settlements/<settlement-id>/edit \
+PERF_RUNS=3 \
+PERF_OUTPUT=./artifacts/settlement-save-performance.json \
+npm run measure:settlement-save:workflow
+```
+
+### What the workflow automates
+
+1. Resolves the Vercel project (`mtour-settlement` when `PERF_BASE_URL` points there, or `WORKFLOW_VERCEL_PROJECT`).
+2. Temporarily links the local repo to that project if needed (restores `.vercel/project.json` afterward).
+3. Sets `SAVE_TIMING_DEBUG=1` on **Vercel Production**.
+4. Redeploys Production and waits until **Ready**.
+5. Runs `scripts/measure-settlement-save-performance.mjs` (draft save / `임시저장` only).
+6. Writes measurement JSON to `PERF_OUTPUT`.
+7. Removes `SAVE_TIMING_DEBUG` from Production in a `finally` cleanup step.
+8. Redeploys Production again to disable debug.
+9. Writes `artifacts/settlement-save-workflow-summary.json` and prints a final summary.
+
+### Manual confirmation required
+
+Before any Production env change, the workflow prints:
+
+- target Vercel project
+- target environment: **Production**
+- env var: `SAVE_TIMING_DEBUG=1`
+- that Production will be redeployed **twice**
+
+You must type **`YES`** to proceed. To skip the prompt (CI/advanced use only):
+
+```bash
+WORKFLOW_AUTO_CONFIRM=YES npm run measure:settlement-save:workflow
+```
+
+### Semi-automated fallback
+
+If Vercel CLI env commands fail in your environment, set:
+
+```bash
+WORKFLOW_SEMI_AUTO=1 npm run measure:settlement-save:workflow
+```
+
+The script prints exact `vercel` commands, pauses for Enter after each step, then runs measurement.
+
+### Workflow-only environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKFLOW_VERCEL_PROJECT` | derived from `PERF_BASE_URL` | Vercel project name (e.g. `mtour-settlement`) |
+| `WORKFLOW_AUTO_CONFIRM` | off | Set `YES` to skip the `YES` confirmation prompt |
+| `WORKFLOW_SEMI_AUTO` | off | Set `1` for manual Vercel CLI steps with pauses |
+
+### Safety
+
+- Modifies **Vercel Production env only** — not app source, SQL, RLS, auth, or save logic.
+- Never prints guide password or Vercel tokens (CLI output is sanitized).
+- Cleanup runs in `finally`; if removal fails, the script warns you to manually remove `SAVE_TIMING_DEBUG` and redeploy.
+- Measurement still clicks **`임시저장` only** — never submit/pay/approve/reopen/recall/send-for-confirmation.
+
+## Manual path: enable debug yourself
 
 1. Open the Vercel project → **Settings** → **Environment Variables**.
 2. Add **Production** variable:
@@ -21,7 +87,7 @@ This is a **measurement/reporting tool only**. It does not change save behavior,
 
 The flag is server-only. When enabled, `saveSettlementDraft` attaches sanitized `_debugTimings` to the server action response and mirrors it to the browser console as `[settlement-form-action]`.
 
-## Run the measurement script
+## Run the measurement script only
 
 From the repo root:
 
@@ -130,5 +196,8 @@ Use **dedicated QA settlements** only. The script performs real draft saves agai
 ## Related code
 
 - Opt-in debug: `src/lib/settlement/save-timing-debug.ts`
+- Full workflow wrapper: `scripts/run-settlement-save-performance-workflow.mjs`
 - Measurement script: `scripts/measure-settlement-save-performance.mjs`
+- Workflow helpers: `scripts/lib/settlement-save-workflow.mjs`
 - Summary/parser tests: `src/lib/settlement/save-performance-measurement.test.ts`
+- Workflow helper tests: `src/lib/settlement/save-performance-workflow.test.ts`

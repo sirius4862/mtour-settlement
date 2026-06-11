@@ -106,12 +106,57 @@ export function extractJsonObjectAfterKey(text, key) {
 
 /**
  * @param {string} text
+ */
+export function normalizeResponseTextForDebugParse(text) {
+  return text.replace(/\\"/g, '"').replace(/\\n/g, '')
+}
+
+/**
+ * @param {{ method: () => string; headers: () => Record<string, string> }} request
+ */
+export function isServerActionPostRequest(request) {
+  if (request.method() !== 'POST') return false
+  const headers = request.headers()
+  return Object.entries(headers).some(
+    ([key, value]) => key.toLowerCase() === 'next-action' && Boolean(value),
+  )
+}
+
+/**
+ * @param {string} text
  * @returns {SaveDebugTimings | null}
  */
 export function parseDebugTimingsFromResponseText(text) {
   if (!text || typeof text !== 'string') return null
-  const direct = extractJsonObjectAfterKey(text, '_debugTimings')
-  return parseDebugTimingsFromUnknown(direct)
+
+  const candidates = [text, normalizeResponseTextForDebugParse(text)]
+  for (const candidate of candidates) {
+    const direct = extractJsonObjectAfterKey(candidate, '_debugTimings')
+    const parsed = parseDebugTimingsFromUnknown(direct)
+    if (parsed) return parsed
+  }
+
+  // Next.js server action flight line: e.g. 1:{"ok":true,"_debugTimings":{...}}
+  const flightLine = text.match(/^\d+:\s*(\{[\s\S]*\})\s*$/m)
+  if (flightLine) {
+    try {
+      const payload = JSON.parse(flightLine[1])
+      if (payload?._debugTimings) {
+        return parseDebugTimingsFromUnknown(payload._debugTimings)
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  if (text.includes('_debugTimings')) {
+    const idx = text.indexOf('_debugTimings')
+    const slice = text.slice(Math.max(0, idx - 2), idx + 20000)
+    const parsed = parseDebugTimingsFromUnknown(extractJsonObjectAfterKey(slice, '_debugTimings'))
+    if (parsed) return parsed
+  }
+
+  return null
 }
 
 /**
@@ -124,6 +169,7 @@ export function parseDebugTimingsFromConsoleText(text) {
   const idx = text.indexOf(prefix)
   if (idx === -1) return null
   const payload = text.slice(idx + prefix.length).trim()
+  if (!payload || payload === '[object Object]') return null
   try {
     const parsed = JSON.parse(payload)
     return parseDebugTimingsFromUnknown(parsed?.debugTimings)

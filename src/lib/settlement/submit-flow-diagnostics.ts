@@ -14,9 +14,14 @@ export type SubmitFlowDiagnostic = {
   debugTimings?: SaveDebugTimings
 }
 
+/** Single-line JSON for DevTools and Playwright automation capture. */
+export function formatSubmitFlowActionLog(diag: SubmitFlowDiagnostic): string {
+  return `[settlement-form-action] ${JSON.stringify(diag)}`
+}
+
 /** Client-side diagnostic log — never shown to users. */
 export function logSubmitFlowAction(diag: SubmitFlowDiagnostic): void {
-  console.error('[settlement-form-action]', diag)
+  console.error(formatSubmitFlowActionLog(diag))
 }
 
 /** Mirror sanitized server timings to browser console when debug is enabled. */

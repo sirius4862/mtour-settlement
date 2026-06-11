@@ -12,6 +12,8 @@ import { dirname, join } from 'node:path'
 import {
   buildMeasurementReport,
   CHILD_COUNT_TABLES,
+  isServerActionPostRequest,
+  normalizeResponseTextForDebugParse,
   parseDebugTimingsFromConsoleText,
   parseDebugTimingsFromResponseText,
 } from './lib/save-performance-summary.mjs'
@@ -144,6 +146,21 @@ async function assertNoForbiddenButtons(page) {
   }
 }
 
+function isSettlementSaveActionResponse(response) {
+  const url = response.url()
+  if (!url.includes('/guide/settlements') && !url.includes('/admin/settlements')) {
+    return false
+  }
+  return isServerActionPostRequest(response.request())
+}
+
+function parseNetworkDebugTimingsFromResponseText(text) {
+  return (
+    parseDebugTimingsFromResponseText(text) ||
+    parseDebugTimingsFromResponseText(normalizeResponseTextForDebugParse(text))
+  )
+}
+
 async function performDraftSaveRun(page, runIndex) {
   const footer = page.locator('.fixed.bottom-16')
   const saveButton = footer.getByRole('button', { name: '임시저장' })
@@ -152,20 +169,7 @@ async function performDraftSaveRun(page, runIndex) {
   let consoleDebugTimings = null
   let saveResponseOk = true
   let saveError
-
-  const responseHandler = async (response) => {
-    const req = response.request()
-    if (req.method() !== 'POST') return
-    const url = response.url()
-    if (!url.includes('/guide/settlements') && !url.includes('/admin/settlements')) return
-    try {
-      const text = await response.text()
-      const parsed = parseDebugTimingsFromResponseText(text)
-      if (parsed) networkDebugTimings = parsed
-    } catch {
-      // ignore body read errors
-    }
-  }
+  let sawDebugMarkerInNetwork = false
 
   const consoleHandler = (msg) => {
     const text = msg.text()
@@ -174,20 +178,39 @@ async function performDraftSaveRun(page, runIndex) {
     if (parsed) consoleDebugTimings = parsed
   }
 
-  page.on('response', responseHandler)
   page.on('console', consoleHandler)
+
+  const saveResponsePromise = page
+    .waitForResponse((response) => isSettlementSaveActionResponse(response), {
+      timeout: 120_000,
+    })
+    .catch(() => null)
 
   const started = performance.now()
   try {
     await saveButton.click()
+    const saveResponse = await saveResponsePromise
+    if (saveResponse) {
+      try {
+        const text = await saveResponse.text()
+        if (text.includes('_debugTimings')) sawDebugMarkerInNetwork = true
+        const parsed = parseNetworkDebugTimingsFromResponseText(text)
+        if (parsed) networkDebugTimings = parsed
+      } catch {
+        // ignore body read errors
+      }
+    }
     await footer.getByText(/저장됨/).waitFor({ state: 'visible', timeout: 120_000 })
     await footer.getByText('저장 중…').waitFor({ state: 'hidden', timeout: 120_000 }).catch(() => {})
   } catch (err) {
     saveResponseOk = false
     saveError = err instanceof Error ? err.message : String(err)
   } finally {
-    page.off('response', responseHandler)
     page.off('console', consoleHandler)
+  }
+
+  if (!networkDebugTimings && !consoleDebugTimings && sawDebugMarkerInNetwork) {
+    saveError = saveError ?? 'save response contained _debugTimings but parser could not extract timings'
   }
 
   const browserDurationMs = Math.round(performance.now() - started)

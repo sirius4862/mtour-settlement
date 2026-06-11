@@ -361,6 +361,14 @@ async function main() {
         ok: true,
       })
       logStep(`Redeploy 1/2 Ready: ${ready1.url}`)
+      const warmupMs = Math.max(
+        0,
+        parseInt(process.env.PERF_DEBUG_WARMUP_MS?.trim() || '15000', 10) || 15000,
+      )
+      if (warmupMs > 0) {
+        logStep(`Waiting ${warmupMs}ms for SAVE_TIMING_DEBUG to propagate before measurement`)
+        await new Promise((resolve) => setTimeout(resolve, warmupMs))
+      }
     }
 
     if (config.semiAuto) {

@@ -3,6 +3,8 @@ import {
   buildMeasurementReport,
   buildRunWarnings,
   extractRunMetrics,
+  isServerActionPostRequest,
+  normalizeResponseTextForDebugParse,
   parseDebugTimingsFromConsoleText,
   parseDebugTimingsFromResponseText,
   parseDebugTimingsFromUnknown,
@@ -71,6 +73,31 @@ describe('save-performance-measurement', () => {
       debugTimings: SAMPLE_DEBUG,
     })}`
     expect(parseDebugTimingsFromConsoleText(consoleLine)).toEqual(SAMPLE_DEBUG)
+    expect(parseDebugTimingsFromConsoleText('[settlement-form-action] [object Object]')).toBeNull()
+  })
+
+  it('parses escaped and flight-line server action responses', () => {
+    const flightLine = `1:${JSON.stringify({ ok: true, _debugTimings: SAMPLE_DEBUG })}`
+    expect(parseDebugTimingsFromResponseText(flightLine)).toEqual(SAMPLE_DEBUG)
+
+    const escaped = `0:{\\"_debugTimings\\":${JSON.stringify(SAMPLE_DEBUG).replace(/"/g, '\\"')}}`
+    expect(parseDebugTimingsFromResponseText(escaped)).toEqual(SAMPLE_DEBUG)
+    expect(normalizeResponseTextForDebugParse(escaped)).toContain('"_debugTimings"')
+  })
+
+  it('detects Next.js server action POST requests', () => {
+    expect(
+      isServerActionPostRequest({
+        method: () => 'POST',
+        headers: () => ({ 'next-action': 'abc123' }),
+      }),
+    ).toBe(true)
+    expect(
+      isServerActionPostRequest({
+        method: () => 'GET',
+        headers: () => ({ 'next-action': 'abc123' }),
+      }),
+    ).toBe(false)
   })
 
   it('computes avg/min/max/p50', () => {

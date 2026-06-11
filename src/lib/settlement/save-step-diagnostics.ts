@@ -35,6 +35,7 @@ export type SettlementSaveTiming = {
   deleteIds?: number
   inserts?: number
   updates?: number
+  updatesSkipped?: number
 }
 
 /** Dev/server timing log — never surfaced to users. */

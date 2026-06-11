@@ -60,7 +60,8 @@ describe('guide workflow RLS regression', () => {
   it('persistSettlementLineItems passes explicit delete ids to persist helper', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
     expect(source).toContain('buildLineItemDeleteIds')
-    expect(source).toContain('persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)')
+    expect(source).toContain('persistGuideLineItemTable(')
+    expect(source).toContain('existingById')
   })
 
   it('persistSettlementLineItems does not use upsert on line-item tables', () => {

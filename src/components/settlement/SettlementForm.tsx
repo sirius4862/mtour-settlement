@@ -67,6 +67,7 @@ interface Props {
 export function SettlementForm({ tours, guideName, mode, initialFull, initialTourId, formRole = 'guide', adminEdit }: Props) {
   const router = useRouter()
   const hydrated = useRef(false)
+  const saveInFlightRef = useRef(false)
   const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'submit' | null>(null)
   const [openSectionId, setOpenSectionId] = useState('basic')
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([])
@@ -166,6 +167,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     action?: SettlementFormAction
   }): Promise<boolean> => {
     if (isPreview) return false
+    if (saveInFlightRef.current) return false
 
     const action: SettlementFormAction = options?.action ?? 'save_only'
     const { ok, errors } = runValidation('draft')
@@ -185,6 +187,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     const managePending = options?.managePending !== false
     if (managePending) setPendingAction('save')
     if (managePending) setSaving()
+    saveInFlightRef.current = true
 
     try {
       const payload = toDraftPayload(state)
@@ -253,6 +256,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       })
       return false
     } finally {
+      saveInFlightRef.current = false
       if (managePending) setPendingAction(null)
     }
   }, [
@@ -303,6 +307,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
   const handleSubmit = useCallback(async () => {
     if (isPreview || isAdminReview) return
+    if (saveInFlightRef.current || pendingAction !== null) return
 
     const { ok, errors } = runValidation('submit')
     if (!ok) {
@@ -348,7 +353,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     } finally {
       setPendingAction(null)
     }
-  }, [isPreview, isAdminReview, handleSave, router, runValidation, setSaveError])
+  }, [isPreview, isAdminReview, pendingAction, handleSave, router, runValidation, setSaveError])
 
   const title =
     isAdminReview ? '관리자 검토 수정'

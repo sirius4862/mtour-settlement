@@ -17,8 +17,36 @@ export type GuideLineItemTable = (typeof GUIDE_LINE_ITEM_TABLES)[number]
 export type LineItemPersistStep = 'orphan_delete' | 'explicit_delete' | 'insert' | 'update'
 
 export type LineItemPersistResult =
-  | { ok: true; requestCount: number }
+  | { ok: true; requestCount: number; updatesSkipped?: number }
   | { ok: false; error: string; table: string; step: LineItemPersistStep; requestCount: number }
+
+/** Skip per-row UPDATE when patch matches the pre-loaded settlement row. */
+export function rowPatchDiffersFromExisting(
+  patch: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+): boolean {
+  if (!existing) return true
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'id' || key === 'settlement_id') continue
+    if (value !== existing[key]) return true
+  }
+  return false
+}
+
+export function filterRowsNeedingUpdate(
+  toUpdate: Record<string, unknown>[],
+  existingById?: Map<string, Record<string, unknown>>,
+): { rows: Record<string, unknown>[]; skipped: number } {
+  if (!existingById || existingById.size === 0) {
+    return { rows: toUpdate, skipped: 0 }
+  }
+  const rows = toUpdate.filter((row) => {
+    const id = row.id
+    if (!id || typeof id !== 'string') return true
+    return rowPatchDiffersFromExisting(row, existingById.get(id))
+  })
+  return { rows, skipped: toUpdate.length - rows.length }
+}
 
 /** PostgREST `.in()` list size guard for known-id deletes. */
 export const KNOWN_ID_DELETE_BATCH_SIZE = 100
@@ -81,8 +109,13 @@ export async function persistGuideLineItemTable(
   settlementId: string,
   rows: Record<string, unknown>[],
   deleteIds: string[] = [],
+  existingById?: Map<string, Record<string, unknown>>,
 ): Promise<LineItemPersistResult> {
   const { toInsert, toUpdate } = splitDbRowsForPersist(rows)
+  const { rows: rowsToUpdate, skipped: updatesSkipped } = filterRowsNeedingUpdate(
+    toUpdate,
+    existingById,
+  )
   let requestCount = 0
 
   const deleteResult = await deleteKnownLineItemIds(supabase, table, settlementId, deleteIds)
@@ -97,9 +130,9 @@ export async function persistGuideLineItemTable(
     }
   }
 
-  if (toUpdate.length > 0) {
+  if (rowsToUpdate.length > 0) {
     const updateResults = await Promise.all(
-      toUpdate.map(async (row) => {
+      rowsToUpdate.map(async (row) => {
         const { id, ...patch } = row
         if (!id || typeof id !== 'string') return { error: null as null }
         const { error: updErr } = await supabase
@@ -110,7 +143,7 @@ export async function persistGuideLineItemTable(
         return { error: updErr }
       }),
     )
-    requestCount += toUpdate.length
+    requestCount += rowsToUpdate.length
     const failed = updateResults.find((r) => r.error)
     if (failed?.error) {
       return {
@@ -123,5 +156,5 @@ export async function persistGuideLineItemTable(
     }
   }
 
-  return { ok: true, requestCount }
+  return { ok: true, requestCount, updatesSkipped }
 }

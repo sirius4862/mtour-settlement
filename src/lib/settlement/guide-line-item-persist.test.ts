@@ -3,14 +3,69 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildMealDbRows, buildOtherDbRows } from './mappers'
 
 import {
-
   explicitDeleteIdsFromDraft,
-
+  filterRowsNeedingUpdate,
   persistGuideLineItemTable,
-
+  rowPatchDiffersFromExisting,
 } from './guide-line-item-persist'
 
 
+
+describe('unchanged row update skipping', () => {
+  it('rowPatchDiffersFromExisting returns false when patch matches existing', () => {
+    const existing = {
+      id: 'meal-1',
+      settlement_id: 's1',
+      restaurant_name: 'Pho',
+      pax: 2,
+      unit_price_vnd: 100000,
+      amount_vnd: 200000,
+      sort_order: 0,
+    }
+    expect(rowPatchDiffersFromExisting(existing, existing)).toBe(false)
+  })
+
+  it('filterRowsNeedingUpdate skips unchanged rows', () => {
+    const existing = new Map([
+      [
+        'meal-1',
+        {
+          id: 'meal-1',
+          settlement_id: 's1',
+          restaurant_name: 'Pho',
+          pax: 2,
+          unit_price_vnd: 100000,
+          amount_vnd: 200000,
+          sort_order: 0,
+        },
+      ],
+    ])
+    const toUpdate = [
+      {
+        id: 'meal-1',
+        settlement_id: 's1',
+        restaurant_name: 'Pho',
+        pax: 2,
+        unit_price_vnd: 100000,
+        amount_vnd: 200000,
+        sort_order: 0,
+      },
+      {
+        id: 'meal-2',
+        settlement_id: 's1',
+        restaurant_name: 'Changed',
+        pax: 3,
+        unit_price_vnd: 100000,
+        amount_vnd: 300000,
+        sort_order: 1,
+      },
+    ]
+    const { rows, skipped } = filterRowsNeedingUpdate(toUpdate, existing)
+    expect(skipped).toBe(1)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.id).toBe('meal-2')
+  })
+})
 
 describe('explicitDeleteIdsFromDraft', () => {
 
@@ -412,6 +467,53 @@ describe('persistGuideLineItemTable', () => {
 
     expect(insert).toHaveBeenCalledTimes(1)
 
+  })
+
+  it('skips per-row UPDATE when existing row is unchanged', async () => {
+    const update = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    })
+    const supabase = {
+      from: vi.fn(() => ({
+        delete: vi.fn().mockReturnValue({
+          in: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        update,
+      })),
+    }
+
+    const existingRow = {
+      id: 'meal-1',
+      settlement_id: 'settlement-1',
+      meal_date: '2025-04-01',
+      restaurant_name: 'Pho',
+      pax: 2,
+      unit_price_vnd: 100000,
+      amount_vnd: 200000,
+      sort_order: 0,
+    }
+    const existingById = new Map([['meal-1', existingRow]])
+
+    const result = await persistGuideLineItemTable(
+      supabase as never,
+      'meal_items',
+      'settlement-1',
+      [existingRow],
+      [],
+      existingById,
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.updatesSkipped).toBe(1)
+      expect(result.requestCount).toBe(0)
+    }
+    expect(update).not.toHaveBeenCalled()
   })
 
 })

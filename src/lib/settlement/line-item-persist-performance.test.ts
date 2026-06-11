@@ -120,6 +120,30 @@ describe('line item persist performance', () => {
     expect(supabase.requestCount).toBe(1 + 35)
   })
 
+  it('unchanged updates are skipped to reduce request count on re-save', async () => {
+    const supabase = createCountingSupabase()
+    const rows = manyMealRows(10, 'settlement-1')
+    const existingById = new Map(
+      rows.map((row) => [row.id as string, { ...row }]),
+    )
+
+    const result = await persistGuideLineItemTable(
+      supabase as never,
+      'meal_items',
+      'settlement-1',
+      rows,
+      [],
+      existingById,
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.updatesSkipped).toBe(10)
+      expect(result.requestCount).toBe(0)
+    }
+    expect(supabase.requestCount).toBe(0)
+  })
+
   it('reports lower request count than sequential per-id delete would require', () => {
     const rowCount = 50
     const deleteCount = 20

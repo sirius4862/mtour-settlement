@@ -11,6 +11,7 @@ import {
   buildLineItemDeleteIds,
   collectKnownLineItemIds,
   diagnoseDraftLineItemDuplicates,
+  existingLineItemRowsById,
   normalizeDraftLineItemPayload,
   stripAllLineItemIdsForCreate,
   stripOrphanLineItemIdsFromPayload,
@@ -1128,6 +1129,7 @@ async function persistSettlementLineItems(
     table: (typeof GUIDE_LINE_ITEM_TABLES)[number]
     rows: Record<string, unknown>[]
     deleteIds: string[]
+    existingById?: Map<string, Record<string, unknown>>
   }[] = [
     {
       table: 'hotel_items',
@@ -1136,6 +1138,7 @@ async function persistSettlementLineItems(
         payload.hotels,
         existing?.hotels.map((r) => r.id) ?? [],
       ),
+      existingById: existingLineItemRowsById(existing?.hotels),
     },
     {
       table: 'meal_items',
@@ -1144,6 +1147,7 @@ async function persistSettlementLineItems(
         payload.meals,
         existing?.meals.map((r) => r.id) ?? [],
       ),
+      existingById: existingLineItemRowsById(existing?.meals),
     },
     {
       table: 'entrance_items',
@@ -1152,6 +1156,7 @@ async function persistSettlementLineItems(
         payload.entrances,
         existing?.entrances.map((r) => r.id) ?? [],
       ),
+      existingById: existingLineItemRowsById(existing?.entrances),
     },
     {
       table: 'other_expense_items',
@@ -1160,6 +1165,7 @@ async function persistSettlementLineItems(
         payload.others,
         existing?.others.map((r) => r.id) ?? [],
       ),
+      existingById: existingLineItemRowsById(existing?.others),
     },
     {
       table: 'shopping_items',
@@ -1168,6 +1174,7 @@ async function persistSettlementLineItems(
         payload.shoppings,
         existing?.shoppings.map((r) => r.id) ?? [],
       ),
+      existingById: existingLineItemRowsById(existing?.shoppings),
     },
     {
       table: 'option_items',
@@ -1176,14 +1183,22 @@ async function persistSettlementLineItems(
         payload.options,
         existing?.options.map((r) => r.id) ?? [],
       ),
+      existingById: existingLineItemRowsById(existing?.options),
     },
   ]
 
   const tableResults = await Promise.all(
-    itemTables.map(async ({ table, rows, deleteIds }) => {
+    itemTables.map(async ({ table, rows, deleteIds, existingById }) => {
       const { toInsert, toUpdate } = splitDbRowsForPersist(rows)
       const started = performance.now()
-      const result = await persistGuideLineItemTable(supabase, table, settlementId, rows, deleteIds)
+      const result = await persistGuideLineItemTable(
+        supabase,
+        table,
+        settlementId,
+        rows,
+        deleteIds,
+        existingById,
+      )
       const timing: SettlementSaveTiming = {
         step: 'persist_line_items_table',
         table,
@@ -1192,6 +1207,9 @@ async function persistSettlementLineItems(
         deleteIds: deleteIds.length,
         inserts: toInsert.length,
         updates: toUpdate.length,
+        ...(result.ok && result.updatesSkipped
+          ? { updatesSkipped: result.updatesSkipped }
+          : {}),
       }
       return { result, timing }
     }),
@@ -1356,6 +1374,9 @@ export async function saveSettlementDraft(
     )
   }
 
+  const saveTimings: SettlementSaveTiming[] = []
+
+  const headerStarted = performance.now()
   const headerResult = await upsertSettlement({
     id: payloadToSave.settlementId ?? undefined,
     tour_id: payloadToSave.tourId,
@@ -1376,6 +1397,10 @@ export async function saveSettlementDraft(
     settlement_ratio: payloadToSave.header.settlement_ratio,
     guide_note: payloadToSave.header.guide_note,
   })
+  saveTimings.push({
+    step: 'upsert_settlement_header',
+    ms: Math.round(performance.now() - headerStarted),
+  })
 
   if (!headerResult.ok || !headerResult.id) {
     logServerError(
@@ -1389,11 +1414,31 @@ export async function saveSettlementDraft(
     return { ok: false, id: headerResult.id, error: headerResult.error ?? '헤더 저장 실패' }
   }
 
-  const itemsResult = await saveSettlementItems(
+  const itemsMonetary = validateSettlementItemsPayload(payloadToSave)
+  if (!itemsMonetary.ok) {
+    logServerError(
+      '[saveSettlementDraft] items validation failed',
+      itemsMonetary.error,
+      formatSettlementSaveStepLog('validate_items_payload', {
+        settlementId: headerResult.id,
+      }),
+    )
+    return { ok: false, id: headerResult.id, error: itemsMonetary.error }
+  }
+
+  const supabase = await createClient()
+  const editable = await assertEditableSettlement(supabase, headerResult.id, profile.id)
+  if (!editable) {
+    return { ok: false, id: headerResult.id, error: '수정할 수 없는 정산서입니다.' }
+  }
+
+  const itemsResult = await persistSettlementLineItems(
+    supabase,
     headerResult.id,
     payloadToSave,
     existingForItemPersist,
   )
+  if (itemsResult.timings) saveTimings.push(...itemsResult.timings)
   if (!itemsResult.ok) {
     logServerError(
       '[saveSettlementDraft] child items failed after header save',
@@ -1403,10 +1448,41 @@ export async function saveSettlementDraft(
         tourId: payloadToSave.tourId,
       }),
     )
-    return { ok: false, id: headerResult.id, error: itemsResult.error }
+    if (saveTimings.length > 0) {
+      logSettlementSaveTimings('[saveSettlementDraft] timings (failed)', saveTimings, {
+        settlementId: headerResult.id,
+        tourId: payloadToSave.tourId,
+      })
+    }
+    return { ok: false, id: headerResult.id, error: SAVE_SETTLEMENT_GENERIC_ERROR }
   }
 
+  const loadStarted = performance.now()
   const full = await getSettlementFull(headerResult.id, { audience: 'guide' })
+  saveTimings.push({
+    step: 'load_post_save_full',
+    ms: Math.round(performance.now() - loadStarted),
+  })
+
+  if (full) {
+    const calcStarted = performance.now()
+    await persistSettlementCalcSummary(supabase, headerResult.id, full)
+    saveTimings.push({
+      step: 'persist_calc_summary',
+      ms: Math.round(performance.now() - calcStarted),
+    })
+  }
+
+  logSettlementSaveTimings('[saveSettlementDraft] timings', saveTimings, {
+    settlementId: headerResult.id,
+    tourId: payloadToSave.tourId,
+    lineItemRequests: itemsResult.totalRequests,
+  })
+
+  revalidatePath('/guide/settlements')
+  revalidatePath(`/guide/settlements/${headerResult.id}`)
+  revalidatePath(`/guide/settlements/${headerResult.id}/edit`)
+
   if (!full) {
     return { ok: true, id: headerResult.id }
   }

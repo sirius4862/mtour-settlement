@@ -185,6 +185,18 @@ export function keepLineItemIdsFromPayload(
  * Ids to delete before insert/update: soft-deleted draft rows + DB orphans
  * (known from pre-loaded settlement, not bulk SELECT on base tables).
  */
+/** Map pre-loaded DB rows by id for unchanged-update skipping during persist. */
+export function existingLineItemRowsById(
+  rows: Array<{ id?: string }> | undefined,
+): Map<string, Record<string, unknown>> | undefined {
+  if (!rows?.length) return undefined
+  const map = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    if (row.id) map.set(row.id, row as Record<string, unknown>)
+  }
+  return map.size > 0 ? map : undefined
+}
+
 export function buildLineItemDeleteIds(
   draftRows: Array<{ id?: string; deleted?: boolean }>,
   existingIds: string[],

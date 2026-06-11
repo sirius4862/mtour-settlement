@@ -25,5 +25,6 @@ describe('SettlementFormFooter loading states', () => {
     expect(form).toContain("setPendingAction('send')")
     expect(form).toContain('pendingAction={pendingAction}')
     expect(form).not.toContain('setPending(true)')
+    expect(form).toContain('saveInFlightRef')
   })
 })

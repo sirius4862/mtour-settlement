@@ -126,7 +126,8 @@ describe('saveSettlementDraft — stale line-item id hardening (source-level)', 
   })
 
   it('returns the header id when child-item save fails', () => {
-    expect(body).toContain('return { ok: false, id: headerResult.id, error: SAVE_SETTLEMENT_GENERIC_ERROR }')
+    expect(body).toContain('finalizeDraftSaveResult(')
+    expect(body).toContain('error: SAVE_SETTLEMENT_GENERIC_ERROR')
   })
 
   it('logs child-item failures with step diagnostics', () => {

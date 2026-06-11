@@ -1,4 +1,5 @@
-import { logSubmitFlowAction } from './submit-flow-diagnostics'
+import { logSaveDebugTimings, logSubmitFlowAction } from './submit-flow-diagnostics'
+import type { SaveDebugTimings } from './save-timing-debug'
 
 export interface SubmitResult {
   ok: boolean
@@ -6,8 +7,15 @@ export interface SubmitResult {
 }
 
 export type SaveDraftOutcome =
-  | { ok: true }
-  | { ok: false; error?: string; validationStep?: string; saveStep?: string; table?: string }
+  | { ok: true; debugTimings?: SaveDebugTimings }
+  | {
+      ok: false
+      error?: string
+      validationStep?: string
+      saveStep?: string
+      table?: string
+      debugTimings?: SaveDebugTimings
+    }
 
 export interface SubmitFlowDeps {
   /** Current settlement id from the form store (null = never saved). */
@@ -51,8 +59,7 @@ export async function submitCurrentSettlement(deps: SubmitFlowDeps): Promise<Sub
   const saved = await deps.saveDraft()
   if (!saved.ok) {
     const error = saved.error ?? SAVE_BEFORE_SUBMIT_FALLBACK
-    logSubmitFlowAction({
-      action: 'save_then_submit',
+    logSaveDebugTimings('save_then_submit', saved.debugTimings, {
       submitStep: 'pre_save_draft',
       saveStep: saved.saveStep,
       validationStep: saved.validationStep,
@@ -60,8 +67,24 @@ export async function submitCurrentSettlement(deps: SubmitFlowDeps): Promise<Sub
       settlementId: deps.getSettlementId(),
       error,
     })
+    if (!saved.debugTimings) {
+      logSubmitFlowAction({
+        action: 'save_then_submit',
+        submitStep: 'pre_save_draft',
+        saveStep: saved.saveStep,
+        validationStep: saved.validationStep,
+        table: saved.table,
+        settlementId: deps.getSettlementId(),
+        error,
+      })
+    }
     return { ok: false, error }
   }
+
+  logSaveDebugTimings('save_then_submit', saved.debugTimings, {
+    submitStep: 'pre_save_draft',
+    settlementId: deps.getSettlementId(),
+  })
 
   const newId = deps.getSettlementId()
   if (!newId) {

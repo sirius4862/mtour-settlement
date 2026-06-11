@@ -22,7 +22,13 @@ import {
   logGetSettlementFullTimings,
   type GetSettlementFullCallPurpose,
   type GetSettlementFullQueryTiming,
+  type GetSettlementFullTimingLog,
 } from '@/lib/settlement/get-settlement-full-diagnostics'
+import {
+  attachSaveDebugTimings,
+  buildSaveDebugTimings,
+  isSaveTimingDebugEnabled,
+} from '@/lib/settlement/save-timing-debug'
 import {
   mergeGuideHeaderForSave,
   pickAdminHeaderFields,
@@ -483,6 +489,34 @@ export async function getSettlementFullForGuide(id: string): Promise<SettlementF
 type GetSettlementFullOptions = {
   audience?: 'guide' | 'admin'
   callPurpose?: GetSettlementFullCallPurpose
+  onTimingCaptured?: (log: GetSettlementFullTimingLog) => void
+}
+
+type DraftSaveActionResponse = {
+  ok: boolean
+  id?: string
+  sync?: SettlementSyncPayload
+  error?: string
+  _debugTimings?: ReturnType<typeof buildSaveDebugTimings>
+}
+
+function finalizeDraftSaveResult(
+  result: Omit<DraftSaveActionResponse, '_debugTimings'>,
+  debugCtx?: {
+    saveTimings: SettlementSaveTiming[]
+    lineItemRequests?: number
+    preLoad?: GetSettlementFullTimingLog
+    postSaveReload?: GetSettlementFullTimingLog
+  },
+): DraftSaveActionResponse {
+  if (!debugCtx || !isSaveTimingDebugEnabled()) return result
+  const debug = buildSaveDebugTimings({
+    steps: debugCtx.saveTimings,
+    lineItemRequests: debugCtx.lineItemRequests,
+    preLoad: debugCtx.preLoad,
+    postSaveReload: debugCtx.postSaveReload,
+  })
+  return attachSaveDebugTimings(result, debug)
 }
 
 type SettlementLineItemRows = Pick<
@@ -732,16 +766,16 @@ export async function getSettlementFull(
     }
   }
 
-  logGetSettlementFullTimings(
-    buildGetSettlementFullTimingLog({
-      settlementId: id,
-      callPurpose,
-      settlementQueryMs,
-      parallelBatchMs,
-      parallelQueries: timer.queries,
-      extraQueryMs: extraQueryMs > 0 ? extraQueryMs : undefined,
-    }),
-  )
+  const timingLog = buildGetSettlementFullTimingLog({
+    settlementId: id,
+    callPurpose,
+    settlementQueryMs,
+    parallelBatchMs,
+    parallelQueries: timer.queries,
+    extraQueryMs: extraQueryMs > 0 ? extraQueryMs : undefined,
+  })
+  logGetSettlementFullTimings(timingLog)
+  options?.onTimingCaptured?.(timingLog)
 
   return assembleSettlementFull(s, {
     hotels,
@@ -1470,12 +1504,7 @@ async function persistCompanyExpenseItems(
  */
 export async function saveSettlementDraft(
   payload: SettlementDraftPayload,
-): Promise<{
-  ok: boolean
-  id?: string
-  sync?: SettlementSyncPayload
-  error?: string
-}> {
+): Promise<DraftSaveActionResponse> {
   const monetary = validateSettlementDraftPayload(payload)
   if (!monetary.ok) {
     logServerError(
@@ -1494,6 +1523,9 @@ export async function saveSettlementDraft(
   const useGuideRead = profile.role === 'guide'
   const saveTimings: SettlementSaveTiming[] = []
   let headerResult: Awaited<ReturnType<typeof upsertSettlement>> = { ok: false }
+  let preLoadTiming: GetSettlementFullTimingLog | undefined
+  let postSaveReloadTiming: GetSettlementFullTimingLog | undefined
+  const captureDebug = isSaveTimingDebugEnabled()
 
   if (payload.settlementId) {
     const supabase = await createClient()
@@ -1540,18 +1572,18 @@ export async function saveSettlementDraft(
       ms: coreLoad.settlementQueryMs + preLoadParallelMs,
     })
 
-    logGetSettlementFullTimings(
-      buildGetSettlementFullTimingLog({
-        settlementId: payload.settlementId,
-        callPurpose: 'pre_load',
-        settlementQueryMs: coreLoad.settlementQueryMs,
-        parallelBatchMs: preLoadParallelMs,
-        parallelQueries: [
-          ...lineRows.queryTimings,
-          { query: 'upsert_settlement_header', ms: headerMs, startedOffsetMs: 0 },
-        ],
-      }),
-    )
+    const preLoadLog = buildGetSettlementFullTimingLog({
+      settlementId: payload.settlementId,
+      callPurpose: 'pre_load',
+      settlementQueryMs: coreLoad.settlementQueryMs,
+      parallelBatchMs: preLoadParallelMs,
+      parallelQueries: [
+        ...lineRows.queryTimings,
+        { query: 'upsert_settlement_header', ms: headerMs, startedOffsetMs: 0 },
+      ],
+    })
+    logGetSettlementFullTimings(preLoadLog)
+    if (captureDebug) preLoadTiming = preLoadLog
 
     existingForItemPersist = assembleSettlementFull(coreLoad.settlement, lineRows)
     payloadToSave = sanitizeGuideDraftPayload(payload, existingForItemPersist)
@@ -1614,7 +1646,12 @@ export async function saveSettlementDraft(
         tourId: payloadToSave.tourId,
       }),
     )
-    return { ok: false, id: headerResult.id, error: headerResult.error ?? '헤더 저장 실패' }
+    return finalizeDraftSaveResult(
+      { ok: false, id: headerResult.id, error: headerResult.error ?? '헤더 저장 실패' },
+      captureDebug
+        ? { saveTimings, preLoad: preLoadTiming }
+        : undefined,
+    )
   }
 
   const itemsMonetary = validateSettlementItemsPayload(payloadToSave)
@@ -1626,7 +1663,12 @@ export async function saveSettlementDraft(
         settlementId: headerResult.id,
       }),
     )
-    return { ok: false, id: headerResult.id, error: itemsMonetary.error }
+    return finalizeDraftSaveResult(
+      { ok: false, id: headerResult.id, error: itemsMonetary.error },
+      captureDebug
+        ? { saveTimings, preLoad: preLoadTiming }
+        : undefined,
+    )
   }
 
   const supabase = await createClient()
@@ -1659,13 +1701,27 @@ export async function saveSettlementDraft(
         tourId: payloadToSave.tourId,
       })
     }
-    return { ok: false, id: headerResult.id, error: SAVE_SETTLEMENT_GENERIC_ERROR }
+    return finalizeDraftSaveResult(
+      { ok: false, id: headerResult.id, error: SAVE_SETTLEMENT_GENERIC_ERROR },
+      captureDebug
+        ? {
+            saveTimings,
+            lineItemRequests: itemsResult.totalRequests,
+            preLoad: preLoadTiming,
+          }
+        : undefined,
+    )
   }
 
   const loadStarted = performance.now()
   const full = await getSettlementFull(headerResult.id, {
     audience: 'guide',
     callPurpose: 'post_save_reload',
+    onTimingCaptured: captureDebug
+      ? (log) => {
+          postSaveReloadTiming = log
+        }
+      : undefined,
   })
   saveTimings.push({
     step: 'load_post_save_full',
@@ -1687,29 +1743,46 @@ export async function saveSettlementDraft(
     lineItemRequests: itemsResult.totalRequests,
   })
 
+  const revalidateStarted = performance.now()
   revalidatePath('/guide/settlements')
   revalidatePath(`/guide/settlements/${headerResult.id}`)
   revalidatePath(`/guide/settlements/${headerResult.id}/edit`)
+  saveTimings.push({
+    step: 'revalidate_paths',
+    ms: Math.round(performance.now() - revalidateStarted),
+  })
+
+  const debugCtx = captureDebug
+    ? {
+        saveTimings,
+        lineItemRequests: itemsResult.totalRequests,
+        preLoad: preLoadTiming,
+        postSaveReload: postSaveReloadTiming,
+      }
+    : undefined
 
   if (!full) {
-    return { ok: true, id: headerResult.id }
+    return finalizeDraftSaveResult({ ok: true, id: headerResult.id }, debugCtx)
   }
 
-  return {
-    ok: true,
-    id: headerResult.id,
-    sync: sanitizeSettlementSyncForGuide({
-      status: full.status,
-      receipts: full.receipts,
-      hotels: full.hotels,
-      meals: full.meals,
-      entrances: full.entrances,
-      others: full.others,
-      company_expenses: full.company_expenses,
-      shoppings: full.shoppings,
-      options: full.options,
-    }),
-  }
+  return finalizeDraftSaveResult(
+    {
+      ok: true,
+      id: headerResult.id,
+      sync: sanitizeSettlementSyncForGuide({
+        status: full.status,
+        receipts: full.receipts,
+        hotels: full.hotels,
+        meals: full.meals,
+        entrances: full.entrances,
+        others: full.others,
+        company_expenses: full.company_expenses,
+        shoppings: full.shoppings,
+        options: full.options,
+      }),
+    },
+    debugCtx,
+  )
 }
 
 /** Admin/staff saves admin-owned fields during review; status unchanged. */

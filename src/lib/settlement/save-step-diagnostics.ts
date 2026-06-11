@@ -28,7 +28,11 @@ export function formatLineItemPersistStepLog(
 }
 
 export type SettlementSaveTiming = {
-  step: SettlementSaveStep | 'persist_line_items_table' | 'persist_company_expenses'
+  step:
+    | SettlementSaveStep
+    | 'persist_line_items_table'
+    | 'persist_company_expenses'
+    | 'revalidate_paths'
   ms: number
   table?: string
   requestCount?: number

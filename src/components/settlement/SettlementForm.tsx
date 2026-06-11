@@ -15,9 +15,11 @@ import { applyDraftSaveResult } from '@/lib/settlement/draft-save-flow'
 import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
 import { submitCurrentSettlement } from '@/lib/settlement/submit-flow'
 import {
+  logSaveDebugTimings,
   logSubmitFlowAction,
   type SettlementFormAction,
 } from '@/lib/settlement/submit-flow-diagnostics'
+import type { SaveDebugTimings } from '@/lib/settlement/save-timing-debug'
 import {
   firstErrorSection,
   validateSettlementForm,
@@ -165,9 +167,9 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const handleSave = useCallback(async (options?: {
     managePending?: boolean
     action?: SettlementFormAction
-  }): Promise<boolean> => {
-    if (isPreview) return false
-    if (saveInFlightRef.current) return false
+  }): Promise<{ ok: boolean; debugTimings?: SaveDebugTimings }> => {
+    if (isPreview) return { ok: false }
+    if (saveInFlightRef.current) return { ok: false }
 
     const action: SettlementFormAction = options?.action ?? 'save_only'
     const { ok, errors } = runValidation('draft')
@@ -180,7 +182,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         settlementId: useSettlementFormStore.getState().settlementId,
         error: message,
       })
-      return false
+      return { ok: false }
     }
 
     const state = useSettlementFormStore.getState()
@@ -197,7 +199,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         if (result.ok) {
           markSaved(state.settlementId!)
           if (result.sync) mergeServerSync(result.sync)
-          return true
+          return { ok: true }
         }
         const message = result.error ?? '저장 실패'
         setSaveError(message)
@@ -207,10 +209,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           settlementId: state.settlementId,
           error: message,
         })
-        return false
+        return { ok: false }
       }
 
-      const result = applyDraftSaveResult(await saveSettlementDraft(payload), {
+      const saveResult = await saveSettlementDraft(payload)
+      const result = applyDraftSaveResult(saveResult, {
         currentSettlementId: state.settlementId,
         bindSettlementId,
         markSaved,
@@ -219,12 +222,15 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       })
 
       if (result.ok && result.settlementId) {
+        logSaveDebugTimings(action, saveResult._debugTimings, {
+          settlementId: result.settlementId,
+        })
         if (mode === 'new' && managePending && result.becameExistingSettlement) {
           // Drop session draft before edit route so server hydration cannot merge with stale rows.
           useSettlementFormStore.persist.clearStorage()
           router.replace(`/guide/settlements/${result.settlementId}/edit`)
         }
-        return true
+        return { ok: true, debugTimings: saveResult._debugTimings }
       }
 
       if (
@@ -238,13 +244,20 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       }
 
       const message = useSettlementFormStore.getState().saveError ?? '저장 실패'
-      logSubmitFlowAction({
-        action,
+      logSaveDebugTimings(action, saveResult._debugTimings, {
         saveStep: 'save_settlement_draft',
         settlementId: result.settlementId ?? state.settlementId,
         error: message,
       })
-      return false
+      if (!saveResult._debugTimings) {
+        logSubmitFlowAction({
+          action,
+          saveStep: 'save_settlement_draft',
+          settlementId: result.settlementId ?? state.settlementId,
+          error: message,
+        })
+      }
+      return { ok: false, debugTimings: saveResult._debugTimings }
     } catch {
       const message = '네트워크 오류가 발생했습니다.'
       setSaveError(message)
@@ -254,7 +267,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         settlementId: useSettlementFormStore.getState().settlementId,
         error: message,
       })
-      return false
+      return { ok: false }
     } finally {
       saveInFlightRef.current = false
       if (managePending) setPendingAction(null)
@@ -285,7 +298,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     }
 
     const saved = await handleSave()
-    if (!saved) return
+    if (!saved.ok) return
 
     const id = useSettlementFormStore.getState().settlementId
     if (!id) return
@@ -328,12 +341,15 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       const result = await submitCurrentSettlement({
         getSettlementId: () => useSettlementFormStore.getState().settlementId,
         saveDraft: async () => {
-          const ok = await handleSave({ managePending: false, action: 'save_then_submit' })
-          if (ok) return { ok: true as const }
+          const saveResult = await handleSave({ managePending: false, action: 'save_then_submit' })
+          if (saveResult.ok) {
+            return { ok: true as const, debugTimings: saveResult.debugTimings }
+          }
           return {
             ok: false as const,
             error: useSettlementFormStore.getState().saveError ?? undefined,
             saveStep: 'client_handle_save',
+            debugTimings: saveResult.debugTimings,
           }
         },
         submitWithDraft: (id) =>

@@ -64,7 +64,7 @@ describe('settlement save performance and stability (source-level)', () => {
   it('SettlementForm prevents overlapping save calls', () => {
     const form = readRepoFile('src/components/settlement/SettlementForm.tsx')
     expect(form).toContain('saveInFlightRef')
-    expect(form).toContain('if (saveInFlightRef.current) return false')
+    expect(form).toContain('if (saveInFlightRef.current) return { ok: false }')
     expect(form).toContain('saveInFlightRef.current = true')
     expect(form).toContain('saveInFlightRef.current = false')
     expect(form).toContain('if (saveInFlightRef.current || pendingAction !== null) return')

@@ -1,10 +1,13 @@
 import type { SettlementSyncPayload } from './mappers'
+import type { SaveDebugTimings } from './save-timing-debug'
 
 export type DraftSaveActionResult = {
   ok: boolean
   id?: string
   sync?: SettlementSyncPayload
   error?: string
+  /** Present only when server SAVE_TIMING_DEBUG=1. Never shown in UI. */
+  _debugTimings?: SaveDebugTimings
 }
 
 export type DraftSaveResultHandlers = {

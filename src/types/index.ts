@@ -295,8 +295,12 @@ export {
   assertAdminSendForConfirmation,
   canRecallSettlement,
   assertCanRecallSettlement,
+  canMasterReopenFinalConfirmed,
+  assertCanMasterReopenFinalConfirmed,
+  isGuideFinalConfirmedSettlement,
   RECALL_ELIGIBLE_STATUSES,
   RECALL_TARGET_STATUS,
+  FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
 } from '@/lib/settlement/status-guards'
 
 export {

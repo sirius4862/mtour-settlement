@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import { adminSettlementEditPath } from '@/lib/admin/settlement-routes'
 import {
   GUIDE_LINE_ITEM_TABLES,
   persistGuideLineItemTable,
@@ -99,10 +100,12 @@ import {
   assertAdminReviewAction,
   assertAdminSaveSettlement,
   assertAdminSendForConfirmation,
+  assertCanMasterReopenFinalConfirmed,
   assertCanRecallSettlement,
   assertGuideConfirmAction,
   assertSingleOptimisticUpdate,
   canAdminSendForConfirmation,
+  FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
   isPgUniqueViolation,
   RECALL_TARGET_STATUS,
   SETTLEMENT_DUPLICATE_TOUR_ERROR,
@@ -2234,6 +2237,87 @@ export async function recallSettlement(
 
   revalidateSettlementPaths(id)
   return { ok: true }
+}
+
+/**
+ * Master-admin reopen — pull a guide-final-confirmed settlement back to admin
+ * review (submitted) for correction. Distinct from assignment recall (회수) and
+ * from paid reopen (지급 재오픈 → edit_requested).
+ *
+ * Clears guide confirmation flags and the active confirmation pointer only;
+ * preserves settlement rows, line items, receipts, confirmation history, and audit.
+ */
+export async function reopenFinalConfirmedSettlementForAdminCorrection(
+  id: string,
+  reason?: string,
+): Promise<{ ok: boolean; error?: string; redirectTo?: string }> {
+  const profile = await getProfile()
+  if (!profile || profile.role !== 'master_admin') {
+    return { ok: false, error: '정산 재오픈은 마스터 관리자만 할 수 있습니다.' }
+  }
+
+  const supabase = await createClient()
+
+  const regionAccess = await requireAdminSettlementRegionAccess(supabase, id)
+  if (!regionAccess.ok) return { ok: false, error: regionAccess.error }
+
+  const { data: current } = await supabase
+    .from('settlements')
+    .select('id, status, guide_confirmed_at, guide_submit_snapshot_id, active_confirmation_id')
+    .eq('id', id)
+    .single()
+
+  if (!current) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+
+  const fromStatus = current.status as SettlementStatus
+  const guard = assertCanMasterReopenFinalConfirmed(
+    {
+      status: fromStatus,
+      guide_confirmed_at: current.guide_confirmed_at as string | null,
+      guide_submit_snapshot_id: current.guide_submit_snapshot_id as string | null,
+    },
+    profile.role,
+  )
+  if (!guard.ok) return { ok: false, error: guard.error }
+
+  const trimmedReason = reason?.trim() || null
+
+  const { data: updatedRows, error } = await supabase
+    .from('settlements')
+    .update({
+      status: FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
+      guide_confirmed_at: null,
+      guide_confirmed_by: null,
+      active_confirmation_id: null,
+      reviewed_by: profile.id,
+    })
+    .eq('id', id)
+    .eq('status', fromStatus)
+    .select('id')
+
+  if (error) {
+    logServerError('[reopenFinalConfirmedSettlementForAdminCorrection] update failed', error, {
+      settlementId: id,
+    })
+    return { ok: false, error: '정산서를 재오픈할 수 없습니다. 잠시 후 다시 시도해주세요.' }
+  }
+  const rowCheck = assertSingleOptimisticUpdate(updatedRows)
+  if (!rowCheck.ok) return { ok: false, error: rowCheck.error }
+
+  await insertAuditEvent(supabase, {
+    settlementId: id,
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: 'status_change',
+    fromStatus,
+    toStatus: FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
+    note: trimmedReason
+      ? `master_reopen_final_confirmed: ${trimmedReason}`
+      : 'master_reopen_final_confirmed',
+  })
+
+  revalidateSettlementPaths(id)
+  return { ok: true, redirectTo: adminSettlementEditPath(id) }
 }
 
 // ── 확인 워크플로 (Phase 2) ───────────────────────────────────

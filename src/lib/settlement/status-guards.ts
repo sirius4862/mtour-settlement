@@ -7,6 +7,7 @@ import {
   canOperationalAdminReview,
   canSaveAdminSettlementEdits,
   isAdminTier,
+  isMasterAdmin,
   type SettlementPayGuardInput,
 } from '@/lib/auth/permissions'
 import type { Settlement, SettlementStatus, UserRole } from '@/types'
@@ -188,9 +189,56 @@ export const RECALL_ELIGIBLE_STATUSES: SettlementStatus[] = [
  */
 export const RECALL_TARGET_STATUS: SettlementStatus = 'submitted'
 
+/** Master-admin reopen from guide-final-confirmed → admin review (not assignment recall). */
+export const FINAL_CONFIRMED_REOPEN_TARGET_STATUS: SettlementStatus = 'submitted'
+
 export interface SettlementRecallGuardInput {
   status: SettlementStatus
   guide_confirmed_at: string | null
+}
+
+export interface SettlementFinalConfirmedInput {
+  status: SettlementStatus
+  guide_confirmed_at: string | null
+  guide_submit_snapshot_id?: string | null
+}
+
+/** Guide completed final confirmation (지급가능) — pending_guide_confirmation+confirmed or legacy approved. */
+export function isGuideFinalConfirmedSettlement(s: SettlementFinalConfirmedInput): boolean {
+  if (s.status === 'pending_guide_confirmation' && s.guide_confirmed_at != null) {
+    return true
+  }
+  if (s.status === 'approved') {
+    if (s.guide_submit_snapshot_id && !s.guide_confirmed_at) return false
+    return true
+  }
+  return false
+}
+
+/** Master admin may reopen a final-confirmed settlement for admin correction (not paid). */
+export function canMasterReopenFinalConfirmed(
+  s: SettlementFinalConfirmedInput,
+  role: UserRole,
+): boolean {
+  if (!isMasterAdmin(role)) return false
+  if (s.status === 'paid') return false
+  return isGuideFinalConfirmedSettlement(s)
+}
+
+export function assertCanMasterReopenFinalConfirmed(
+  s: SettlementFinalConfirmedInput,
+  role: UserRole,
+): { ok: true } | { ok: false; error: string } {
+  if (!isMasterAdmin(role)) {
+    return { ok: false, error: '정산 재오픈은 마스터 관리자만 할 수 있습니다.' }
+  }
+  if (s.status === 'paid') {
+    return { ok: false, error: '지급 완료된 정산서는 정산 재오픈할 수 없습니다. 지급 재오픈을 사용하세요.' }
+  }
+  if (!isGuideFinalConfirmedSettlement(s)) {
+    return { ok: false, error: '최종확인 완료된 정산서만 정산 재오픈할 수 있습니다.' }
+  }
+  return { ok: true }
 }
 
 /**
@@ -204,6 +252,7 @@ export function canRecallSettlement(
   role: UserRole,
 ): boolean {
   if (!canOperationalAdminReview(role)) return false
+  if (isGuideFinalConfirmedSettlement(s)) return false
   if (!RECALL_ELIGIBLE_STATUSES.includes(s.status)) return false
   if (s.status === 'pending_guide_confirmation' && s.guide_confirmed_at != null) {
     return false

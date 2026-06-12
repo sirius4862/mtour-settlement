@@ -18,7 +18,16 @@ import { calcSettlement } from '@/lib/settlement/calc'
 import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migrate'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
-import { STATUS_META, canAdminEditSettlement, canAdminOrMasterAdminEditSettlement, canAdminRequestEdit, canAdminSendForConfirmation, canMarkSettlementPaidForRole, canRecallSettlement } from '@/types'
+import {
+  STATUS_META,
+  canAdminEditSettlement,
+  canAdminOrMasterAdminEditSettlement,
+  canAdminRequestEdit,
+  canAdminSendForConfirmation,
+  canMarkSettlementPaidForRole,
+  canMasterReopenFinalConfirmed,
+  canRecallSettlement,
+} from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
 export const dynamic = 'force-dynamic'
@@ -81,6 +90,14 @@ export default async function AdminSettlementDetailPage({
   const canPay     = canMarkSettlementPaidForRole(session.role, s)
   const canRecall  = canRecallSettlement(
     { status: s.status, guide_confirmed_at: s.guide_confirmed_at },
+    session.role,
+  )
+  const canReopenFinalConfirmed = canMasterReopenFinalConfirmed(
+    {
+      status: s.status,
+      guide_confirmed_at: s.guide_confirmed_at,
+      guide_submit_snapshot_id: s.guide_submit_snapshot_id,
+    },
     session.role,
   )
 
@@ -223,12 +240,13 @@ export default async function AdminSettlementDetailPage({
       )}
 
       {/* 관리자 액션 패널 */}
-      {(canSendForConfirmation || canReqEdit || canPay || canReopen || canRecall) && (
+      {(canSendForConfirmation || canReqEdit || canPay || canReopen || canReopenFinalConfirmed || canRecall) && (
         <ReviewPanel
           settlementId={s.id}
           canSendForConfirmation={canSendForConfirmation}
           canRequestEdit={canReqEdit}
           canReopen={canReopen}
+          canReopenFinalConfirmed={canReopenFinalConfirmed}
           canPay={canPay}
           canRecall={canRecall}
           currentAdminNote={s.admin_note ?? ''}

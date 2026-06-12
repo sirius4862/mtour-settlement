@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { SettlementAuditMatrix } from '@/components/settlement/sections/SettlementAuditMatrix'
 import { SettlementBusinessSummary } from '@/components/settlement/sections/SettlementBusinessSummary'
+import { shouldShowSettlementAuditMatrix } from '@/lib/settlement/display-labels'
 import { Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
 import { canAdminAccessRegion } from '@/lib/region/permissions'
@@ -173,11 +174,13 @@ export default async function AdminSettlementDetailPage({
         </div>
       </div>
 
-      {/* 정산 요약 — business view + collapsed audit matrix */}
+      {/* 정산 요약 */}
       <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-4">
         <p className="text-xs font-semibold text-gray-500">정산 요약</p>
         <SettlementBusinessSummary calc={calc} audience="admin" />
-        <SettlementAuditMatrix calc={calc} settlementRatio={settlementRatio} />
+        {shouldShowSettlementAuditMatrix() && (
+          <SettlementAuditMatrix calc={calc} settlementRatio={settlementRatio} />
+        )}
       </div>
 
       {/* 항목 테이블들 */}

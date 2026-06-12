@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { annotate } from './calc'
 import {
   displayFieldLabel,
@@ -8,6 +8,7 @@ import {
   companyDepositIsNegative,
   guideDisplaySettlementUsd,
   guideSettlementIsNegative,
+  shouldShowSettlementAuditMatrix,
   shouldShowSummaryField,
 } from './display-labels'
 
@@ -61,6 +62,25 @@ describe('guide payout floor', () => {
     expect(Q75_NEGATIVE_WARNING).toContain('회사입금')
     expect(companyDepositIsNegative(-1)).toBe(true)
     expect(companyDepositIsNegative(0)).toBe(false)
+  })
+})
+
+describe('shouldShowSettlementAuditMatrix', () => {
+  const original = process.env.NEXT_PUBLIC_SETTLEMENT_AUDIT_MATRIX
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.NEXT_PUBLIC_SETTLEMENT_AUDIT_MATRIX
+    } else {
+      process.env.NEXT_PUBLIC_SETTLEMENT_AUDIT_MATRIX = original
+    }
+  })
+
+  it('hides 감사용 상세 계산 unless debug env is enabled', () => {
+    delete process.env.NEXT_PUBLIC_SETTLEMENT_AUDIT_MATRIX
+    expect(shouldShowSettlementAuditMatrix()).toBe(false)
+    process.env.NEXT_PUBLIC_SETTLEMENT_AUDIT_MATRIX = 'true'
+    expect(shouldShowSettlementAuditMatrix()).toBe(true)
   })
 })
 

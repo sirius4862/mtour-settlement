@@ -4,7 +4,7 @@ import type { SettlementCalcResult } from '@/lib/settlement/types-calc'
 import {
   Q75_NEGATIVE_WARNING,
   companyDepositIsNegative,
-  shouldShowGuideSummaryMatrix,
+  shouldShowSettlementAuditMatrix,
   type SummaryAudience,
 } from '@/lib/settlement/display-labels'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
@@ -22,7 +22,7 @@ export function FinalSummarySection({
   audience?: SummaryAudience
 }) {
   const q75IsNegative = companyDepositIsNegative(calc.sections.cash.company_deposit_usd.value)
-  const showAuditMatrix = shouldShowGuideSummaryMatrix(audience)
+  const showAuditMatrix = shouldShowSettlementAuditMatrix()
 
   return (
     <div className="space-y-4">

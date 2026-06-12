@@ -45,8 +45,17 @@ export function guideDisplaySettlementUsd(guideSettlementUsd: number): number {
   return Math.max(guideSettlementUsd, 0)
 }
 
-export function shouldShowGuideSummaryMatrix(audience: SummaryAudience): boolean {
-  return audience === 'admin'
+/**
+ * Internal audit matrix (감사용 상세 계산) — hidden from normal production UI.
+ * Set NEXT_PUBLIC_SETTLEMENT_AUDIT_MATRIX=true locally to inspect the Excel breakdown.
+ */
+export function shouldShowSettlementAuditMatrix(): boolean {
+  return process.env.NEXT_PUBLIC_SETTLEMENT_AUDIT_MATRIX === 'true'
+}
+
+/** @deprecated Use shouldShowSettlementAuditMatrix — audit matrix is no longer audience-gated. */
+export function shouldShowGuideSummaryMatrix(_audience: SummaryAudience): boolean {
+  return shouldShowSettlementAuditMatrix()
 }
 
 export function shouldShowMatrixRow(rowKey: string, audience: SummaryAudience): boolean {

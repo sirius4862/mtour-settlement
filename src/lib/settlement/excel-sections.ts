@@ -42,7 +42,7 @@ export const EXCEL_SECTIONS = {
   },
   summary: {
     rows: 'R77–R87',
-    hint: '정산 요약 — COM 기준 분배·밸런스·최종 금액. 감사용 Excel 매트릭스는 admin 화면에서 펼쳐 확인.',
+    hint: '정산 요약 — COM 기준 분배·밸런스·최종 금액.',
   },
   receipts: {
     rows: '—',

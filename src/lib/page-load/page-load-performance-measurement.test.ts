@@ -9,6 +9,8 @@ import {
   percentile,
   redactSecrets,
   redactUnknown,
+  resolveGroupsInScope,
+  resolveMeasurementCredentials,
   summarizeNumeric,
 } from '../../../scripts/lib/page-load-performance-summary.mjs'
 
@@ -46,6 +48,108 @@ describe('page-load route list generation', () => {
     const routes = buildPageLoadRouteList({ routeFilter: 'admin' })
     expect(routes.map((r) => r.id)).not.toContain('admin-settlement-detail')
     expect(PAGE_LOAD_ROUTE_DEFS.some((d) => d.dynamic)).toBe(true)
+  })
+})
+
+describe('page-load credential requirements by route filter', () => {
+  const guideEnv = {
+    PERF_GUIDE_EMAIL: 'guide@test.com',
+    PERF_GUIDE_PASSWORD: 'guide-pass',
+  }
+  const adminEnv = {
+    PERF_ADMIN_EMAIL: 'admin@test.com',
+    PERF_ADMIN_PASSWORD: 'admin-pass',
+  }
+  const vehicleEnv = {
+    PERF_VEHICLE_EMAIL: 'vehicle@test.com',
+    PERF_VEHICLE_PASSWORD: 'vehicle-pass',
+  }
+
+  it('guide-only route filter requires only guide credentials', () => {
+    const plan = resolveMeasurementCredentials({
+      routeFilter: 'guide',
+      env: guideEnv,
+    })
+    expect(plan.rolesToLogin).toEqual(['guide'])
+    expect(plan.skippedRoles).toEqual([])
+    expect(plan.warnings).toEqual([])
+    expect(resolveGroupsInScope('guide')).toEqual(new Set(['guide']))
+  })
+
+  it('admin-only route filter requires only admin credentials', () => {
+    const plan = resolveMeasurementCredentials({
+      routeFilter: 'admin',
+      env: adminEnv,
+    })
+    expect(plan.rolesToLogin).toEqual(['admin'])
+    expect(plan.skippedRoles).toEqual([])
+  })
+
+  it('vehicle-only route filter requires only vehicle credentials', () => {
+    const plan = resolveMeasurementCredentials({
+      routeFilter: 'vehicle',
+      env: vehicleEnv,
+    })
+    expect(plan.rolesToLogin).toEqual(['vehicle'])
+    expect(plan.skippedRoles).toEqual([])
+  })
+
+  it('guide,admin route filter requires guide and admin credentials only', () => {
+    const plan = resolveMeasurementCredentials({
+      routeFilter: 'guide,admin',
+      env: { ...guideEnv, ...adminEnv },
+    })
+    expect(plan.rolesToLogin).toEqual(['guide', 'admin'])
+    expect(plan.rolesToLogin).not.toContain('vehicle')
+  })
+
+  it('guide-only filter does not require admin or vehicle env', () => {
+    expect(() =>
+      resolveMeasurementCredentials({
+        routeFilter: 'guide',
+        env: guideEnv,
+      }),
+    ).not.toThrow()
+  })
+
+  it('explicit filter throws when required role credentials are missing', () => {
+    expect(() =>
+      resolveMeasurementCredentials({
+        routeFilter: 'guide',
+        env: {},
+      }),
+    ).toThrow('Missing required env: PERF_GUIDE_EMAIL')
+
+    expect(() =>
+      resolveMeasurementCredentials({
+        routeFilter: 'admin',
+        env: guideEnv,
+      }),
+    ).toThrow('Missing required env: PERF_ADMIN_EMAIL')
+  })
+
+  it('no route filter skips roles with missing credentials and warns', () => {
+    const plan = resolveMeasurementCredentials({
+      routeFilter: null,
+      env: guideEnv,
+    })
+    expect(plan.explicitFilter).toBe(false)
+    expect(plan.rolesToLogin).toEqual(['guide'])
+    expect(plan.skippedRoles.map((s) => s.role)).toEqual(['admin', 'vehicle'])
+    expect(plan.warnings).toEqual([
+      'Skipping admin routes: credentials not configured',
+      'Skipping vehicle routes: credentials not configured',
+    ])
+  })
+
+  it('no route filter measures all roles when all credentials are present', () => {
+    const plan = resolveMeasurementCredentials({
+      routeFilter: null,
+      env: { ...guideEnv, ...adminEnv, ...vehicleEnv },
+    })
+    expect(plan.rolesToLogin).toEqual(['guide', 'admin', 'vehicle'])
+    expect(plan.skippedRoles).toEqual([])
+    expect(plan.warnings).toEqual([])
   })
 })
 

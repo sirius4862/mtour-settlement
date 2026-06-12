@@ -9,15 +9,12 @@ import { dirname, join } from 'node:path'
 import {
   buildPageLoadReport,
   buildPageLoadRouteList,
+  PAGE_LOAD_ROLE_ENV,
   PAGE_LOAD_ROUTE_DEFS,
   redactSecrets,
+  resolveGroupsInScope,
+  resolveMeasurementCredentials,
 } from './lib/page-load-performance-summary.mjs'
-
-const ROLE_ENV = {
-  guide: { email: 'PERF_GUIDE_EMAIL', password: 'PERF_GUIDE_PASSWORD' },
-  admin: { email: 'PERF_ADMIN_EMAIL', password: 'PERF_ADMIN_PASSWORD' },
-  vehicle: { email: 'PERF_VEHICLE_EMAIL', password: 'PERF_VEHICLE_PASSWORD' },
-}
 
 function loadEnvLocal() {
   const p = join(process.cwd(), '.env.local')
@@ -55,7 +52,7 @@ function normalizePath(path) {
 }
 
 async function loginRole(page, baseUrl, role) {
-  const { email: emailKey, password: passwordKey } = ROLE_ENV[role]
+  const { email: emailKey, password: passwordKey } = PAGE_LOAD_ROLE_ENV[role]
   const email = req(emailKey)
   const password = req(passwordKey)
 
@@ -168,6 +165,17 @@ async function main() {
   const outputPath = opt('PERF_OUTPUT', './artifacts/page-load-performance.json')
   const routeFilter = opt('PERF_ROUTE_FILTER', '') || null
 
+  const credentialPlan = resolveMeasurementCredentials({
+    routeFilter,
+    env: process.env,
+  })
+  const groupsInScope = resolveGroupsInScope(routeFilter)
+  const rolesToLogin = new Set(credentialPlan.rolesToLogin)
+
+  for (const warning of credentialPlan.warnings) {
+    console.warn(`[measure-page-load] ${warning}`)
+  }
+
   const guideEditPath = opt(
     'PERF_GUIDE_SETTLEMENT_EDIT_URL',
     '/guide/settlements/045abef1-a8d7-432a-b691-d7a24a5cefdb/edit',
@@ -179,9 +187,10 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true })
   const runs = []
+  let rolesMeasured = []
 
   try {
-    if (!adminDetailPath) {
+    if (groupsInScope.has('admin') && rolesToLogin.has('admin') && !adminDetailPath) {
       const ctx = await browser.newContext()
       const page = await ctx.newPage()
       await loginRole(page, baseUrl, 'admin')
@@ -197,7 +206,7 @@ async function main() {
       }
     }
 
-    if (!vehicleReportPath) {
+    if (groupsInScope.has('vehicle') && rolesToLogin.has('vehicle') && !vehicleReportPath) {
       const ctx = await browser.newContext()
       const page = await ctx.newPage()
       await loginRole(page, baseUrl, 'vehicle')
@@ -217,16 +226,16 @@ async function main() {
       guideEditPath: normalizePath(guideEditPath),
       adminDetailPath: adminDetailPath ? normalizePath(adminDetailPath) : undefined,
       vehicleReportPath: vehicleReportPath ? normalizePath(vehicleReportPath) : undefined,
-    })
+    }).filter((route) => rolesToLogin.has(route.role))
 
     if (!routes.length) {
-      throw new Error('No routes to measure — check PERF_ROUTE_FILTER and dynamic path env vars')
+      throw new Error('No routes to measure — check PERF_ROUTE_FILTER, credentials, and dynamic path env vars')
     }
 
-    const rolesNeeded = [...new Set(routes.map((r) => r.role))]
+    rolesMeasured = [...new Set(routes.map((r) => r.role))]
     const contexts = {}
 
-    for (const role of rolesNeeded) {
+    for (const role of rolesMeasured) {
       const ctx = await browser.newContext()
       const page = await ctx.newPage()
       await loginRole(page, baseUrl, role)
@@ -265,6 +274,9 @@ async function main() {
     measuredAt: new Date().toISOString(),
     routeFilter,
     skippedRoutes,
+    skippedRoles: credentialPlan.skippedRoles,
+    credentialWarnings: credentialPlan.warnings,
+    rolesMeasured,
     routeCatalog: PAGE_LOAD_ROUTE_DEFS.map((d) => ({ id: d.id, role: d.role, label: d.label })),
   })
 

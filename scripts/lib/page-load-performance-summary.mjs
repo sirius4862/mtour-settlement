@@ -11,6 +11,14 @@ export const PAGE_LOAD_WARNING_THRESHOLDS = {
 
 /** @typedef {'guide' | 'admin' | 'vehicle'} PageLoadRole */
 
+export const ALL_PAGE_LOAD_GROUPS = /** @type {const} */ (['guide', 'admin', 'vehicle'])
+
+export const PAGE_LOAD_ROLE_ENV = {
+  guide: { email: 'PERF_GUIDE_EMAIL', password: 'PERF_GUIDE_PASSWORD' },
+  admin: { email: 'PERF_ADMIN_EMAIL', password: 'PERF_ADMIN_PASSWORD' },
+  vehicle: { email: 'PERF_VEHICLE_EMAIL', password: 'PERF_VEHICLE_PASSWORD' },
+}
+
 /**
  * @typedef {{
  *   id: string
@@ -168,6 +176,86 @@ export function parseRouteFilter(filterCsv) {
       .filter(Boolean),
   )
   return allowed.size ? allowed : null
+}
+
+/**
+ * Groups included in this measurement run.
+ * Explicit PERF_ROUTE_FILTER limits scope; otherwise all roles are candidates.
+ * @param {string | null | undefined} routeFilter
+ */
+export function resolveGroupsInScope(routeFilter) {
+  const filter = parseRouteFilter(routeFilter)
+  return filter ?? new Set(ALL_PAGE_LOAD_GROUPS)
+}
+
+/**
+ * @param {Record<string, string | undefined>} env
+ * @param {PageLoadRole} role
+ */
+export function hasRoleCredentials(env, role) {
+  const keys = PAGE_LOAD_ROLE_ENV[role]
+  return Boolean(env[keys.email]?.trim() && env[keys.password]?.trim())
+}
+
+/**
+ * @param {Record<string, string | undefined>} env
+ * @param {PageLoadRole} role
+ */
+export function missingRoleCredentialEnvNames(env, role) {
+  const keys = PAGE_LOAD_ROLE_ENV[role]
+  const missing = []
+  if (!env[keys.email]?.trim()) missing.push(keys.email)
+  if (!env[keys.password]?.trim()) missing.push(keys.password)
+  return missing
+}
+
+/**
+ * Decide which roles to log in as based on route filter and available credentials.
+ *
+ * - Explicit PERF_ROUTE_FILTER: credentials are required for every filtered role.
+ * - No filter: measure every role with complete credentials; skip others with warnings.
+ *
+ * @param {{
+ *   routeFilter?: string | null
+ *   env?: Record<string, string | undefined>
+ * }} options
+ */
+export function resolveMeasurementCredentials(options = {}) {
+  const env = options.env ?? {}
+  const routeFilter = options.routeFilter ?? null
+  const groupsInScope = resolveGroupsInScope(routeFilter)
+  const explicitFilter = parseRouteFilter(routeFilter) !== null
+  const warnings = []
+  const skippedRoles = []
+  const rolesToLogin = []
+
+  for (const role of ALL_PAGE_LOAD_GROUPS) {
+    if (!groupsInScope.has(role)) continue
+
+    if (hasRoleCredentials(env, role)) {
+      rolesToLogin.push(role)
+      continue
+    }
+
+    if (explicitFilter) {
+      const missing = missingRoleCredentialEnvNames(env, role)
+      throw new Error(`Missing required env: ${missing[0]}`)
+    }
+
+    skippedRoles.push({
+      role,
+      reason: `missing credentials (${PAGE_LOAD_ROLE_ENV[role].email}, ${PAGE_LOAD_ROLE_ENV[role].password})`,
+    })
+    warnings.push(`Skipping ${role} routes: credentials not configured`)
+  }
+
+  return {
+    groupsInScope: [...groupsInScope],
+    explicitFilter,
+    rolesToLogin,
+    skippedRoles,
+    warnings,
+  }
 }
 
 /**

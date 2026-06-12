@@ -1,15 +1,242 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildMealDbRows, buildOtherDbRows } from './mappers'
+import { buildMealDbRows, buildOptionDbRows, buildOtherDbRows } from './mappers'
 
 import {
   explicitDeleteIdsFromDraft,
   filterRowsNeedingUpdate,
+  normalizeComparableLineItemValue,
+  optionPatchDiffersFromExisting,
   persistGuideLineItemTable,
   rowPatchDiffersFromExisting,
 } from './guide-line-item-persist'
 
 
+
+describe('option_items unchanged row skipping', () => {
+  const existingOption = {
+    id: 'opt-1',
+    settlement_id: 's1',
+    option_date: '2026-04-02',
+    option_name: '보트투어',
+    unit_price_usd: 25,
+    pax: 8,
+    total_sale_usd: 200,
+    expense_usd: 10,
+    expense_vnd: 0,
+    com_usd: 190,
+    is_extra_vehicle: false,
+    sort_order: 0,
+  }
+
+  it('treats derived total_sale_usd/com_usd drift as unchanged when source fields match', () => {
+    const patch = buildOptionDbRows(
+      [
+        {
+          clientId: 'c1',
+          id: 'opt-1',
+          option_date: '2026-04-02',
+          option_name: '보트투어',
+          unit_price_usd: 25,
+          pax: 8,
+          expense_usd: 10,
+          expense_vnd: 0,
+          is_extra_vehicle: false,
+        },
+      ],
+      's1',
+      26000,
+    )[0]!
+
+    expect(optionPatchDiffersFromExisting(patch, existingOption)).toBe(false)
+    expect(rowPatchDiffersFromExisting(patch, existingOption, 'option_items')).toBe(false)
+  })
+
+  it('detects a changed option_name', () => {
+    const patch = { ...existingOption, option_name: '변경됨' }
+    expect(optionPatchDiffersFromExisting(patch, existingOption)).toBe(true)
+  })
+
+  it('normalizes null option_date, numeric strings, and is_extra_vehicle', () => {
+    const patch = buildOptionDbRows(
+      [
+        {
+          clientId: 'c1',
+          id: 'opt-1',
+          option_date: null,
+          option_name: '보트투어',
+          unit_price_usd: '25' as unknown as number,
+          pax: 8,
+          expense_usd: 10,
+          expense_vnd: 0,
+        },
+      ],
+      's1',
+      26000,
+    )[0]!
+    const existing = { ...existingOption, option_date: null, is_extra_vehicle: null }
+
+    expect(normalizeComparableLineItemValue('is_extra_vehicle', undefined)).toBe(false)
+    expect(optionPatchDiffersFromExisting(patch, existing)).toBe(false)
+  })
+
+  it('skips all unchanged option rows in filterRowsNeedingUpdate', () => {
+    const existing = new Map([['opt-1', existingOption]])
+    const toUpdate = buildOptionDbRows(
+      [
+        {
+          clientId: 'c1',
+          id: 'opt-1',
+          option_date: '2026-04-02',
+          option_name: '보트투어',
+          unit_price_usd: 25,
+          pax: 8,
+          expense_usd: 10,
+          expense_vnd: 0,
+          is_extra_vehicle: false,
+        },
+      ],
+      's1',
+      26000,
+    )
+
+    const { rows, skipped } = filterRowsNeedingUpdate(toUpdate, existing, 'option_items')
+    expect(skipped).toBe(1)
+    expect(rows).toHaveLength(0)
+  })
+
+  it('persists exactly one update when a single option field changes', async () => {
+    const update = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    })
+    const supabase = {
+      from: vi.fn(() => ({
+        delete: vi.fn().mockReturnValue({
+          in: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        update,
+      })),
+    }
+
+    const existingById = new Map([['opt-1', existingOption]])
+    const rows = buildOptionDbRows(
+      [
+        {
+          clientId: 'c1',
+          id: 'opt-1',
+          option_date: '2026-04-02',
+          option_name: '보트투어(수정)',
+          unit_price_usd: 25,
+          pax: 8,
+          expense_usd: 10,
+          expense_vnd: 0,
+          is_extra_vehicle: false,
+        },
+      ],
+      's1',
+      26000,
+    )
+
+    const result = await persistGuideLineItemTable(
+      supabase as never,
+      'option_items',
+      's1',
+      rows,
+      [],
+      existingById,
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.requestCount).toBe(1)
+      expect(result.updatesSkipped).toBe(0)
+    }
+    expect(update).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips unchanged extra-vehicle admin rows', async () => {
+    const update = vi.fn()
+    const supabase = {
+      from: vi.fn(() => ({
+        delete: vi.fn().mockReturnValue({
+          in: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        update,
+      })),
+    }
+
+    const extraExisting = {
+      id: 'opt-extra',
+      settlement_id: 's1',
+      option_date: null,
+      option_name: '차량비(추가)',
+      unit_price_usd: 0,
+      pax: 0,
+      total_sale_usd: 0,
+      expense_usd: 35,
+      expense_vnd: 780000,
+      com_usd: 0,
+      is_extra_vehicle: true,
+      sort_order: 1,
+    }
+    const existingById = new Map<string, Record<string, unknown>>([
+      ['opt-1', existingOption],
+      ['opt-extra', extraExisting],
+    ])
+    const rows = buildOptionDbRows(
+      [
+        {
+          clientId: 'c1',
+          id: 'opt-1',
+          option_date: '2026-04-02',
+          option_name: '보트투어',
+          unit_price_usd: 25,
+          pax: 8,
+          expense_usd: 10,
+          expense_vnd: 0,
+          is_extra_vehicle: false,
+        },
+        {
+          clientId: 'c2',
+          id: 'opt-extra',
+          option_date: null,
+          option_name: '차량비(추가)',
+          unit_price_usd: 0,
+          pax: 0,
+          expense_usd: 35,
+          expense_vnd: 780000,
+          is_extra_vehicle: true,
+        },
+      ],
+      's1',
+      26000,
+    )
+
+    const result = await persistGuideLineItemTable(
+      supabase as never,
+      'option_items',
+      's1',
+      rows,
+      [],
+      existingById,
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.requestCount).toBe(0)
+      expect(result.updatesSkipped).toBe(2)
+    }
+    expect(update).not.toHaveBeenCalled()
+  })
+})
 
 describe('unchanged row update skipping', () => {
   it('rowPatchDiffersFromExisting returns false when patch matches existing', () => {

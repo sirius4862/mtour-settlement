@@ -7,6 +7,9 @@ import {
 import type { SaveDebugTimings } from './save-timing-debug'
 
 const SAMPLE_DEBUG: SaveDebugTimings = {
+  stepSumMs: 1200,
+  effectiveStepSumMs: 1200,
+  overlappedStepMs: 0,
   totalMs: 1200,
   totalRequests: 12,
   steps: [{ step: 'load_post_save_full', ms: 400 }],

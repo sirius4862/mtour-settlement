@@ -40,6 +40,8 @@ export type SettlementSaveTiming = {
   inserts?: number
   updates?: number
   updatesSkipped?: number
+  /** Excluded from effectiveStepSumMs — work counted inside another step's wall time. */
+  overlappedWith?: 'load_existing_settlement'
 }
 
 /** Dev/server timing log — never surfaced to users. */

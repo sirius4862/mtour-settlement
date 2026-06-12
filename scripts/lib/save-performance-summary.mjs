@@ -28,7 +28,9 @@ const CHILD_COUNT_TABLES = [
 export function isSaveDebugTimings(value) {
   if (!value || typeof value !== 'object') return false
   const o = /** @type {Record<string, unknown>} */ (value)
-  return typeof o.totalMs === 'number' && Array.isArray(o.steps)
+  const hasStepSum =
+    typeof o.stepSumMs === 'number' || typeof o.totalMs === 'number'
+  return hasStepSum && Array.isArray(o.steps)
 }
 
 /**
@@ -205,6 +207,11 @@ export function aggregateStepCounts(debug) {
 export function extractRunMetrics(debug) {
   if (!debug) {
     return {
+      actionWallMs: undefined,
+      stepSumMs: undefined,
+      effectiveStepSumMs: undefined,
+      overlappedStepMs: undefined,
+      parallelGroupWallMs: undefined,
       totalMs: undefined,
       preLoadTotalMs: undefined,
       postSaveReloadTotalMs: undefined,
@@ -219,8 +226,14 @@ export function extractRunMetrics(debug) {
   }
 
   const counts = aggregateStepCounts(debug)
+  const stepSumMs = debug.stepSumMs ?? debug.totalMs
   return {
-    totalMs: debug.totalMs,
+    actionWallMs: debug.actionWallMs,
+    stepSumMs,
+    effectiveStepSumMs: debug.effectiveStepSumMs,
+    overlappedStepMs: debug.overlappedStepMs,
+    parallelGroupWallMs: debug.parallelGroupWallMs,
+    totalMs: stepSumMs,
     preLoadTotalMs: debug.preLoad?.totalMs,
     postSaveReloadTotalMs: debug.postSaveReload?.totalMs,
     lineItemRequests: debug.lineItemRequests,
@@ -270,6 +283,7 @@ export function summarizeNumeric(values) {
 /**
  * @param {{
  *   browserDurationMs?: number
+ *   serverResponseMs?: number
  *   extracted?: ReturnType<typeof extractRunMetrics>
  *   childRowCounts?: { before?: Record<string, number | null>, after?: Record<string, number | null> }
  *   noChangeResave?: boolean
@@ -341,6 +355,7 @@ export function buildRunWarnings(run) {
  * @param {Array<{
  *   run: number
  *   browserDurationMs: number
+ *   serverResponseMs?: number
  *   networkDebugTimings?: SaveDebugTimings | null
  *   consoleDebugTimings?: SaveDebugTimings | null
  *   childRowCounts?: { before?: Record<string, number | null>, after?: Record<string, number | null> }
@@ -370,6 +385,7 @@ export function buildMeasurementReport(runs, meta) {
       saveOk: run.saveOk,
       error: run.error,
       browserDurationMs: run.browserDurationMs,
+      serverResponseMs: run.serverResponseMs,
       networkDebugTimings: run.networkDebugTimings ?? null,
       consoleDebugTimings: run.consoleDebugTimings ?? null,
       extracted,
@@ -413,6 +429,14 @@ export function buildMeasurementReport(runs, meta) {
     runs: normalizedRuns,
     summary: {
       browserDurationMs: summarizeNumeric(normalizedRuns.map((r) => r.browserDurationMs)),
+      serverResponseMs: summarizeNumeric(
+        normalizedRuns.map((r) => r.serverResponseMs),
+      ),
+      actionWallMs: summarizeNumeric(normalizedRuns.map((r) => r.extracted.actionWallMs)),
+      stepSumMs: summarizeNumeric(normalizedRuns.map((r) => r.extracted.stepSumMs)),
+      effectiveStepSumMs: summarizeNumeric(
+        normalizedRuns.map((r) => r.extracted.effectiveStepSumMs),
+      ),
       totalMs: summarizeNumeric(normalizedRuns.map((r) => r.extracted.totalMs)),
       preLoadTotalMs: summarizeNumeric(normalizedRuns.map((r) => r.extracted.preLoadTotalMs)),
       postSaveReloadTotalMs: summarizeNumeric(

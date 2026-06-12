@@ -170,6 +170,7 @@ async function performDraftSaveRun(page, runIndex) {
   let saveResponseOk = true
   let saveError
   let sawDebugMarkerInNetwork = false
+  let serverResponseMs
 
   const consoleHandler = (msg) => {
     const text = msg.text()
@@ -191,6 +192,7 @@ async function performDraftSaveRun(page, runIndex) {
     await saveButton.click()
     const saveResponse = await saveResponsePromise
     if (saveResponse) {
+      serverResponseMs = Math.round(performance.now() - started)
       try {
         const text = await saveResponse.text()
         if (text.includes('_debugTimings')) sawDebugMarkerInNetwork = true
@@ -219,6 +221,7 @@ async function performDraftSaveRun(page, runIndex) {
     run: runIndex,
     saveOk: saveResponseOk,
     error: saveError,
+    serverResponseMs,
     browserDurationMs,
     networkDebugTimings,
     consoleDebugTimings,

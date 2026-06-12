@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SettlementFull, Tour } from '@/types'
 import type { SettlementFormState } from './form-types'
 import { emptyOptionRow } from './defaults'
@@ -16,7 +16,9 @@ import {
   stripAllLineItemIdsForCreate,
   stripOrphanLineItemIdsFromPayload,
   collectKnownLineItemIds,
+  existingLineItemRowsById,
 } from './line-item-persist-prep'
+import { filterRowsNeedingUpdate, persistGuideLineItemTable } from './guide-line-item-persist'
 
 const SETTLEMENT_ID = '11111111-1111-1111-1111-111111111111'
 const TOUR_ID = '22222222-2222-2222-2222-222222222222'
@@ -344,6 +346,153 @@ describe('option item persist — hydration and resave', () => {
     expect(merged.options?.filter((r) => !r.deleted && r.is_extra_vehicle !== true)).toHaveLength(2)
     expect(merged.options?.find((r) => r.option_name === '신규 옵션')?.id).toBe('opt-new-db')
     expect(merged.meals).toHaveLength(existing.meals.length)
+  })
+})
+
+describe('option item persist — unchanged update skipping', () => {
+  it('no-change resave skips all option row updates (requestCount = 0)', async () => {
+    const existing = existingSettlementWithOptions('opt-db-1')
+    const hydrated = stateFromSettlementFull(existing, '가이드')
+    const payload = stripOrphanLineItemIdsFromPayload(
+      sanitizeGuideDraftPayload(toDraftPayload(hydrated), existing),
+      collectKnownLineItemIds(existing),
+    )
+    const rows = buildOptionDbRows(payload.options, SETTLEMENT_ID, payload.exchange_rate)
+    const existingById = existingLineItemRowsById(existing.options)
+
+    const { rows: needingUpdate, skipped } = filterRowsNeedingUpdate(
+      rows,
+      existingById,
+      'option_items',
+    )
+    expect(skipped).toBe(1)
+    expect(needingUpdate).toHaveLength(0)
+
+    const update = vi.fn()
+    const supabase = {
+      from: vi.fn(() => ({
+        delete: vi.fn().mockReturnValue({
+          in: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        update,
+      })),
+    }
+
+    const result = await persistGuideLineItemTable(
+      supabase as never,
+      'option_items',
+      SETTLEMENT_ID,
+      rows,
+      [],
+      existingById,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.requestCount).toBe(0)
+      expect(result.updatesSkipped).toBe(1)
+    }
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('changed option_name triggers exactly one update', async () => {
+    const existing = existingSettlementWithOptions('opt-db-1')
+    const hydrated = stateFromSettlementFull(existing, '가이드')
+    hydrated.options[0] = { ...hydrated.options[0]!, option_name: '변경된 옵션' }
+    const payload = stripOrphanLineItemIdsFromPayload(
+      sanitizeGuideDraftPayload(toDraftPayload(hydrated), existing),
+      collectKnownLineItemIds(existing),
+    )
+    const rows = buildOptionDbRows(payload.options, SETTLEMENT_ID, payload.exchange_rate)
+    const existingById = existingLineItemRowsById(existing.options)
+
+    const { rows: needingUpdate } = filterRowsNeedingUpdate(rows, existingById, 'option_items')
+    expect(needingUpdate).toHaveLength(1)
+
+    const update = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    })
+    const supabase = {
+      from: vi.fn(() => ({
+        delete: vi.fn().mockReturnValue({
+          in: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        update,
+      })),
+    }
+
+    const result = await persistGuideLineItemTable(
+      supabase as never,
+      'option_items',
+      SETTLEMENT_ID,
+      rows,
+      [],
+      existingById,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.requestCount).toBe(1)
+    expect(update).toHaveBeenCalledTimes(1)
+  })
+
+  it('repeated no-change save does not insert duplicate option rows', async () => {
+    const tables = new Map<string, Record<string, unknown>[]>()
+    const existing = existingSettlementWithOptions('opt-db-1')
+    tables.set('option_items', [...existing.options] as unknown as Record<string, unknown>[])
+
+    const supabase = {
+      from(table: string) {
+        const getRows = () => tables.get(table) ?? []
+        const setRows = (rows: Record<string, unknown>[]) => tables.set(table, rows)
+        return {
+          delete: () => ({
+            in: () => ({
+              eq: async () => ({ error: null }),
+            }),
+          }),
+          insert: async (rows: Record<string, unknown>[]) => {
+            setRows([...getRows(), ...rows])
+            return { error: null }
+          },
+          update: () => ({
+            eq: () => ({
+              eq: async () => ({ error: null }),
+            }),
+          }),
+        }
+      },
+    }
+
+    const runSave = async () => {
+      const hydrated = stateFromSettlementFull(existing, '가이드')
+      const payload = stripOrphanLineItemIdsFromPayload(
+        sanitizeGuideDraftPayload(toDraftPayload(hydrated), existing),
+        collectKnownLineItemIds(existing),
+      )
+      const rows = buildOptionDbRows(payload.options, SETTLEMENT_ID, payload.exchange_rate)
+      return persistGuideLineItemTable(
+        supabase as never,
+        'option_items',
+        SETTLEMENT_ID,
+        rows,
+        [],
+        existingLineItemRowsById(existing.options),
+      )
+    }
+
+    const first = await runSave()
+    const second = await runSave()
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+    if (first.ok) expect(first.requestCount).toBe(0)
+    if (second.ok) expect(second.requestCount).toBe(0)
+    expect(tables.get('option_items')).toHaveLength(1)
   })
 })
 

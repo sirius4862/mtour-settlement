@@ -507,6 +507,8 @@ function finalizeDraftSaveResult(
     lineItemRequests?: number
     preLoad?: GetSettlementFullTimingLog
     postSaveReload?: GetSettlementFullTimingLog
+    actionWallMs?: number
+    parallelGroupWallMs?: number
   },
 ): DraftSaveActionResponse {
   if (!debugCtx || !isSaveTimingDebugEnabled()) return result
@@ -515,6 +517,8 @@ function finalizeDraftSaveResult(
     lineItemRequests: debugCtx.lineItemRequests,
     preLoad: debugCtx.preLoad,
     postSaveReload: debugCtx.postSaveReload,
+    actionWallMs: debugCtx.actionWallMs,
+    parallelGroupWallMs: debugCtx.parallelGroupWallMs,
   })
   return attachSaveDebugTimings(result, debug)
 }
@@ -1505,6 +1509,7 @@ async function persistCompanyExpenseItems(
 export async function saveSettlementDraft(
   payload: SettlementDraftPayload,
 ): Promise<DraftSaveActionResponse> {
+  const actionStarted = performance.now()
   const monetary = validateSettlementDraftPayload(payload)
   if (!monetary.ok) {
     logServerError(
@@ -1525,7 +1530,20 @@ export async function saveSettlementDraft(
   let headerResult: Awaited<ReturnType<typeof upsertSettlement>> = { ok: false }
   let preLoadTiming: GetSettlementFullTimingLog | undefined
   let postSaveReloadTiming: GetSettlementFullTimingLog | undefined
+  let parallelGroupWallMs: number | undefined
   const captureDebug = isSaveTimingDebugEnabled()
+
+  const finalizeWithActionWall = (
+    result: Omit<DraftSaveActionResponse, '_debugTimings'>,
+    debugCtx?: Parameters<typeof finalizeDraftSaveResult>[1],
+  ): DraftSaveActionResponse =>
+    finalizeDraftSaveResult(result, debugCtx
+      ? {
+          ...debugCtx,
+          actionWallMs: Math.round(performance.now() - actionStarted),
+          parallelGroupWallMs,
+        }
+      : undefined)
 
   if (payload.settlementId) {
     const supabase = await createClient()
@@ -1566,7 +1584,12 @@ export async function saveSettlementDraft(
     const headerMs = Math.round(performance.now() - headerStarted)
     const preLoadParallelMs = Math.round(performance.now() - preLoadParallelStarted)
 
-    saveTimings.push({ step: 'upsert_settlement_header', ms: headerMs })
+    parallelGroupWallMs = preLoadParallelMs
+    saveTimings.push({
+      step: 'upsert_settlement_header',
+      ms: headerMs,
+      overlappedWith: 'load_existing_settlement',
+    })
     saveTimings.push({
       step: 'load_existing_settlement',
       ms: coreLoad.settlementQueryMs + preLoadParallelMs,
@@ -1577,10 +1600,7 @@ export async function saveSettlementDraft(
       callPurpose: 'pre_load',
       settlementQueryMs: coreLoad.settlementQueryMs,
       parallelBatchMs: preLoadParallelMs,
-      parallelQueries: [
-        ...lineRows.queryTimings,
-        { query: 'upsert_settlement_header', ms: headerMs, startedOffsetMs: 0 },
-      ],
+      parallelQueries: lineRows.queryTimings,
     })
     logGetSettlementFullTimings(preLoadLog)
     if (captureDebug) preLoadTiming = preLoadLog
@@ -1646,7 +1666,7 @@ export async function saveSettlementDraft(
         tourId: payloadToSave.tourId,
       }),
     )
-    return finalizeDraftSaveResult(
+    return finalizeWithActionWall(
       { ok: false, id: headerResult.id, error: headerResult.error ?? '헤더 저장 실패' },
       captureDebug
         ? { saveTimings, preLoad: preLoadTiming }
@@ -1663,7 +1683,7 @@ export async function saveSettlementDraft(
         settlementId: headerResult.id,
       }),
     )
-    return finalizeDraftSaveResult(
+    return finalizeWithActionWall(
       { ok: false, id: headerResult.id, error: itemsMonetary.error },
       captureDebug
         ? { saveTimings, preLoad: preLoadTiming }
@@ -1701,7 +1721,7 @@ export async function saveSettlementDraft(
         tourId: payloadToSave.tourId,
       })
     }
-    return finalizeDraftSaveResult(
+    return finalizeWithActionWall(
       { ok: false, id: headerResult.id, error: SAVE_SETTLEMENT_GENERIC_ERROR },
       captureDebug
         ? {
@@ -1762,10 +1782,10 @@ export async function saveSettlementDraft(
     : undefined
 
   if (!full) {
-    return finalizeDraftSaveResult({ ok: true, id: headerResult.id }, debugCtx)
+    return finalizeWithActionWall({ ok: true, id: headerResult.id }, debugCtx)
   }
 
-  return finalizeDraftSaveResult(
+  return finalizeWithActionWall(
     {
       ok: true,
       id: headerResult.id,

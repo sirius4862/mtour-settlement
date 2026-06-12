@@ -15,9 +15,23 @@ export type SaveDebugGetSettlementFullTiming = {
 
 export type SaveDebugTimings = {
   deploySha?: string
+  /** Wall-clock duration of the full saveSettlementDraft server action. */
+  actionWallMs?: number
+  /** Sum of all recorded step durations (may double-count overlapped parallel work). */
+  stepSumMs: number
+  /** Step sum excluding steps marked overlappedWith another step. */
+  effectiveStepSumMs: number
+  /** Milliseconds attributed to overlapped steps (subset of stepSumMs). */
+  overlappedStepMs: number
+  /**
+   * @deprecated Prefer actionWallMs for real server wall time, or effectiveStepSumMs for
+   * non-overlapped step totals. Kept for backward-compatible measurement parsers.
+   */
   totalMs: number
   totalRequests: number
   lineItemRequests?: number
+  /** Wall time of the edit-path parallel batch (header upsert + line-item pre-load). */
+  parallelGroupWallMs?: number
   preLoad?: SaveDebugGetSettlementFullTiming
   postSaveReload?: SaveDebugGetSettlementFullTiming
   steps: Array<{
@@ -29,6 +43,7 @@ export type SaveDebugTimings = {
     inserts?: number
     updates?: number
     updatesSkipped?: number
+    overlappedWith?: 'load_existing_settlement'
   }>
 }
 
@@ -62,20 +77,46 @@ export function sanitizeGetSettlementFullTimingForDebug(
   }
 }
 
+export function computeStepSums(steps: SettlementSaveTiming[]): {
+  stepSumMs: number
+  effectiveStepSumMs: number
+  overlappedStepMs: number
+} {
+  let stepSumMs = 0
+  let effectiveStepSumMs = 0
+  let overlappedStepMs = 0
+  for (const step of steps) {
+    stepSumMs += step.ms
+    if (step.overlappedWith) {
+      overlappedStepMs += step.ms
+    } else {
+      effectiveStepSumMs += step.ms
+    }
+  }
+  return { stepSumMs, effectiveStepSumMs, overlappedStepMs }
+}
+
 export function buildSaveDebugTimings(params: {
   steps: SettlementSaveTiming[]
   lineItemRequests?: number
   preLoad?: GetSettlementFullTimingLog
   postSaveReload?: GetSettlementFullTimingLog
+  actionWallMs?: number
+  parallelGroupWallMs?: number
 }): SaveDebugTimings {
-  const totalMs = params.steps.reduce((sum, step) => sum + step.ms, 0)
+  const { stepSumMs, effectiveStepSumMs, overlappedStepMs } = computeStepSums(params.steps)
   const totalRequests = params.steps.reduce((sum, step) => sum + (step.requestCount ?? 0), 0)
 
   return {
     deploySha: getDeployShaForDebug(),
-    totalMs,
+    actionWallMs: params.actionWallMs,
+    stepSumMs,
+    effectiveStepSumMs,
+    overlappedStepMs,
+    totalMs: stepSumMs,
     totalRequests,
     lineItemRequests: params.lineItemRequests,
+    parallelGroupWallMs: params.parallelGroupWallMs,
     preLoad: params.preLoad
       ? sanitizeGetSettlementFullTimingForDebug(params.preLoad)
       : undefined,
@@ -83,7 +124,7 @@ export function buildSaveDebugTimings(params: {
       ? sanitizeGetSettlementFullTimingForDebug(params.postSaveReload)
       : undefined,
     steps: params.steps.map(
-      ({ step, ms, table, requestCount, deleteIds, inserts, updates, updatesSkipped }) => ({
+      ({
         step,
         ms,
         table,
@@ -92,6 +133,17 @@ export function buildSaveDebugTimings(params: {
         inserts,
         updates,
         updatesSkipped,
+        overlappedWith,
+      }) => ({
+        step,
+        ms,
+        table,
+        requestCount,
+        deleteIds,
+        inserts,
+        updates,
+        updatesSkipped,
+        overlappedWith,
       }),
     ),
   }

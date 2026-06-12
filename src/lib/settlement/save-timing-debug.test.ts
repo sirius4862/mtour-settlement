@@ -6,6 +6,7 @@ import {
   assertSaveDebugTimingsSanitized,
   attachSaveDebugTimings,
   buildSaveDebugTimings,
+  computeStepSums,
   isSaveTimingDebugEnabled,
   sanitizeGetSettlementFullTimingForDebug,
 } from './save-timing-debug'
@@ -53,11 +54,18 @@ describe('save timing debug (opt-in)', () => {
     const debug = buildSaveDebugTimings({
       steps: [
         { step: 'load_existing_settlement', ms: 200 },
+        {
+          step: 'upsert_settlement_header',
+          ms: 80,
+          overlappedWith: 'load_existing_settlement',
+        },
         { step: 'persist_line_items_table', ms: 150, table: 'meal_items', requestCount: 0, updatesSkipped: 5 },
         { step: 'load_post_save_full', ms: 420 },
         { step: 'revalidate_paths', ms: 12 },
       ],
       lineItemRequests: 0,
+      actionWallMs: 900,
+      parallelGroupWallMs: 200,
       preLoad: { ...sampleFullTiming, callPurpose: 'pre_load' },
       postSaveReload: sampleFullTiming,
     })
@@ -66,13 +74,32 @@ describe('save timing debug (opt-in)', () => {
 
     const result = attachSaveDebugTimings({ ok: true, id: 'settlement-1' }, debug)
     expect(result._debugTimings).toBeDefined()
-    expect(result._debugTimings?.totalMs).toBe(782)
+    expect(result._debugTimings?.stepSumMs).toBe(862)
+    expect(result._debugTimings?.effectiveStepSumMs).toBe(782)
+    expect(result._debugTimings?.overlappedStepMs).toBe(80)
+    expect(result._debugTimings?.totalMs).toBe(862)
+    expect(result._debugTimings?.actionWallMs).toBe(900)
+    expect(result._debugTimings?.parallelGroupWallMs).toBe(200)
     expect(result._debugTimings?.deploySha).toBe('b3dbe31d09cb8cd7f22fef00a6f298eb79ea8380')
     expect(result._debugTimings?.preLoad?.callPurpose).toBe('pre_load')
     expect(result._debugTimings?.postSaveReload?.parallelismRatio).toBe(1.67)
     expect(result._debugTimings?.postSaveReload?.appearsParallel).toBe(true)
     expect(result._debugTimings?.steps.some((s) => s.step === 'revalidate_paths')).toBe(true)
     expect(JSON.stringify(result._debugTimings)).not.toContain('settlement-1')
+  })
+
+  it('computeStepSums excludes overlapped steps from effectiveStepSumMs', () => {
+    expect(
+      computeStepSums([
+        { step: 'load_existing_settlement', ms: 500 },
+        { step: 'upsert_settlement_header', ms: 120, overlappedWith: 'load_existing_settlement' },
+        { step: 'load_post_save_full', ms: 300 },
+      ]),
+    ).toEqual({
+      stepSumMs: 920,
+      effectiveStepSumMs: 800,
+      overlappedStepMs: 120,
+    })
   })
 
   it('sanitizes getSettlementFull timing without settlement id', () => {

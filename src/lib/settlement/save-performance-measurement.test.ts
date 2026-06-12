@@ -15,6 +15,10 @@ import type { SaveDebugTimings } from './save-timing-debug'
 
 const SAMPLE_DEBUG: SaveDebugTimings = {
   deploySha: 'abc123def456',
+  actionWallMs: 4100,
+  stepSumMs: 4200,
+  effectiveStepSumMs: 4080,
+  overlappedStepMs: 120,
   totalMs: 4200,
   totalRequests: 42,
   lineItemRequests: 18,
@@ -41,7 +45,14 @@ const SAMPLE_DEBUG: SaveDebugTimings = {
     appearsParallel: true,
   },
   steps: [
-    { step: 'upsert_settlement_header', ms: 120, requestCount: 1, updates: 1, updatesSkipped: 0 },
+    {
+      step: 'upsert_settlement_header',
+      ms: 120,
+      requestCount: 1,
+      updates: 1,
+      updatesSkipped: 0,
+      overlappedWith: 'load_existing_settlement',
+    },
     {
       step: 'persist_line_items_table',
       ms: 900,
@@ -120,6 +131,9 @@ describe('save-performance-measurement', () => {
 
   it('extracts run metrics and flags warnings', () => {
     const extracted = extractRunMetrics(SAMPLE_DEBUG)
+    expect(extracted.actionWallMs).toBe(4100)
+    expect(extracted.stepSumMs).toBe(4200)
+    expect(extracted.effectiveStepSumMs).toBe(4080)
     expect(extracted.totalMs).toBe(4200)
     expect(extracted.preLoadTotalMs).toBe(800)
     expect(extracted.postSaveReloadTotalMs).toBe(1500)
@@ -175,7 +189,7 @@ describe('save-performance-measurement', () => {
         {
           run: 2,
           browserDurationMs: 4800,
-          networkDebugTimings: { ...SAMPLE_DEBUG, totalMs: 3900 },
+          networkDebugTimings: { ...SAMPLE_DEBUG, stepSumMs: 3900, totalMs: 3900 },
           saveOk: true,
         },
       ],

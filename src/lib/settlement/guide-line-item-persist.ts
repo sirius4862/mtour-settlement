@@ -20,15 +20,65 @@ export type LineItemPersistResult =
   | { ok: true; requestCount: number; updatesSkipped?: number }
   | { ok: false; error: string; table: string; step: LineItemPersistStep; requestCount: number }
 
-/** Skip per-row UPDATE when patch matches the pre-loaded settlement row. */
-export function rowPatchDiffersFromExisting(
+const OPTION_SOURCE_COMPARE_KEYS = [
+  'option_date',
+  'option_name',
+  'unit_price_usd',
+  'pax',
+  'expense_usd',
+  'expense_vnd',
+  'is_extra_vehicle',
+  'sort_order',
+] as const
+
+/** Normalize nullable dates and numeric fields for unchanged-row detection. */
+export function normalizeComparableLineItemValue(key: string, value: unknown): unknown {
+  if (key === 'is_extra_vehicle') return value === true
+  if (value === undefined || value === '') return null
+  if (
+    key === 'unit_price_usd' ||
+    key === 'pax' ||
+    key === 'expense_usd' ||
+    key === 'expense_vnd' ||
+    key === 'total_sale_usd' ||
+    key === 'com_usd' ||
+    key === 'sort_order'
+  ) {
+    const n = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(n) ? n : value
+  }
+  return value
+}
+
+/** Option rows persist derived total_sale_usd/com_usd — compare source fields only. */
+export function optionPatchDiffersFromExisting(
   patch: Record<string, unknown>,
   existing: Record<string, unknown> | undefined,
 ): boolean {
   if (!existing) return true
+  for (const key of OPTION_SOURCE_COMPARE_KEYS) {
+    const left = normalizeComparableLineItemValue(key, patch[key])
+    const right = normalizeComparableLineItemValue(key, existing[key])
+    if (left !== right) return true
+  }
+  return false
+}
+
+/** Skip per-row UPDATE when patch matches the pre-loaded settlement row. */
+export function rowPatchDiffersFromExisting(
+  patch: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+  table?: GuideLineItemTable | string,
+): boolean {
+  if (!existing) return true
+  if (table === 'option_items') {
+    return optionPatchDiffersFromExisting(patch, existing)
+  }
   for (const [key, value] of Object.entries(patch)) {
     if (key === 'id' || key === 'settlement_id') continue
-    if (value !== existing[key]) return true
+    const left = normalizeComparableLineItemValue(key, value)
+    const right = normalizeComparableLineItemValue(key, existing[key])
+    if (left !== right) return true
   }
   return false
 }
@@ -36,6 +86,7 @@ export function rowPatchDiffersFromExisting(
 export function filterRowsNeedingUpdate(
   toUpdate: Record<string, unknown>[],
   existingById?: Map<string, Record<string, unknown>>,
+  table?: GuideLineItemTable | string,
 ): { rows: Record<string, unknown>[]; skipped: number } {
   if (!existingById || existingById.size === 0) {
     return { rows: toUpdate, skipped: 0 }
@@ -43,7 +94,7 @@ export function filterRowsNeedingUpdate(
   const rows = toUpdate.filter((row) => {
     const id = row.id
     if (!id || typeof id !== 'string') return true
-    return rowPatchDiffersFromExisting(row, existingById.get(id))
+    return rowPatchDiffersFromExisting(row, existingById.get(id), table)
   })
   return { rows, skipped: toUpdate.length - rows.length }
 }
@@ -115,6 +166,7 @@ export async function persistGuideLineItemTable(
   const { rows: rowsToUpdate, skipped: updatesSkipped } = filterRowsNeedingUpdate(
     toUpdate,
     existingById,
+    table,
   )
   let requestCount = 0
 

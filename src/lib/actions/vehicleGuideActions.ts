@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { getSession } from '@/lib/auth/session'
 import { isGuide } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
 import { normalizeVehicleReportPayload, type VehicleReportPayload } from '@/lib/vehicle/report-validation'
@@ -9,8 +10,10 @@ import {
   type GuideCheckStatus,
 } from '@/lib/vehicle/guide-check'
 import {
+  GUIDE_VEHICLE_REPORT_LIST_SELECT,
   filterGuideVehicleReportsByPeriod,
   resolveGuideVehicleReportDateRange,
+  tourStartDateInGuideVehicleReportRange,
 } from '@/lib/vehicle/guide-vehicle-report-list'
 import type { UserRole } from '@/types'
 
@@ -55,9 +58,8 @@ interface MutationResult {
 
 type GuideRel = { full_name: string | null; korean_name: string | null } | null
 
-// Operational report columns only — no settlement/financial fields exist on
-// vehicle_route_reports, but we still select an explicit operational set.
-const REPORT_SELECT =
+// Detail page — full operational report payload. List uses GUIDE_VEHICLE_REPORT_LIST_SELECT.
+const REPORT_DETAIL_SELECT =
   'id, tour_id, status, event_code, event_period_text, pax_text, flight_info_text, ' +
   'vehicle_text, hotel_text, guide_text, daily_routes, special_notes, ' +
   'tour:tours!tour_id(id, tour_code, pattern, start_date, end_date, pax_count, guide_id, ' +
@@ -93,18 +95,11 @@ interface GuideCtx {
  * INSERT a check once); this is app-layer gating in front of that.
  */
 async function getGuideCtx(): Promise<GuideCtx | null> {
+  const session = await getSession()
+  if (!session || !isGuide(session.role as UserRole)) return null
+
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, role')
-    .eq('id', user.id)
-    .single()
-  if (!profile || !isGuide(profile.role as UserRole)) return null
-
-  return { supabase, guideId: user.id }
+  return { supabase, guideId: session.id }
 }
 
 /**
@@ -112,6 +107,37 @@ async function getGuideCtx(): Promise<GuideCtx | null> {
  * guide's check status. Draft reports are never returned (RLS guide_select
  * requires status='submitted'; the explicit filter is defense-in-depth).
  */
+async function fetchSubmittedReportsForTours(
+  supabase: GuideCtx['supabase'],
+  tourIds: string[],
+): Promise<Array<Record<string, unknown>>> {
+  if (tourIds.length === 0) return []
+
+  const { data: reportRows } = await supabase
+    .from('vehicle_route_reports')
+    .select(GUIDE_VEHICLE_REPORT_LIST_SELECT)
+    .eq('status', 'submitted')
+    .in('tour_id', tourIds)
+
+  return (reportRows ?? []) as unknown as Array<Record<string, unknown>>
+}
+
+function toGuideVehicleReportListItem(
+  row: Record<string, unknown>,
+  checkedReportIds: Set<string>,
+): GuideVehicleReportListItem {
+  const tour = row.tour as Record<string, unknown> | null | undefined
+  return {
+    tour_id: row.tour_id as string,
+    report_id: row.id as string,
+    tour_code: (tour?.tour_code as string) ?? '',
+    pattern: (tour?.pattern as string | null) ?? null,
+    start_date: (tour?.start_date as string | null) ?? null,
+    end_date: (tour?.end_date as string | null) ?? null,
+    checked: checkedReportIds.has(row.id as string),
+  }
+}
+
 export async function getGuideVehicleReports(options?: {
   period?: string
 }): Promise<GuideVehicleReportListItem[]> {
@@ -122,23 +148,32 @@ export async function getGuideVehicleReports(options?: {
 
   const { data: tourRows } = await ctx.supabase
     .from('tours')
-    .select('id')
+    .select('id, start_date')
     .eq('guide_id', ctx.guideId)
     .neq('assignment_status', 'recalled')
 
-  const eligibleTourIds = (tourRows ?? []).map((t) => t.id as string)
-  if (eligibleTourIds.length === 0) return []
+  const tours = (tourRows ?? []) as Array<{ id: string; start_date: string | null }>
+  if (tours.length === 0) return []
 
-  const { data: reportRows } = await ctx.supabase
-    .from('vehicle_route_reports')
-    .select(REPORT_SELECT)
-    .eq('status', 'submitted')
-    .in('tour_id', eligibleTourIds)
+  const inRangeTourIds: string[] = []
+  const outRangeTourIds: string[] = []
+  for (const tour of tours) {
+    if (tourStartDateInGuideVehicleReportRange(tour.start_date, range)) {
+      inRangeTourIds.push(tour.id)
+    } else {
+      outRangeTourIds.push(tour.id)
+    }
+  }
 
-  const reports = (reportRows ?? []) as unknown as Array<Record<string, unknown>>
-  if (reports.length === 0) return []
+  const [inRangeReports, outRangeReports] = await Promise.all([
+    fetchSubmittedReportsForTours(ctx.supabase, inRangeTourIds),
+    fetchSubmittedReportsForTours(ctx.supabase, outRangeTourIds),
+  ])
 
-  const reportIds = reports.map((r) => r.id as string)
+  const fetchedReports = [...inRangeReports, ...outRangeReports]
+  if (fetchedReports.length === 0) return []
+
+  const reportIds = fetchedReports.map((r) => r.id as string)
   const { data: checkRows } = await ctx.supabase
     .from('vehicle_report_checks')
     .select('report_id')
@@ -150,19 +185,14 @@ export async function getGuideVehicleReports(options?: {
     checkedReportIds.add((row as { report_id: string }).report_id)
   }
 
+  // Outside the selected period, only unchecked action-required rows are kept.
+  const outRangeUncheckedReports = outRangeReports.filter(
+    (r) => !checkedReportIds.has(r.id as string),
+  )
+  const reports = [...inRangeReports, ...outRangeUncheckedReports]
+
   const items = filterGuideVehicleReportsByPeriod(
-    reports.map((r) => {
-      const tour = toTourInfo(r.tour as Record<string, unknown>)
-      return {
-        tour_id: r.tour_id as string,
-        report_id: r.id as string,
-        tour_code: tour.tour_code,
-        pattern: tour.pattern,
-        start_date: tour.start_date,
-        end_date: tour.end_date,
-        checked: checkedReportIds.has(r.id as string),
-      }
-    }),
+    reports.map((r) => toGuideVehicleReportListItem(r, checkedReportIds)),
     range,
   )
 
@@ -183,7 +213,7 @@ export async function getGuideVehicleReportDetail(
 
   const { data: reportRow } = await ctx.supabase
     .from('vehicle_route_reports')
-    .select(REPORT_SELECT)
+    .select(REPORT_DETAIL_SELECT)
     .eq('tour_id', tourId)
     .eq('status', 'submitted')
     .maybeSingle()

@@ -155,8 +155,10 @@ describe('guide vehicle-reports — route protection', () => {
     expect(LAYOUT_SRC).toMatch(/await requireGuide\(\)/)
   })
 
-  it('guide action gates to guide role', () => {
-    expect(ACTIONS_SRC).toContain('isGuide(profile.role')
+  it('guide action gates to guide role via cached getSession', () => {
+    expect(ACTIONS_SRC).toContain('getSession()')
+    expect(ACTIONS_SRC).toContain('isGuide(session.role')
+    expect(ACTIONS_SRC).not.toMatch(/getGuideCtx[\s\S]*?auth\.getUser\(\)/)
   })
 })
 

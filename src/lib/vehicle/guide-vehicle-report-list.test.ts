@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE,
+  GUIDE_VEHICLE_REPORT_LIST_SELECT,
   GUIDE_VEHICLE_REPORT_PERIOD_HELPER,
   buildGuideVehicleReportsUrl,
   filterGuideVehicleReportsByPeriod,
@@ -156,23 +157,75 @@ describe('guide vehicle report list page wiring', () => {
     expect(filter).not.toContain('type="date"')
   })
 
-  it('loads assigned tours without date bounds and applies period only to checked history', () => {
+  it('loads assigned tours without SQL date bounds and applies period via in-app split', () => {
     const start = actions.indexOf('export async function getGuideVehicleReports')
     const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
     const body = actions.slice(start, end)
 
     expect(body).toContain('resolveGuideVehicleReportDateRange')
     expect(body).toContain('filterGuideVehicleReportsByPeriod')
+    expect(body).toContain('tourStartDateInGuideVehicleReportRange')
     expect(body).toMatch(/\.from\(['"]tours['"]\)/)
+    expect(body).toContain("'id, start_date'")
     expect(body).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
     expect(body).toMatch(/\.neq\(['"]assignment_status['"],\s*['"]recalled['"]\)/)
     expect(body).not.toMatch(/\.gte\(['"]start_date['"],\s*range\.from\)/)
     expect(body).not.toMatch(/\.lte\(['"]start_date['"],\s*range\.to\)/)
-    expect(body).toMatch(/\.from\(['"]vehicle_route_reports['"]\)/)
-    expect(body).toMatch(/\.in\(['"]tour_id['"],\s*eligibleTourIds\)/)
-    expect(body.indexOf(".from('tours')")).toBeLessThan(body.indexOf(".from('vehicle_route_reports')"))
+    expect(actions).toContain('fetchSubmittedReportsForTours')
+    expect(actions).toMatch(/fetchSubmittedReportsForTours[\s\S]*?\.from\(['"]vehicle_route_reports['"]\)/)
+    expect(body).toContain('inRangeTourIds')
+    expect(body).toContain('outRangeTourIds')
+    expect(body).toContain('Promise.all')
+    expect(body.indexOf(".from('tours')")).toBeLessThan(actions.indexOf('fetchSubmittedReportsForTours'))
     expect(body).not.toContain('.limit(200)')
     expect(body).not.toContain('.delete(')
+  })
+
+  it('uses slim list select without heavy report body fields', () => {
+    const listStart = actions.indexOf('async function fetchSubmittedReportsForTours')
+    const listEnd = actions.indexOf('function toGuideVehicleReportListItem', listStart)
+    const listBody = actions.slice(listStart, listEnd)
+
+    const detailConstStart = actions.indexOf('const REPORT_DETAIL_SELECT')
+    const detailConstEnd = actions.indexOf('function guideName', detailConstStart)
+    const detailConstBody = actions.slice(detailConstStart, detailConstEnd)
+
+    const detailStart = actions.indexOf('export async function getGuideVehicleReportDetail')
+    const detailEnd = actions.indexOf('export async function submitGuideVehicleReportCheck', detailStart)
+    const detailBody = actions.slice(detailStart, detailEnd)
+
+    expect(listBody).toContain('GUIDE_VEHICLE_REPORT_LIST_SELECT')
+    expect(listBody).not.toContain('daily_routes')
+    expect(listBody).not.toContain('special_notes')
+    expect(listBody).not.toContain('REPORT_DETAIL_SELECT')
+    expect(detailBody).toContain('REPORT_DETAIL_SELECT')
+    expect(detailConstBody).toContain('daily_routes')
+    expect(GUIDE_VEHICLE_REPORT_LIST_SELECT).toContain('tour_code')
+    expect(GUIDE_VEHICLE_REPORT_LIST_SELECT).not.toContain('daily_routes')
+  })
+
+  it('dedupes auth via cached getSession and keeps guide scoping', () => {
+    const ctxStart = actions.indexOf('async function getGuideCtx')
+    const ctxEnd = actions.indexOf('async function fetchSubmittedReportsForTours', ctxStart)
+    const ctxBody = actions.slice(ctxStart, ctxEnd)
+
+    const listStart = actions.indexOf('export async function getGuideVehicleReports')
+    const listEnd = actions.indexOf('export async function getGuideVehicleReportDetail', listStart)
+    const listBody = actions.slice(listStart, listEnd)
+
+    expect(ctxBody).toContain('getSession()')
+    expect(ctxBody).toContain('isGuide(session.role')
+    expect(ctxBody).not.toContain('auth.getUser()')
+    expect(listBody).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
+  })
+
+  it('drops checked out-of-range reports before final period filter', () => {
+    const start = actions.indexOf('export async function getGuideVehicleReports')
+    const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
+    const body = actions.slice(start, end)
+
+    expect(body).toContain('outRangeUncheckedReports')
+    expect(body).toContain('filterGuideVehicleReportsByPeriod')
   })
 
   it('keeps guide ownership restriction while supporting the extended period', () => {
@@ -183,7 +236,7 @@ describe('guide vehicle report list page wiring', () => {
     expect(parseGuideVehicleReportPeriod('180d')).toBe('180d')
     expect(body).toContain('resolveGuideVehicleReportDateRange')
     expect(body).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
-    expect(body).toMatch(/\.eq\(['"]status['"],\s*['"]submitted['"]\)/)
+    expect(actions).toMatch(/fetchSubmittedReportsForTours[\s\S]*?\.eq\(['"]status['"],\s*['"]submitted['"]\)/)
   })
 
   it('returns early when the guide has no assigned tours', () => {
@@ -191,7 +244,7 @@ describe('guide vehicle report list page wiring', () => {
     const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
     const body = actions.slice(start, end)
 
-    expect(body).toContain('if (eligibleTourIds.length === 0) return []')
+    expect(body).toContain('if (tours.length === 0) return []')
   })
 })
 

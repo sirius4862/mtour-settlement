@@ -20,6 +20,10 @@ export const GUIDE_VEHICLE_REPORT_PERIOD_HELPER =
 export const GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE =
   '확인할 차량 리포트가 없습니다.'
 
+/** List page only — no daily_routes / report body fields. Detail uses REPORT_DETAIL_SELECT. */
+export const GUIDE_VEHICLE_REPORT_LIST_SELECT =
+  'id, tour_id, status, tour:tours!tour_id(tour_code, pattern, start_date, end_date)'
+
 export interface GuideVehicleReportDateRange {
   from: string
   to: string

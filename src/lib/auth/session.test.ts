@@ -27,6 +27,16 @@ describe('guide auth session caching', () => {
     expect(page).not.toMatch(/await requireGuide\(\)/)
   })
 
+  it('vehicle guide loader uses cached getSession instead of duplicate auth', () => {
+    const actions = readFileSync(join(ROOT, 'src/lib/actions/vehicleGuideActions.ts'), 'utf8')
+    const ctxStart = actions.indexOf('async function getGuideCtx')
+    const ctxEnd = actions.indexOf('async function fetchSubmittedReportsForTours', ctxStart)
+    const ctxBody = actions.slice(ctxStart, ctxEnd)
+
+    expect(ctxBody).toContain('getSession()')
+    expect(ctxBody).not.toContain('auth.getUser()')
+  })
+
   it('blocks non-guide roles from guide routes via requireGuide', () => {
     expect(canAccessGuideRoutes('guide')).toBe(true)
     expect(canAccessGuideRoutes('admin')).toBe(false)

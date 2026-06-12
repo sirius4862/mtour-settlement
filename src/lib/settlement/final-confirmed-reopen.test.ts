@@ -149,25 +149,26 @@ describe('paid reopen vs assignment recall', () => {
     ).toBe(false)
   })
 
-  it('reopen target is admin-editable submitted', () => {
-    expect(FINAL_CONFIRMED_REOPEN_TARGET_STATUS).toBe('submitted')
+  it('reopen target is edit_requested (C3/C3a DB-supported path)', () => {
+    expect(FINAL_CONFIRMED_REOPEN_TARGET_STATUS).toBe('edit_requested')
     expect(RECALL_TARGET_STATUS).toBe('submitted')
-    expect(canAdminEditSettlement(FINAL_CONFIRMED_REOPEN_TARGET_STATUS)).toBe(true)
+    expect(canAdminEditSettlement(FINAL_CONFIRMED_REOPEN_TARGET_STATUS)).toBe(false)
   })
 
-  it('reopened paid settlement moves to submitted dashboard bucket', () => {
+  it('reopened paid settlement moves to edit_requested dashboard bucket', () => {
     expect(normalizeStatusForDashboard('paid')).toBe('paid')
-    expect(normalizeStatusForDashboard(FINAL_CONFIRMED_REOPEN_TARGET_STATUS)).toBe('submitted')
+    expect(normalizeStatusForDashboard(FINAL_CONFIRMED_REOPEN_TARGET_STATUS)).toBe(
+      'edit_requested',
+    )
   })
 
-  it('reopened settlement is admin-editable immediately for admin and master_admin', () => {
-    expect(canAdminEditSettlement(FINAL_CONFIRMED_REOPEN_TARGET_STATUS)).toBe(true)
+  it('reopened settlement is not routed to admin edit page (submitted-only)', () => {
     expect(canAdminOrMasterAdminEditSettlement(FINAL_CONFIRMED_REOPEN_TARGET_STATUS, 'admin')).toBe(
-      true,
+      false,
     )
     expect(
       canAdminOrMasterAdminEditSettlement(FINAL_CONFIRMED_REOPEN_TARGET_STATUS, 'master_admin'),
-    ).toBe(true)
+    ).toBe(false)
   })
 })
 
@@ -180,7 +181,7 @@ describe('admin settlement detail UI wiring', () => {
 
   it('renders 정산 재오픈 card for master-admin paid-completed reopen', () => {
     expect(reviewPanel).toContain('정산 재오픈')
-    expect(reviewPanel).toContain('지급완료된 정산서를 다시 관리자 수정 상태로 되돌립니다.')
+    expect(reviewPanel).toContain('지급완료된 정산서를 수정요청 상태로 되돌립니다.')
     expect(reviewPanel).toContain('재오픈 사유 (선택)')
     expect(reviewPanel).toContain(PAID_REOPEN_CONFIRM_COPY)
     expect(reviewPanel).toContain('reopenFinalConfirmedSettlementForAdminCorrection')
@@ -242,14 +243,13 @@ describe('admin settlement detail UI wiring', () => {
     expect(reviewPanel).toContain('지급완료 처리')
   })
 
-  it('navigates to admin edit route after successful reopen (not detail refresh)', () => {
+  it('refreshes admin detail after successful reopen (no unsafe edit redirect)', () => {
     const handleStart = reviewPanel.indexOf('const handleFinalReopen = () => {')
     const handleEnd = reviewPanel.indexOf('const showActions =', handleStart)
     const handleFinalReopen = reviewPanel.slice(handleStart, handleEnd)
-    expect(handleFinalReopen).toContain('router.push')
-    expect(handleFinalReopen).toContain('res.redirectTo')
-    expect(handleFinalReopen).toContain('adminSettlementEditPath(settlementId)')
-    expect(handleFinalReopen).not.toContain('router.refresh')
+    expect(handleFinalReopen).toContain('router.refresh')
+    expect(handleFinalReopen).not.toContain('adminSettlementEditPath')
+    expect(handleFinalReopen).not.toContain('router.push')
   })
 })
 
@@ -273,13 +273,15 @@ describe('reopenFinalConfirmedSettlementForAdminCorrection server action', () =>
     expect(body).toContain('if (!guard.ok) return { ok: false, error: guard.error }')
   })
 
-  it('moves paid to submitted and clears guide confirmation pointers only', () => {
+  it('moves paid to edit_requested and clears paid_at plus confirmation pointers', () => {
     expect(body).toContain('status: FINAL_CONFIRMED_REOPEN_TARGET_STATUS')
+    expect(body).toContain('paid_at: null')
     expect(body).toContain('guide_confirmed_at: null')
     expect(body).toContain('guide_confirmed_by: null')
     expect(body).toContain('active_confirmation_id: null')
     expect(body).not.toContain('.delete(')
-    expect(body).not.toContain('paid_at: null')
+    expect(body).not.toContain("status: 'submitted'")
+    expect(body).not.toContain('FINAL_CONFIRMED_REOPEN_TARGET_STATUS, submitted')
   })
 
   it('records audit trail with paid reopen reason', () => {
@@ -287,11 +289,9 @@ describe('reopenFinalConfirmedSettlementForAdminCorrection server action', () =>
     expect(body).toContain('master_reopen_paid_correction')
   })
 
-  it('returns admin edit redirect target on success', () => {
-    const routes = readFileSync(join(ROOT, 'src/lib/admin/settlement-routes.ts'), 'utf8')
-    expect(body).toContain('adminSettlementEditPath')
-    expect(body).toContain('redirectTo: adminSettlementEditPath(id)')
-    expect(routes).toContain('/admin/settlements/${settlementId}/edit')
+  it('returns admin detail redirect target on success (not edit route)', () => {
+    expect(body).toContain('redirectTo: `/admin/settlements/${id}`')
+    expect(body).not.toContain('adminSettlementEditPath')
   })
 
   it('does not touch submit RPC, payout, or vehicle report paths', () => {
@@ -340,5 +340,56 @@ describe('reviewSettlement paid reopen path unchanged', () => {
     expect(body).toContain(".eq('status', 'paid')")
     expect(body).toContain("status: 'edit_requested'")
     expect(body).toContain('master_reopen_paid')
+  })
+})
+
+describe('paid reopen hotfix — C3/C3a alignment regression', () => {
+  const reopenAction = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
+  const reopenStart = reopenAction.indexOf(
+    'export async function reopenFinalConfirmedSettlementForAdminCorrection',
+  )
+  const reopenEnd = reopenAction.indexOf('// ── 확인 워크플로', reopenStart)
+  const reopenBody = reopenAction.slice(reopenStart, reopenEnd)
+
+  it('1–6: master paid reopen writes edit_requested and clears paid_at + confirm pointers', () => {
+    expect(FINAL_CONFIRMED_REOPEN_TARGET_STATUS).toBe('edit_requested')
+    expect(reopenBody).toContain('paid_at: null')
+    expect(reopenBody).toContain('guide_confirmed_at: null')
+    expect(reopenBody).toContain('guide_confirmed_by: null')
+    expect(reopenBody).toContain('active_confirmation_id: null')
+    expect(reopenBody).not.toContain("status: 'submitted'")
+  })
+
+  it('7: does not redirect to edit route that rejects edit_requested', () => {
+    expect(reopenBody).not.toContain('adminSettlementEditPath')
+    expect(reopenBody).toContain('redirectTo: `/admin/settlements/${id}`')
+    expect(canAdminOrMasterAdminEditSettlement('edit_requested', 'master_admin')).toBe(false)
+  })
+
+  it('8–9: only master_admin may reopen paid; admin and guide denied', () => {
+    expect(reopenBody).toContain("profile.role !== 'master_admin'")
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'master_admin')).toBe(true)
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'admin')).toBe(false)
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'guide')).toBe(false)
+  })
+
+  it('10–12: final-confirmed unpaid vs paid action visibility unchanged', () => {
+    expect(canAdminRequestEditOnSettlement(finalConfirmedPending, 'admin')).toBe(true)
+    expect(canMasterReopenFinalConfirmed(finalConfirmedPending, 'master_admin')).toBe(false)
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'master_admin')).toBe(true)
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'admin')).toBe(false)
+  })
+
+  it('13–14: paid-lock and assignment recall paths untouched in reopen action', () => {
+    expect(reopenBody).not.toContain('.rpc(')
+    expect(reopenBody).not.toContain('vehicle_route_reports')
+    const recallStart = reopenAction.indexOf('export async function recallSettlement')
+    const recallEnd = reopenAction.indexOf(
+      'export async function reopenFinalConfirmedSettlementForAdminCorrection',
+      recallStart,
+    )
+    const recallBody = reopenAction.slice(recallStart, recallEnd)
+    expect(recallBody).toContain('assertCanRecallSettlement')
+    expect(recallBody).toContain('RECALL_TARGET_STATUS')
   })
 })

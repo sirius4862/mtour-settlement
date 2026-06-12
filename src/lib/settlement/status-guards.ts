@@ -206,8 +206,8 @@ export const RECALL_ELIGIBLE_STATUSES: SettlementStatus[] = []
  */
 export const RECALL_TARGET_STATUS: SettlementStatus = 'submitted'
 
-/** Master-admin reopen from paid (지급완료) → admin review for correction. */
-export const FINAL_CONFIRMED_REOPEN_TARGET_STATUS: SettlementStatus = 'submitted'
+/** Master-admin reopen from paid (지급완료) → guide 수정요청 (C3/C3a DB-supported path). */
+export const FINAL_CONFIRMED_REOPEN_TARGET_STATUS: SettlementStatus = 'edit_requested'
 
 export interface SettlementRecallGuardInput {
   status: SettlementStatus

@@ -7,7 +7,6 @@ import {
   saveAdminNoteBeforeConfirmation,
   sendForConfirmation,
 } from '@/lib/actions/settlementActions'
-import { adminSettlementEditPath } from '@/lib/admin/settlement-routes'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -81,7 +80,7 @@ export function ReviewPanel({
       if (res.ok) {
         setConfirmingFinalReopen(false)
         setFinalReopenReason('')
-        router.push(res.redirectTo ?? adminSettlementEditPath(settlementId))
+        router.refresh()
       } else {
         setError(res.error ?? '오류 발생')
       }
@@ -103,8 +102,8 @@ export function ReviewPanel({
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
           <p className="text-sm font-semibold text-slate-800">정산 재오픈</p>
           <p className="text-xs leading-5 text-slate-600">
-            지급완료된 정산서를 다시 관리자 수정 상태로 되돌립니다.
-            재오픈 후 관리자가 정산서를 수정하고, 필요하면 다시 가이드 최종확인을 요청할 수 있습니다.
+            지급완료된 정산서를 수정요청 상태로 되돌립니다.
+            재오픈 후 가이드가 정산서를 수정·재제출할 수 있으며, 이후 기존 최종확인·지급 흐름을 따릅니다.
           </p>
           {confirmingFinalReopen ? (
             <>

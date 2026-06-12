@@ -2,7 +2,6 @@
 
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
-import { adminSettlementEditPath } from '@/lib/admin/settlement-routes'
 import {
   GUIDE_LINE_ITEM_TABLES,
   persistGuideLineItemTable,
@@ -2252,12 +2251,11 @@ export async function recallSettlement(
 }
 
 /**
- * Master-admin reopen — pull a paid-completed (지급완료) settlement back to admin
- * review (submitted) for correction. Distinct from assignment recall (회수) and
- * from reviewSettlement paid reopen (edit_requested via admin_note flow).
+ * Master-admin reopen — pull a paid-completed (지급완료) settlement back to
+ * edit_requested (C3/C3a DB-supported path). Distinct from assignment recall (회수).
  *
- * Clears guide confirmation flags and the active confirmation pointer only;
- * preserves paid_at, settlement rows, line items, receipts, confirmation history, and audit.
+ * Clears paid_at, guide confirmation flags, and active_confirmation_id.
+ * Preserves settlement rows, line items, receipts, confirmation history, and audit.
  */
 export async function reopenFinalConfirmedSettlementForAdminCorrection(
   id: string,
@@ -2298,6 +2296,7 @@ export async function reopenFinalConfirmedSettlementForAdminCorrection(
     .from('settlements')
     .update({
       status: FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
+      paid_at: null,
       guide_confirmed_at: null,
       guide_confirmed_by: null,
       active_confirmation_id: null,
@@ -2329,7 +2328,7 @@ export async function reopenFinalConfirmedSettlementForAdminCorrection(
   })
 
   revalidateSettlementPaths(id)
-  return { ok: true, redirectTo: adminSettlementEditPath(id) }
+  return { ok: true, redirectTo: `/admin/settlements/${id}` }
 }
 
 // ── 확인 워크플로 (Phase 2) ───────────────────────────────────

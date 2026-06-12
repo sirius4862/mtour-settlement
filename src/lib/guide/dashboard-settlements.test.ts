@@ -2,9 +2,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SettlementWithTour } from '@/types'
+import { GUIDE_AVAILABLE_TOUR_SELECT } from './available-tours'
 import {
   GUIDE_DASHBOARD_DRAFT_STATUSES,
   GUIDE_DASHBOARD_EDIT_REQUESTED_STATUSES,
+  GUIDE_DASHBOARD_QUEUE_LIMIT,
   GUIDE_DASHBOARD_RECENT_LIMIT,
   GUIDE_DASHBOARD_SETTLEMENT_SELECT,
   groupSettlementsForGuideDashboard,
@@ -147,9 +149,13 @@ describe('guide dashboard loader wiring', () => {
     expect(body).toContain(".eq('status', 'edit_requested')")
     expect(body).toContain(".eq('status', 'pending_guide_confirmation')")
     expect(body).toContain(".is('guide_confirmed_at', null)")
+    expect(body).toContain(`.limit(GUIDE_DASHBOARD_QUEUE_LIMIT)`)
     expect(body).toContain(`.limit(GUIDE_DASHBOARD_RECENT_LIMIT)`)
     expect(body).toContain('.select(GUIDE_DASHBOARD_SETTLEMENT_SELECT)')
+    expect(body).toContain('getSession()')
+    expect(body).not.toContain('auth.getUser()')
     expect(body).not.toContain(".select('*, tour:tours(*)')")
+    expect(GUIDE_DASHBOARD_QUEUE_LIMIT).toBeGreaterThan(0)
   })
 
   it('does not fetch all settlements without a status filter except recent limit query', () => {
@@ -179,6 +185,27 @@ describe('guide dashboard page wiring', () => {
     expect(body).not.toContain('90 * 24 * 60 * 60 * 1000')
     expect(body).not.toContain(".gte('start_date', since)")
     expect(body).toContain(".neq('assignment_status', 'recalled')")
+    expect(body).toContain('GUIDE_AVAILABLE_TOUR_SELECT')
+    expect(body).not.toContain(".select('*')")
+    expect(body).toContain('getSession()')
+    expect(body).not.toContain('auth.getUser()')
+    expect(GUIDE_AVAILABLE_TOUR_SELECT).toContain('tour_code')
+    expect(GUIDE_AVAILABLE_TOUR_SELECT).toContain('branch_id')
+    expect(GUIDE_AVAILABLE_TOUR_SELECT).not.toContain('*')
+  })
+
+  it('scopes dashboard loaders to the authenticated guide id', () => {
+    const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
+    const toursStart = actions.indexOf('export async function getAvailableTours')
+    const toursEnd = actions.indexOf('const LINE_ITEM_TABLES', toursStart)
+    const toursBody = actions.slice(toursStart, toursEnd)
+
+    const settlementsStart = actions.indexOf('export async function getGuideDashboardSettlements')
+    const settlementsEnd = actions.indexOf('export async function getMySettlementHistory', settlementsStart)
+    const settlementsBody = actions.slice(settlementsStart, settlementsEnd)
+
+    expect(toursBody).toContain(".eq('guide_id', session.id)")
+    expect(settlementsBody).toContain(".eq('guide_id', session.id)")
   })
 
   it('loads dashboard sections from getGuideDashboardSettlements', () => {

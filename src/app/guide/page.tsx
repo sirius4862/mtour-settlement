@@ -1,6 +1,6 @@
 ﻿import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { requireGuide } from '@/lib/auth/session'
+import { getSession } from '@/lib/auth/session'
 import { getAvailableTours, getGuideDashboardSettlements } from '@/lib/actions/settlementActions'
 import { tourLabel } from '@/lib/settlement/mappers'
 import { timed } from '@/lib/server/perf'
@@ -68,7 +68,10 @@ function EmptyState({ message, helper }: { message: string; helper: string }) {
 }
 
 export default async function GuidePage() {
-  const session = await timed('guide dashboard auth/profile', () => requireGuide())
+  // Guide layout already enforces requireGuide(); getSession shares one cached auth/profile fetch.
+  const session = await timed('guide dashboard auth/profile', () => getSession())
+  if (!session) return null
+
   const [availableTours, dashboardSettlements] = await Promise.all([
     timed('guide dashboard assigned tours', () => getAvailableTours()),
     timed('guide dashboard settlements', () => getGuideDashboardSettlements()),

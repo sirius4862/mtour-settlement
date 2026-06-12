@@ -42,12 +42,15 @@ import {
 import { timed } from '@/lib/server/perf'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
 import { resolveSettlementOperatingBranchId } from '@/lib/guide/assignment'
+import { GUIDE_AVAILABLE_TOUR_SELECT } from '@/lib/guide/available-tours'
 import {
   EMPTY_GUIDE_DASHBOARD_SETTLEMENTS,
+  GUIDE_DASHBOARD_QUEUE_LIMIT,
   GUIDE_DASHBOARD_RECENT_LIMIT,
   GUIDE_DASHBOARD_SETTLEMENT_SELECT,
   type GuideDashboardSettlements,
 } from '@/lib/guide/dashboard-settlements'
+import { getSession } from '@/lib/auth/session'
 import { createClient } from '@/lib/supabase/server'
 import { GUIDE_READ } from '@/lib/supabase/guide-read-tables'
 import type {
@@ -287,20 +290,24 @@ async function persistSettlementCalcSummary(
 
 /** 가이드의 미정산 배정 투어 목록 (기간 제한 없음 — 지연 제출 backlog 포함). */
 export async function getAvailableTours(): Promise<Tour[]> {
+  const session = await getSession()
+  if (!session) return []
+
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return []
 
   const { data: tours } = await supabase
-    .from('tours').select('*')
-    .eq('guide_id', user.id)
+    .from('tours')
+    .select(GUIDE_AVAILABLE_TOUR_SELECT)
+    .eq('guide_id', session.id)
     .neq('assignment_status', 'recalled')
     .order('start_date', { ascending: false })
 
   if (!tours?.length) return []
 
   const { data: used } = await supabase
-    .from(GUIDE_READ.settlements).select('tour_id').eq('guide_id', user.id)
+    .from(GUIDE_READ.settlements)
+    .select('tour_id')
+    .eq('guide_id', session.id)
 
   const usedSet = new Set((used ?? []).map((r: { tour_id: string }) => r.tour_id))
   return (tours as Tour[]).filter((t) => !usedSet.has(t.id))
@@ -354,12 +361,10 @@ export async function getMySettlements(): Promise<SettlementWithTour[]> {
 
 /** 가이드 대시보드 — 작업 큐·최근 정산서만 bounded 로드 (전체 이력 미조회). */
 export async function getGuideDashboardSettlements(): Promise<GuideDashboardSettlements> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return EMPTY_GUIDE_DASHBOARD_SETTLEMENTS
+  const session = await getSession()
+  if (!session) return EMPTY_GUIDE_DASHBOARD_SETTLEMENTS
 
+  const supabase = await createClient()
   const useGuideRead = await shouldUseGuideReadTables('guide')
   const table = tableForAudience('settlements', useGuideRead)
 
@@ -367,17 +372,22 @@ export async function getGuideDashboardSettlements(): Promise<GuideDashboardSett
     supabase
       .from(table)
       .select(GUIDE_DASHBOARD_SETTLEMENT_SELECT)
-      .eq('guide_id', user.id)
+      .eq('guide_id', session.id)
 
   const [draftRes, editRes, pendingRes, recentRes] = await Promise.all([
-    baseQuery().eq('status', 'draft').order('created_at', { ascending: false }),
+    baseQuery()
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false })
+      .limit(GUIDE_DASHBOARD_QUEUE_LIMIT),
     baseQuery()
       .eq('status', 'edit_requested')
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(GUIDE_DASHBOARD_QUEUE_LIMIT),
     baseQuery()
       .eq('status', 'pending_guide_confirmation')
       .is('guide_confirmed_at', null)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(GUIDE_DASHBOARD_QUEUE_LIMIT),
     baseQuery()
       .order('created_at', { ascending: false })
       .limit(GUIDE_DASHBOARD_RECENT_LIMIT),

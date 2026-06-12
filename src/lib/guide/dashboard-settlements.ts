@@ -3,6 +3,9 @@ import type { SettlementStatus, SettlementWithTour } from '@/types'
 /** 최근 정산서 섹션에 표시하는 건수 — 기존 `slice(0, 3)` 동작과 동일. */
 export const GUIDE_DASHBOARD_RECENT_LIMIT = 3
 
+/** 작성중·수정 필요·최종 확인 작업 큐 섹션 상한 (전체 이력 미로드). */
+export const GUIDE_DASHBOARD_QUEUE_LIMIT = 5
+
 /** 작성중 섹션 — draft만 (기존 page 필터와 동일). */
 export const GUIDE_DASHBOARD_DRAFT_STATUSES = ['draft'] as const satisfies readonly SettlementStatus[]
 

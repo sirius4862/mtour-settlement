@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -9,7 +10,8 @@ import {
 import { timed } from '@/lib/server/perf'
 import type { UserRole } from '@/types'
 
-export async function getSession() {
+/** Request-scoped cache — layout + page + loaders share one auth/profile round-trip per render. */
+export const getSession = cache(async function getSession() {
   const supabase = await createClient()
   const { data: { user } } = await timed('auth/session', () => supabase.auth.getUser())
   if (!user) return null
@@ -26,7 +28,7 @@ export async function getSession() {
     id: string; full_name: string; role: UserRole
     branch_id: string | null; email: string
   } | null
-}
+})
 
 export type AdminSession = NonNullable<Awaited<ReturnType<typeof getSession>>>
 

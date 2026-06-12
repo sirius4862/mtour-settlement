@@ -84,8 +84,24 @@ describe('final-confirmed reopen vs assignment recall', () => {
     expect(assertCanRecallSettlement(finalConfirmedPending, 'admin').ok).toBe(false)
   })
 
-  it('still allows recall before guide final confirmation', () => {
-    expect(canRecallSettlement(pendingUnconfirmed, 'admin')).toBe(true)
+  it('does not allow settlement recall while guide confirmation is pending', () => {
+    expect(canRecallSettlement(pendingUnconfirmed, 'admin')).toBe(false)
+    expect(canRecallSettlement(pendingUnconfirmed, 'master_admin')).toBe(false)
+  })
+
+  it('does not allow settlement recall on edit_requested', () => {
+    expect(
+      canRecallSettlement(
+        { status: 'edit_requested', guide_confirmed_at: null },
+        'admin',
+      ),
+    ).toBe(false)
+    expect(
+      canRecallSettlement(
+        { status: 'edit_requested', guide_confirmed_at: null },
+        'master_admin',
+      ),
+    ).toBe(false)
   })
 
   it('reopen target is admin-editable submitted, same family as recall target', () => {
@@ -129,16 +145,30 @@ describe('admin settlement detail UI wiring', () => {
 
   it('does not use 회수 wording on the final-confirmed reopen card', () => {
     const reopenCardStart = reviewPanel.indexOf('canReopenFinalConfirmed &&')
-    const reopenCardEnd = reviewPanel.indexOf('confirmingRecall &&', reopenCardStart)
+    const reopenCardEnd = reviewPanel.indexOf('<textarea', reopenCardStart)
     const reopenCard = reviewPanel.slice(reopenCardStart, reopenCardEnd)
     expect(reopenCard).not.toContain('회수')
     expect(reopenCard).not.toContain('배정 회수')
   })
 
-  it('keeps recall (회수) only on the separate pre-confirmation path', () => {
-    expect(reviewPanel).toContain('canRecall')
-    expect(reviewPanel).toContain('회수 확인')
-    expect(reviewPanel).toContain('recallSettlement')
+  it('does not render settlement recall/cancel actions on admin detail', () => {
+    expect(reviewPanel).not.toContain('canRecall')
+    expect(reviewPanel).not.toContain('recallSettlement')
+    expect(reviewPanel).not.toContain('회수')
+    expect(reviewPanel).not.toContain('수정요청 취소')
+    expect(reviewPanel).not.toContain('수정요청 철회')
+    expect(reviewPanel).not.toContain('최종확인 요청 취소')
+    expect(reviewPanel).not.toContain('가이드 확인요청 취소')
+    expect(detailPage).not.toContain('canRecallSettlement')
+    expect(detailPage).not.toContain('canRecall=')
+  })
+
+  it('hides ReviewPanel for guide-waiting statuses (admin read-only wait)', () => {
+    const guideWaitingStatuses = ['edit_requested', 'pending_guide_confirmation'] as const
+    for (const status of guideWaitingStatuses) {
+      expect(canRecallSettlement({ status, guide_confirmed_at: null }, 'admin')).toBe(false)
+      expect(canRecallSettlement({ status, guide_confirmed_at: null }, 'master_admin')).toBe(false)
+    }
   })
 
   it('wires canMasterReopenFinalConfirmed on the detail page', () => {

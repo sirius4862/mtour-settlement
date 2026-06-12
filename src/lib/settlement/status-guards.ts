@@ -172,13 +172,11 @@ export function canMarkSettlementPaidForRole(
 }
 
 /**
- * Statuses an admin may recall (회수) — the settlement was already sent to the
- * guide as an actionable item (최종확인 or 수정요청) but is not finalized or paid.
+ * Settlement recall (회수) is not offered once a guide request is in flight.
+ * After admin sends 수정요청 or 최종확인, the guide must respond via the normal flow.
+ * Assignment recall (배정회수) is a separate tour-level action.
  */
-export const RECALL_ELIGIBLE_STATUSES: SettlementStatus[] = [
-  'pending_guide_confirmation',
-  'edit_requested',
-]
+export const RECALL_ELIGIBLE_STATUSES: SettlementStatus[] = []
 
 /**
  * Recall returns the settlement to this existing admin-editable status.
@@ -242,10 +240,8 @@ export function assertCanMasterReopenFinalConfirmed(
 }
 
 /**
- * Admin tier (admin + master_admin) may recall a settlement they sent to the
- * guide, before the guide gives final confirmation and never once paid. Guides
- * may never recall. Region scope (admin) is enforced separately
- * (requireAdminSettlementRegionAccess), as it is for every other admin action.
+ * Generic settlement recall (회수) on admin detail — disabled for all statuses.
+ * Guides may never recall. Region scope (admin) is enforced separately when used.
  */
 export function canRecallSettlement(
   s: SettlementRecallGuardInput,

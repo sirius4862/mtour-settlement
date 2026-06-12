@@ -29,17 +29,14 @@ const editRequested = {
 }
 
 describe('canRecallSettlement — eligibility', () => {
-  it('admin can recall a settlement sent for final confirmation (before guide confirms)', () => {
-    expect(canRecallSettlement(pendingUnconfirmed, 'admin')).toBe(true)
+  it('does not offer settlement recall once admin sent 수정요청 (edit_requested)', () => {
+    expect(canRecallSettlement(editRequested, 'admin')).toBe(false)
+    expect(canRecallSettlement(editRequested, 'master_admin')).toBe(false)
   })
 
-  it('admin can recall a settlement sent back as 수정요청 (edit_requested)', () => {
-    expect(canRecallSettlement(editRequested, 'admin')).toBe(true)
-  })
-
-  it('master_admin can recall the same eligible states', () => {
-    expect(canRecallSettlement(pendingUnconfirmed, 'master_admin')).toBe(true)
-    expect(canRecallSettlement(editRequested, 'master_admin')).toBe(true)
+  it('does not offer settlement recall while guide final confirmation is pending', () => {
+    expect(canRecallSettlement(pendingUnconfirmed, 'admin')).toBe(false)
+    expect(canRecallSettlement(pendingUnconfirmed, 'master_admin')).toBe(false)
   })
 
   it('guide can never recall', () => {
@@ -60,6 +57,8 @@ describe('canRecallSettlement — eligibility', () => {
       'submitted',
       'rejected',
       'clarification_requested',
+      'edit_requested',
+      'pending_guide_confirmation',
     ]
     for (const status of blocked) {
       expect(canRecallSettlement({ status, guide_confirmed_at: null }, 'admin')).toBe(false)
@@ -67,18 +66,20 @@ describe('canRecallSettlement — eligibility', () => {
     }
   })
 
-  it('eligible statuses are exactly the guide-actionable, non-final ones', () => {
-    expect([...RECALL_ELIGIBLE_STATUSES].sort()).toEqual(
-      ['edit_requested', 'pending_guide_confirmation'].sort(),
-    )
+  it('no settlement statuses are recall-eligible on admin detail', () => {
+    expect(RECALL_ELIGIBLE_STATUSES).toEqual([])
   })
 })
 
 describe('assertCanRecallSettlement — friendly app-level denials', () => {
-  it('allows admin + master on eligible states', () => {
-    expect(assertCanRecallSettlement(pendingUnconfirmed, 'admin')).toEqual({ ok: true })
-    expect(assertCanRecallSettlement(editRequested, 'admin')).toEqual({ ok: true })
-    expect(assertCanRecallSettlement(pendingUnconfirmed, 'master_admin')).toEqual({ ok: true })
+  it('denies admin + master on guide-waiting states', () => {
+    for (const state of [pendingUnconfirmed, editRequested]) {
+      for (const role of ['admin', 'master_admin'] as UserRole[]) {
+        const res = assertCanRecallSettlement(state, role)
+        expect(res.ok).toBe(false)
+        if (!res.ok) expect(res.error).toBe('현재 상태에서는 회수할 수 없습니다.')
+      }
+    }
   })
 
   it('denies guide with a role message', () => {
@@ -137,22 +138,20 @@ describe('recall target status — admin-editable, not guide-actionable', () => 
 
 describe('recall is region-scoped for admin, cross-region for master', () => {
   it.each(MTOUR_REGION_CODES)(
-    '[%s] region-scoped admin may recall in-region but never cross-region',
+    '[%s] region-scoped admin recall gate still applies when action is invoked',
     (region) => {
       const other = MTOUR_REGION_CODES.find((c) => c !== region) as string
       const adminHere = { role: 'admin' as const, assignedRegionId: region as string }
 
-      // Role + status eligibility holds regardless of region…
-      expect(canRecallSettlement(pendingUnconfirmed, 'admin')).toBe(true)
-      // …but the region gate (same guard as every other admin action) decides access.
+      expect(canRecallSettlement(pendingUnconfirmed, 'admin')).toBe(false)
       expect(assertAdminCanAccessSettlementBranch(adminHere, region).ok).toBe(true)
       expect(assertAdminCanAccessSettlementBranch(adminHere, other).ok).toBe(false)
     },
   )
 
-  it.each(MTOUR_REGION_CODES)('[%s] master_admin may recall across regions', (region) => {
+  it.each(MTOUR_REGION_CODES)('[%s] master_admin region access unchanged (recall still disabled)', (region) => {
     const master = { role: 'master_admin' as const, assignedRegionId: null }
-    expect(canRecallSettlement(editRequested, 'master_admin')).toBe(true)
+    expect(canRecallSettlement(editRequested, 'master_admin')).toBe(false)
     expect(assertAdminCanAccessSettlementBranch(master, region).ok).toBe(true)
   })
 

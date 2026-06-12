@@ -26,7 +26,6 @@ import {
   canAdminSendForConfirmation,
   canMarkSettlementPaidForRole,
   canMasterReopenFinalConfirmed,
-  canRecallSettlement,
 } from '@/types'
 import { ReviewPanel } from './ReviewPanel'
 
@@ -88,10 +87,6 @@ export default async function AdminSettlementDetailPage({
   const canReqEdit = canAdminRequestEdit(s.status, session.role)
   const canReopen  = canMasterReopenPaid(s.status, session.role)
   const canPay     = canMarkSettlementPaidForRole(session.role, s)
-  const canRecall  = canRecallSettlement(
-    { status: s.status, guide_confirmed_at: s.guide_confirmed_at },
-    session.role,
-  )
   const canReopenFinalConfirmed = canMasterReopenFinalConfirmed(
     {
       status: s.status,
@@ -240,7 +235,7 @@ export default async function AdminSettlementDetailPage({
       )}
 
       {/* 관리자 액션 패널 */}
-      {(canSendForConfirmation || canReqEdit || canPay || canReopen || canReopenFinalConfirmed || canRecall) && (
+      {(canSendForConfirmation || canReqEdit || canPay || canReopen || canReopenFinalConfirmed) && (
         <ReviewPanel
           settlementId={s.id}
           canSendForConfirmation={canSendForConfirmation}
@@ -248,7 +243,6 @@ export default async function AdminSettlementDetailPage({
           canReopen={canReopen}
           canReopenFinalConfirmed={canReopenFinalConfirmed}
           canPay={canPay}
-          canRecall={canRecall}
           currentAdminNote={s.admin_note ?? ''}
         />
       )}

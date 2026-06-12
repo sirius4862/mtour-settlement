@@ -212,7 +212,9 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         return { ok: false }
       }
 
-      const saveResult = await saveSettlementDraft(payload)
+      const saveResult = await saveSettlementDraft(payload, {
+        purpose: action === 'save_then_submit' ? 'save_before_submit' : 'draft_save_only',
+      })
       const result = applyDraftSaveResult(saveResult, {
         currentSettlementId: state.settlementId,
         bindSettlementId,

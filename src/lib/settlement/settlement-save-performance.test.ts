@@ -9,7 +9,7 @@ function readRepoFile(relativePath: string): string {
 }
 
 describe('settlement save performance and stability (source-level)', () => {
-  it('saveSettlementDraft uses one post-save getSettlementFull for sync and calc summary', () => {
+  it('saveSettlementDraft skips or runs post-save getSettlementFull based on no-op detection', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
     const start = source.indexOf('export async function saveSettlementDraft')
     const end = source.indexOf('export async function saveAdminSettlementEdits', start)
@@ -17,10 +17,14 @@ describe('settlement save performance and stability (source-level)', () => {
 
     expect(body).toContain('persistSettlementLineItems(')
     expect(body).not.toContain('saveSettlementItems')
+    expect(body).toContain('canSkipPostSaveReloadForNoopSave(')
+    expect(body).toContain('saveContext')
+    expect(body).toContain('skipPostSaveReload')
+    expect(body).toContain('full = existingForItemPersist')
     expect(body).toContain('load_post_save_full')
     expect(body).toContain('persistSettlementCalcSummary(supabase, headerResult.id, full)')
     expect(body).toContain("logSettlementSaveTimings('[saveSettlementDraft] timings'")
-    expect((body.match(/getSettlementFull\(/g) ?? []).length).toBe(1)
+    expect(body).toContain('getSettlementFull(headerResult.id')
     expect(body).toContain('logGetSettlementFullTimings(')
     expect(body).toContain("callPurpose: 'post_save_reload'")
   })

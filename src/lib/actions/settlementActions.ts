@@ -87,6 +87,12 @@ import {
 import type { FieldChangeDraft, SnapshotPayload } from '@/lib/settlement/snapshot'
 import { externalReceivableDbFields } from '@/lib/settlement/external-receivable'
 import {
+  aggregateLineItemPersistTimings,
+  canSkipPostSaveReloadForNoopSave,
+  guideHeaderUpsertDiffersFromExisting,
+  isGuideEditableSettlementStatus,
+} from '@/lib/settlement/noop-draft-save-fast-path'
+import {
   assertAdminReviewAction,
   assertAdminSaveSettlement,
   assertAdminSendForConfirmation,
@@ -1160,7 +1166,10 @@ export async function submitSettlement(
       if (draft.settlementId && draft.settlementId !== id) {
         return { ok: false, error: '정산서 ID가 일치하지 않습니다.' }
       }
-      const saveResult = await saveSettlementDraft({ ...draft, settlementId: id })
+      const saveResult = await saveSettlementDraft(
+        { ...draft, settlementId: id },
+        { purpose: 'save_before_submit' },
+      )
       if (!saveResult.ok) {
         logStep('save_before_submit_failed', { error: saveResult.error })
         return { ok: false, error: saveResult.error ?? SAVE_SETTLEMENT_GENERIC_ERROR }
@@ -1501,6 +1510,12 @@ async function persistCompanyExpenseItems(
   return { ok: true }
 }
 
+export type SaveSettlementDraftPurpose = 'draft_save_only' | 'save_before_submit'
+
+export type SaveSettlementDraftOptions = {
+  purpose?: SaveSettlementDraftPurpose
+}
+
 /**
  * DB write path:
  * 1. settlements — upsert header (insert or update draft)
@@ -1508,7 +1523,10 @@ async function persistCompanyExpenseItems(
  */
 export async function saveSettlementDraft(
   payload: SettlementDraftPayload,
+  options?: SaveSettlementDraftOptions,
 ): Promise<DraftSaveActionResponse> {
+  const saveContext: 'draft_save_only' | 'save_before_submit' =
+    options?.purpose === 'save_before_submit' ? 'save_before_submit' : 'draft_save_only'
   const actionStarted = performance.now()
   const monetary = validateSettlementDraftPayload(payload)
   if (!monetary.ok) {
@@ -1531,6 +1549,8 @@ export async function saveSettlementDraft(
   let preLoadTiming: GetSettlementFullTimingLog | undefined
   let postSaveReloadTiming: GetSettlementFullTimingLog | undefined
   let parallelGroupWallMs: number | undefined
+  let headerUpsertRowForSkip: Record<string, unknown> | undefined
+  let coreSettlementRowForSkip: Record<string, unknown> | undefined
   const captureDebug = isSaveTimingDebugEnabled()
 
   const finalizeWithActionWall = (
@@ -1573,6 +1593,8 @@ export async function saveSettlementDraft(
       preservedTourFeeUsd,
       pickAdminHeaderFields(coreLoad.settlement),
     )
+    headerUpsertRowForSkip = headerUpsertInput
+    coreSettlementRowForSkip = coreLoad.settlement
 
     const preLoadParallelStarted = performance.now()
     const headerStarted = performance.now()
@@ -1733,28 +1755,53 @@ export async function saveSettlementDraft(
     )
   }
 
-  const loadStarted = performance.now()
-  const full = await getSettlementFull(headerResult.id, {
-    audience: 'guide',
-    callPurpose: 'post_save_reload',
-    onTimingCaptured: captureDebug
-      ? (log) => {
-          postSaveReloadTiming = log
-        }
-      : undefined,
-  })
-  saveTimings.push({
-    step: 'load_post_save_full',
-    ms: Math.round(performance.now() - loadStarted),
+  const headerChangedAfterPersist =
+    headerUpsertRowForSkip && coreSettlementRowForSkip
+      ? guideHeaderUpsertDiffersFromExisting(
+          headerUpsertRowForSkip,
+          coreSettlementRowForSkip,
+        )
+      : true
+  const persistAggregate = aggregateLineItemPersistTimings(itemsResult.timings)
+  const skipPostSaveReload = canSkipPostSaveReloadForNoopSave({
+    saveContext,
+    isEditPath: !!payload.settlementId,
+    isEditableStatus: coreSettlementRowForSkip
+      ? isGuideEditableSettlementStatus(coreSettlementRowForSkip.status)
+      : false,
+    hasPreloadedState: existingForItemPersist != null,
+    headerChanged: headerChangedAfterPersist,
+    receiptsChanged: false,
+    persist: persistAggregate,
   })
 
-  if (full) {
-    const calcStarted = performance.now()
-    await persistSettlementCalcSummary(supabase, headerResult.id, full)
-    saveTimings.push({
-      step: 'persist_calc_summary',
-      ms: Math.round(performance.now() - calcStarted),
+  let full: SettlementFull | null = null
+  if (skipPostSaveReload && existingForItemPersist) {
+    full = existingForItemPersist
+  } else {
+    const loadStarted = performance.now()
+    full = await getSettlementFull(headerResult.id, {
+      audience: 'guide',
+      callPurpose: 'post_save_reload',
+      onTimingCaptured: captureDebug
+        ? (log) => {
+            postSaveReloadTiming = log
+          }
+        : undefined,
     })
+    saveTimings.push({
+      step: 'load_post_save_full',
+      ms: Math.round(performance.now() - loadStarted),
+    })
+
+    if (full) {
+      const calcStarted = performance.now()
+      await persistSettlementCalcSummary(supabase, headerResult.id, full)
+      saveTimings.push({
+        step: 'persist_calc_summary',
+        ms: Math.round(performance.now() - calcStarted),
+      })
+    }
   }
 
   logSettlementSaveTimings('[saveSettlementDraft] timings', saveTimings, {

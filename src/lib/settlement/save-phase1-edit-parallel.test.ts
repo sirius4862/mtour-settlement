@@ -23,8 +23,37 @@ describe('save phase 1 edit-path parallelization (source-level)', () => {
     expect(body).toContain('loadSettlementLineItemRows(')
     expect(body).toContain('Promise.all([')
     expect(body).toContain('upsertSettlement(headerUpsertInput)')
+    expect(body).toContain('canSkipPostSaveReloadForNoopSave(')
     expect(body).toContain('buildGuideHeaderUpsertFromDraft(')
     expect(body).toContain("callPurpose: 'pre_load'")
+  })
+
+  it('changed edit save runs parallel pre-load before post-save skip decision (not gated by fast path)', () => {
+    const editStart = body.indexOf('if (payload.settlementId)')
+    const editElse = body.indexOf('} else {', editStart)
+    const editBlock = body.slice(editStart, editElse)
+
+    const parallelIdx = editBlock.indexOf('Promise.all([')
+    const persistIdx = body.indexOf('persistSettlementLineItems(', editStart)
+    const skipIdx = body.indexOf('canSkipPostSaveReloadForNoopSave(', editStart)
+
+    expect(parallelIdx).toBeGreaterThan(-1)
+    expect(parallelIdx).toBeLessThan(persistIdx - editStart)
+    expect(skipIdx).toBeGreaterThan(persistIdx)
+    expect(editBlock).not.toContain('if (skipPostSaveReload')
+    expect(editBlock).not.toContain('if (canSkipPostSaveReloadForNoopSave')
+  })
+
+  it('no-change and changed edit saves share the same unconditional parallel batch', () => {
+    const editStart = body.indexOf('if (payload.settlementId)')
+    const editElse = body.indexOf('} else {', editStart)
+    const editBlock = body.slice(editStart, editElse)
+
+    expect((editBlock.match(/Promise\.all\(\[/g) ?? []).length).toBe(1)
+    expect(editBlock).toContain(
+      'loadSettlementLineItemRows(supabase, payload.settlementId, coreLoad.useGuideRead)',
+    )
+    expect(editBlock).toContain('upsertSettlement(headerUpsertInput)')
   })
 
   it('new settlement create remains sequential and binds created id via upsertSettlement', () => {

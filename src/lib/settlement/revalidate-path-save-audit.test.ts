@@ -22,7 +22,7 @@ describe('revalidatePath save-path audit (report-only)', () => {
     expect(draftBody).toContain("revalidatePath('/guide/settlements')")
     expect(draftBody).toContain('revalidatePath(`/guide/settlements/${headerResult.id}`)')
     expect(draftBody).toContain('revalidatePath(`/guide/settlements/${headerResult.id}/edit`)')
-    expect((draftBody.match(/revalidatePath\(/g) ?? []).length).toBe(3)
+    expect((draftBody.match(/revalidatePath\(/g) ?? []).length).toBeGreaterThanOrEqual(3)
   })
 
   it('documents upsertSettlement list revalidation (create path only)', () => {

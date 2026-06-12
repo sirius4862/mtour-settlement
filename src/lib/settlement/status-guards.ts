@@ -103,9 +103,28 @@ export function canAdminReject(_status: SettlementStatus, role?: UserRole): bool
   return false
 }
 
-export function canAdminRequestEdit(status: SettlementStatus, role?: UserRole): boolean {
+export interface AdminRequestEditInput {
+  status: SettlementStatus
+  guide_confirmed_at?: string | null
+  guide_submit_snapshot_id?: string | null
+}
+
+/** Admin may request guide correction before payment (submitted) or after guide final confirmation (unpaid). */
+export function canAdminRequestEditOnSettlement(
+  s: AdminRequestEditInput,
+  role?: UserRole,
+): boolean {
   if (role !== undefined && !canOperationalAdminReview(role)) return false
-  return ADMIN_PRE_CONFIRM_REVIEW.includes(status)
+  if (ADMIN_PRE_CONFIRM_REVIEW.includes(s.status)) return true
+  return isGuideFinalConfirmedSettlement({
+    status: s.status,
+    guide_confirmed_at: s.guide_confirmed_at ?? null,
+    guide_submit_snapshot_id: s.guide_submit_snapshot_id ?? null,
+  })
+}
+
+export function canAdminRequestEdit(status: SettlementStatus, role?: UserRole): boolean {
+  return canAdminRequestEditOnSettlement({ status }, role)
 }
 
 /** Admin sends guide the confirmation packet after review/edit. */
@@ -187,7 +206,7 @@ export const RECALL_ELIGIBLE_STATUSES: SettlementStatus[] = []
  */
 export const RECALL_TARGET_STATUS: SettlementStatus = 'submitted'
 
-/** Master-admin reopen from guide-final-confirmed → admin review (not assignment recall). */
+/** Master-admin reopen from paid (지급완료) → admin review for correction. */
 export const FINAL_CONFIRMED_REOPEN_TARGET_STATUS: SettlementStatus = 'submitted'
 
 export interface SettlementRecallGuardInput {
@@ -213,14 +232,13 @@ export function isGuideFinalConfirmedSettlement(s: SettlementFinalConfirmedInput
   return false
 }
 
-/** Master admin may reopen a final-confirmed settlement for admin correction (not paid). */
+/** Master admin may reopen a paid-completed (지급완료) settlement for admin correction. */
 export function canMasterReopenFinalConfirmed(
   s: SettlementFinalConfirmedInput,
   role: UserRole,
 ): boolean {
   if (!isMasterAdmin(role)) return false
-  if (s.status === 'paid') return false
-  return isGuideFinalConfirmedSettlement(s)
+  return s.status === 'paid'
 }
 
 export function assertCanMasterReopenFinalConfirmed(
@@ -230,11 +248,8 @@ export function assertCanMasterReopenFinalConfirmed(
   if (!isMasterAdmin(role)) {
     return { ok: false, error: '정산 재오픈은 마스터 관리자만 할 수 있습니다.' }
   }
-  if (s.status === 'paid') {
-    return { ok: false, error: '지급 완료된 정산서는 정산 재오픈할 수 없습니다. 지급 재오픈을 사용하세요.' }
-  }
-  if (!isGuideFinalConfirmedSettlement(s)) {
-    return { ok: false, error: '최종확인 완료된 정산서만 정산 재오픈할 수 있습니다.' }
+  if (s.status !== 'paid') {
+    return { ok: false, error: '지급 완료된 정산서만 정산 재오픈할 수 있습니다.' }
   }
   return { ok: true }
 }
@@ -301,7 +316,7 @@ export function assertAdminReviewAction(
       if (!canOperationalAdminReview(role)) {
         return { ok: false, error: '관리자 권한이 필요합니다.' }
       }
-      if (!canAdminRequestEdit(s.status)) {
+      if (!canAdminRequestEditOnSettlement(s, role)) {
         return { ok: false, error: '현재 상태에서는 수정요청을 할 수 없습니다.' }
       }
       return { ok: true }

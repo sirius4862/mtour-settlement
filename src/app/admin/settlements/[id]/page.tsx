@@ -5,11 +5,7 @@ import { SettlementBusinessSummary } from '@/components/settlement/sections/Sett
 import { Q75_NEGATIVE_WARNING } from '@/lib/settlement/display-labels'
 import { requireAdmin } from '@/lib/auth/session'
 import { canAdminAccessRegion } from '@/lib/region/permissions'
-import {
-  canMasterReopenPaid,
-  isPostApprovalReadOnlyForAdmin,
-  isAdmin,
-} from '@/lib/auth/permissions'
+import { isPostApprovalReadOnlyForAdmin, isAdmin } from '@/lib/auth/permissions'
 import { getSettlementFull } from '@/lib/actions/settlementActions'
 import { createClient } from '@/lib/supabase/server'
 import { formatGuideDisplayLines } from '@/lib/guide/display-name'
@@ -22,7 +18,7 @@ import {
   STATUS_META,
   canAdminEditSettlement,
   canAdminOrMasterAdminEditSettlement,
-  canAdminRequestEdit,
+  canAdminRequestEditOnSettlement,
   canAdminSendForConfirmation,
   canMarkSettlementPaidForRole,
   canMasterReopenFinalConfirmed,
@@ -84,8 +80,14 @@ export default async function AdminSettlementDetailPage({
   const isReadOnlyAdmin = isAdmin(session.role) && isPostApprovalReadOnlyForAdmin(s.status)
   const canSendForConfirmation = canAdminSendForConfirmation(s.status, session.role)
   const canAdminEdit = canAdminOrMasterAdminEditSettlement(s.status, session.role)
-  const canReqEdit = canAdminRequestEdit(s.status, session.role)
-  const canReopen  = canMasterReopenPaid(s.status, session.role)
+  const canReqEdit = canAdminRequestEditOnSettlement(
+    {
+      status: s.status,
+      guide_confirmed_at: s.guide_confirmed_at,
+      guide_submit_snapshot_id: s.guide_submit_snapshot_id,
+    },
+    session.role,
+  )
   const canPay     = canMarkSettlementPaidForRole(session.role, s)
   const canReopenFinalConfirmed = canMasterReopenFinalConfirmed(
     {
@@ -235,12 +237,11 @@ export default async function AdminSettlementDetailPage({
       )}
 
       {/* 관리자 액션 패널 */}
-      {(canSendForConfirmation || canReqEdit || canPay || canReopen || canReopenFinalConfirmed) && (
+      {(canSendForConfirmation || canReqEdit || canPay || canReopenFinalConfirmed) && (
         <ReviewPanel
           settlementId={s.id}
           canSendForConfirmation={canSendForConfirmation}
           canRequestEdit={canReqEdit}
-          canReopen={canReopen}
           canReopenFinalConfirmed={canReopenFinalConfirmed}
           canPay={canPay}
           currentAdminNote={s.admin_note ?? ''}

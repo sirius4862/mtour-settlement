@@ -271,6 +271,36 @@ describe('assertAdminReviewAction', () => {
 
   it('blocks admin mutations after payment', () => {
     expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'request_edit', 'admin').ok).toBe(false)
+    expect(assertAdminReviewAction({ ...base, status: 'paid' }, 'request_edit', 'master_admin').ok).toBe(
+      false,
+    )
+  })
+
+  it('allows request_edit on guide-final-confirmed unpaid settlements', () => {
+    const confirmed = {
+      ...base,
+      status: 'pending_guide_confirmation' as const,
+      guide_confirmed_at: '2026-05-27T00:00:00Z',
+      guide_submit_snapshot_id: 'snap-1',
+    }
+    expect(assertAdminReviewAction(confirmed, 'request_edit', 'admin').ok).toBe(true)
+    expect(assertAdminReviewAction(confirmed, 'request_edit', 'master_admin').ok).toBe(true)
+  })
+
+  it('blocks request_edit while guide confirmation is still pending', () => {
+    expect(
+      assertAdminReviewAction(
+        { ...base, status: 'pending_guide_confirmation', guide_submit_snapshot_id: 'snap-1' },
+        'request_edit',
+        'admin',
+      ).ok,
+    ).toBe(false)
+  })
+
+  it('blocks request_edit on edit_requested (guide already has correction task)', () => {
+    expect(assertAdminReviewAction({ ...base, status: 'edit_requested' }, 'request_edit', 'admin').ok).toBe(
+      false,
+    )
   })
 
   it('keeps paid settlements locked from re-pay (admin and master)', () => {

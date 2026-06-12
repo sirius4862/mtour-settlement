@@ -106,6 +106,7 @@ import {
   assertSingleOptimisticUpdate,
   canAdminSendForConfirmation,
   FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
+  isGuideFinalConfirmedSettlement,
   isPgUniqueViolation,
   RECALL_TARGET_STATUS,
   SETTLEMENT_DUPLICATE_TOUR_ERROR,
@@ -2135,6 +2136,17 @@ export async function reviewSettlement(params: {
       updates.edit_requested_by = profile.id
       toStatus = 'edit_requested'
       auditAction = 'admin_request_edit'
+      if (
+        isGuideFinalConfirmedSettlement({
+          status: fromStatus,
+          guide_confirmed_at: current.guide_confirmed_at as string | null,
+          guide_submit_snapshot_id: current.guide_submit_snapshot_id as string | null,
+        })
+      ) {
+        updates.guide_confirmed_at = null
+        updates.guide_confirmed_by = null
+        updates.active_confirmation_id = null
+      }
       break
     case 'pay':
       updates.status = 'paid'
@@ -2240,12 +2252,12 @@ export async function recallSettlement(
 }
 
 /**
- * Master-admin reopen — pull a guide-final-confirmed settlement back to admin
+ * Master-admin reopen — pull a paid-completed (지급완료) settlement back to admin
  * review (submitted) for correction. Distinct from assignment recall (회수) and
- * from paid reopen (지급 재오픈 → edit_requested).
+ * from reviewSettlement paid reopen (edit_requested via admin_note flow).
  *
  * Clears guide confirmation flags and the active confirmation pointer only;
- * preserves settlement rows, line items, receipts, confirmation history, and audit.
+ * preserves paid_at, settlement rows, line items, receipts, confirmation history, and audit.
  */
 export async function reopenFinalConfirmedSettlementForAdminCorrection(
   id: string,
@@ -2312,8 +2324,8 @@ export async function reopenFinalConfirmedSettlementForAdminCorrection(
     fromStatus,
     toStatus: FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
     note: trimmedReason
-      ? `master_reopen_final_confirmed: ${trimmedReason}`
-      : 'master_reopen_final_confirmed',
+      ? `master_reopen_paid_correction: ${trimmedReason}`
+      : 'master_reopen_paid_correction',
   })
 
   revalidateSettlementPaths(id)

@@ -286,6 +286,7 @@ export {
   canAdminDirectApprove,
   canAdminReject,
   canAdminRequestEdit,
+  canAdminRequestEditOnSettlement,
   canAdminPaySettlement,
   canMarkSettlementPaidForRole,
   assertAdminReviewAction,

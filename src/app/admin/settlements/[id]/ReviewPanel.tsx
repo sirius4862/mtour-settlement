@@ -14,20 +14,18 @@ interface Props {
   settlementId: string
   canSendForConfirmation: boolean
   canRequestEdit: boolean
-  canReopen: boolean
   canReopenFinalConfirmed: boolean
   canPay: boolean
   currentAdminNote: string
 }
 
-const FINAL_CONFIRMED_REOPEN_CONFIRM_COPY =
-  '이 작업은 최종확인 완료 상태를 해제하고 관리자 수정 상태로 되돌립니다. 계속하시겠습니까?'
+const PAID_REOPEN_CONFIRM_COPY =
+  '이 작업은 지급완료 상태를 해제하고 관리자 수정 상태로 되돌립니다. 계속하시겠습니까?'
 
 export function ReviewPanel({
   settlementId,
   canSendForConfirmation,
   canRequestEdit,
-  canReopen,
   canReopenFinalConfirmed,
   canPay,
   currentAdminNote,
@@ -39,7 +37,7 @@ export function ReviewPanel({
   const [confirmingFinalReopen, setConfirmingFinalReopen] = useState(false)
   const [finalReopenReason, setFinalReopenReason] = useState('')
 
-  const handleReview = (action: 'request_edit' | 'pay' | 'reopen') => {
+  const handleReview = (action: 'request_edit' | 'pay') => {
     setError('')
     start(async () => {
       const res = await reviewSettlement({
@@ -93,7 +91,6 @@ export function ReviewPanel({
   const showActions =
     canSendForConfirmation ||
     canRequestEdit ||
-    canReopen ||
     canReopenFinalConfirmed ||
     canPay
   if (!showActions) return null
@@ -106,12 +103,12 @@ export function ReviewPanel({
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
           <p className="text-sm font-semibold text-slate-800">정산 재오픈</p>
           <p className="text-xs leading-5 text-slate-600">
-            최종확인 완료된 정산서를 다시 관리자 수정 상태로 되돌립니다.
+            지급완료된 정산서를 다시 관리자 수정 상태로 되돌립니다.
             재오픈 후 관리자가 정산서를 수정하고, 필요하면 다시 가이드 최종확인을 요청할 수 있습니다.
           </p>
           {confirmingFinalReopen ? (
             <>
-              <p className="text-sm text-slate-700">{FINAL_CONFIRMED_REOPEN_CONFIRM_COPY}</p>
+              <p className="text-sm text-slate-700">{PAID_REOPEN_CONFIRM_COPY}</p>
               <input
                 type="text"
                 value={finalReopenReason}
@@ -193,15 +190,6 @@ export function ReviewPanel({
           </button>
         )}
 
-        {canReopen && (
-          <button
-            onClick={() => handleReview('reopen')}
-            disabled={pending}
-            className="flex-1 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 disabled:opacity-40"
-          >
-            {pending ? '처리 중…' : '지급 재오픈'}
-          </button>
-        )}
       </div>
     </div>
   )

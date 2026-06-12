@@ -6,6 +6,7 @@ import {
   assertCanRecallSettlement,
   canAdminEditSettlement,
   canAdminOrMasterAdminEditSettlement,
+  canAdminRequestEditOnSettlement,
   canMasterReopenFinalConfirmed,
   canRecallSettlement,
   FINAL_CONFIRMED_REOPEN_TARGET_STATUS,
@@ -17,8 +18,8 @@ import type { SettlementStatus } from '@/types'
 
 const ROOT = process.cwd()
 
-const FINAL_CONFIRMED_REOPEN_CONFIRM_COPY =
-  '이 작업은 최종확인 완료 상태를 해제하고 관리자 수정 상태로 되돌립니다. 계속하시겠습니까?'
+const PAID_REOPEN_CONFIRM_COPY =
+  '이 작업은 지급완료 상태를 해제하고 관리자 수정 상태로 되돌립니다. 계속하시겠습니까?'
 
 const finalConfirmedPending = {
   status: 'pending_guide_confirmation' as SettlementStatus,
@@ -38,6 +39,12 @@ const pendingUnconfirmed = {
   guide_submit_snapshot_id: 'snap-1',
 }
 
+const paidCompleted = {
+  status: 'paid' as SettlementStatus,
+  guide_confirmed_at: '2026-05-27T00:00:00Z',
+  guide_submit_snapshot_id: 'snap-1',
+}
+
 describe('isGuideFinalConfirmedSettlement', () => {
   it('detects pending_guide_confirmation after guide confirms', () => {
     expect(isGuideFinalConfirmedSettlement(finalConfirmedPending)).toBe(true)
@@ -52,32 +59,70 @@ describe('isGuideFinalConfirmedSettlement', () => {
   })
 })
 
-describe('canMasterReopenFinalConfirmed', () => {
-  it('allows master_admin on final-confirmed settlements', () => {
-    expect(canMasterReopenFinalConfirmed(finalConfirmedPending, 'master_admin')).toBe(true)
-    expect(canMasterReopenFinalConfirmed(finalConfirmedLegacy, 'master_admin')).toBe(true)
+describe('canMasterReopenFinalConfirmed — paid-completed only', () => {
+  it('allows master_admin on paid-completed settlements', () => {
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'master_admin')).toBe(true)
+    expect(assertCanMasterReopenFinalConfirmed(paidCompleted, 'master_admin')).toEqual({ ok: true })
   })
 
-  it('denies regional admin', () => {
-    expect(canMasterReopenFinalConfirmed(finalConfirmedPending, 'admin')).toBe(false)
-    expect(assertCanMasterReopenFinalConfirmed(finalConfirmedPending, 'admin').ok).toBe(false)
+  it('denies unpaid final-confirmed settlements', () => {
+    expect(canMasterReopenFinalConfirmed(finalConfirmedPending, 'master_admin')).toBe(false)
+    expect(canMasterReopenFinalConfirmed(finalConfirmedLegacy, 'master_admin')).toBe(false)
+    const res = assertCanMasterReopenFinalConfirmed(finalConfirmedPending, 'master_admin')
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toBe('지급 완료된 정산서만 정산 재오픈할 수 있습니다.')
   })
 
-  it('denies guide', () => {
-    expect(canMasterReopenFinalConfirmed(finalConfirmedPending, 'guide')).toBe(false)
+  it('denies regional admin on paid-completed settlements', () => {
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'admin')).toBe(false)
+    expect(assertCanMasterReopenFinalConfirmed(paidCompleted, 'admin').ok).toBe(false)
   })
 
-  it('denies paid settlements (use 지급 재오픈 instead)', () => {
+  it('denies guide on paid-completed settlements', () => {
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'guide')).toBe(false)
+  })
+
+  it('denies guide-waiting statuses', () => {
     expect(
       canMasterReopenFinalConfirmed(
-        { status: 'paid', guide_confirmed_at: '2026-05-27T00:00:00Z' },
+        { status: 'edit_requested', guide_confirmed_at: null },
         'master_admin',
       ),
     ).toBe(false)
+    expect(canMasterReopenFinalConfirmed(pendingUnconfirmed, 'master_admin')).toBe(false)
   })
 })
 
-describe('final-confirmed reopen vs assignment recall', () => {
+describe('admin correction workflow by settlement state', () => {
+  it('edit_requested: no recall, reopen, or duplicate request_edit', () => {
+    const row = { status: 'edit_requested' as SettlementStatus, guide_confirmed_at: null }
+    expect(canRecallSettlement(row, 'admin')).toBe(false)
+    expect(canMasterReopenFinalConfirmed(row, 'master_admin')).toBe(false)
+    expect(canAdminRequestEditOnSettlement(row, 'admin')).toBe(false)
+  })
+
+  it('unconfirmed pending_guide_confirmation: admin waits — no request_edit or reopen', () => {
+    expect(canAdminRequestEditOnSettlement(pendingUnconfirmed, 'admin')).toBe(false)
+    expect(canMasterReopenFinalConfirmed(pendingUnconfirmed, 'master_admin')).toBe(false)
+    expect(canRecallSettlement(pendingUnconfirmed, 'admin')).toBe(false)
+  })
+
+  it('final-confirmed unpaid: allows 수정요청, not 정산 재오픈 or 회수', () => {
+    expect(canAdminRequestEditOnSettlement(finalConfirmedPending, 'admin')).toBe(true)
+    expect(canAdminRequestEditOnSettlement(finalConfirmedPending, 'master_admin')).toBe(true)
+    expect(canMasterReopenFinalConfirmed(finalConfirmedPending, 'master_admin')).toBe(false)
+    expect(canRecallSettlement(finalConfirmedPending, 'admin')).toBe(false)
+  })
+
+  it('paid-completed: allows 정산 재오픈 for master only, not 수정요청', () => {
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'master_admin')).toBe(true)
+    expect(canMasterReopenFinalConfirmed(paidCompleted, 'admin')).toBe(false)
+    expect(canAdminRequestEditOnSettlement(paidCompleted, 'admin')).toBe(false)
+    expect(canAdminRequestEditOnSettlement(paidCompleted, 'master_admin')).toBe(false)
+  })
+})
+
+describe('paid reopen vs assignment recall', () => {
   it('does not offer recall (회수) on guide-final-confirmed settlements', () => {
     expect(canRecallSettlement(finalConfirmedPending, 'admin')).toBe(false)
     expect(canRecallSettlement(finalConfirmedPending, 'master_admin')).toBe(false)
@@ -104,16 +149,14 @@ describe('final-confirmed reopen vs assignment recall', () => {
     ).toBe(false)
   })
 
-  it('reopen target is admin-editable submitted, same family as recall target', () => {
+  it('reopen target is admin-editable submitted', () => {
     expect(FINAL_CONFIRMED_REOPEN_TARGET_STATUS).toBe('submitted')
     expect(RECALL_TARGET_STATUS).toBe('submitted')
     expect(canAdminEditSettlement(FINAL_CONFIRMED_REOPEN_TARGET_STATUS)).toBe(true)
   })
 
-  it('reopened settlement leaves the 최종확인 dashboard bucket', () => {
-    expect(normalizeStatusForDashboard('pending_guide_confirmation')).toBe(
-      'pending_guide_confirmation',
-    )
+  it('reopened paid settlement moves to submitted dashboard bucket', () => {
+    expect(normalizeStatusForDashboard('paid')).toBe('paid')
     expect(normalizeStatusForDashboard(FINAL_CONFIRMED_REOPEN_TARGET_STATUS)).toBe('submitted')
   })
 
@@ -135,15 +178,24 @@ describe('admin settlement detail UI wiring', () => {
   )
   const detailPage = readFileSync(join(ROOT, 'src/app/admin/settlements/[id]/page.tsx'), 'utf8')
 
-  it('renders 정산 재오픈 card for master-admin final-confirmed reopen', () => {
+  it('renders 정산 재오픈 card for master-admin paid-completed reopen', () => {
     expect(reviewPanel).toContain('정산 재오픈')
+    expect(reviewPanel).toContain('지급완료된 정산서를 다시 관리자 수정 상태로 되돌립니다.')
     expect(reviewPanel).toContain('재오픈 사유 (선택)')
-    expect(reviewPanel).toContain(FINAL_CONFIRMED_REOPEN_CONFIRM_COPY)
+    expect(reviewPanel).toContain(PAID_REOPEN_CONFIRM_COPY)
     expect(reviewPanel).toContain('reopenFinalConfirmedSettlementForAdminCorrection')
     expect(reviewPanel).toContain('canReopenFinalConfirmed')
   })
 
-  it('does not use 회수 wording on the final-confirmed reopen card', () => {
+  it('does not render duplicate 지급 재오픈 button', () => {
+    expect(reviewPanel).not.toContain('지급 재오픈')
+    expect(reviewPanel).not.toContain('canReopen=')
+    expect(reviewPanel).not.toContain("action: 'reopen'")
+    expect(detailPage).not.toContain('canMasterReopenPaid')
+    expect(detailPage).not.toContain('canReopen={')
+  })
+
+  it('does not use 회수 wording on the paid reopen card', () => {
     const reopenCardStart = reviewPanel.indexOf('canReopenFinalConfirmed &&')
     const reopenCardEnd = reviewPanel.indexOf('<textarea', reopenCardStart)
     const reopenCard = reviewPanel.slice(reopenCardStart, reopenCardEnd)
@@ -152,7 +204,6 @@ describe('admin settlement detail UI wiring', () => {
   })
 
   it('does not render settlement recall/cancel actions on admin detail', () => {
-    expect(reviewPanel).not.toContain('canRecall')
     expect(reviewPanel).not.toContain('recallSettlement')
     expect(reviewPanel).not.toContain('회수')
     expect(reviewPanel).not.toContain('수정요청 취소')
@@ -163,17 +214,25 @@ describe('admin settlement detail UI wiring', () => {
     expect(detailPage).not.toContain('canRecall=')
   })
 
-  it('hides ReviewPanel for guide-waiting statuses (admin read-only wait)', () => {
+  it('guide-waiting statuses have no reopen eligibility', () => {
     const guideWaitingStatuses = ['edit_requested', 'pending_guide_confirmation'] as const
     for (const status of guideWaitingStatuses) {
       expect(canRecallSettlement({ status, guide_confirmed_at: null }, 'admin')).toBe(false)
-      expect(canRecallSettlement({ status, guide_confirmed_at: null }, 'master_admin')).toBe(false)
+      expect(canMasterReopenFinalConfirmed({ status, guide_confirmed_at: null }, 'master_admin')).toBe(
+        false,
+      )
     }
   })
 
   it('wires canMasterReopenFinalConfirmed on the detail page', () => {
     expect(detailPage).toContain('canMasterReopenFinalConfirmed')
     expect(detailPage).toContain('canReopenFinalConfirmed={canReopenFinalConfirmed}')
+  })
+
+  it('wires canAdminRequestEditOnSettlement on the detail page', () => {
+    expect(detailPage).toContain('canAdminRequestEditOnSettlement')
+    expect(detailPage).toContain('guide_confirmed_at: s.guide_confirmed_at')
+    expect(detailPage).toContain('canRequestEdit={canReqEdit}')
   })
 
   it('navigates to admin edit route after successful reopen (not detail refresh)', () => {
@@ -184,8 +243,6 @@ describe('admin settlement detail UI wiring', () => {
     expect(handleFinalReopen).toContain('res.redirectTo')
     expect(handleFinalReopen).toContain('adminSettlementEditPath(settlementId)')
     expect(handleFinalReopen).not.toContain('router.refresh')
-    expect(handleFinalReopen).not.toContain('/guide/settlements')
-    expect(handleFinalReopen).not.toContain('/admin/tours')
   })
 })
 
@@ -204,18 +261,23 @@ describe('reopenFinalConfirmedSettlementForAdminCorrection server action', () =>
     expect(body).not.toContain('assertCanRecallSettlement')
   })
 
-  it('moves to submitted and clears guide confirmation pointers only', () => {
+  it('rejects unpaid final-confirmed via assertCanMasterReopenFinalConfirmed guard', () => {
+    expect(body).toContain('assertCanMasterReopenFinalConfirmed')
+    expect(body).toContain('if (!guard.ok) return { ok: false, error: guard.error }')
+  })
+
+  it('moves paid to submitted and clears guide confirmation pointers only', () => {
     expect(body).toContain('status: FINAL_CONFIRMED_REOPEN_TARGET_STATUS')
     expect(body).toContain('guide_confirmed_at: null')
     expect(body).toContain('guide_confirmed_by: null')
     expect(body).toContain('active_confirmation_id: null')
     expect(body).not.toContain('.delete(')
-    expect(body).not.toContain('paid_at')
+    expect(body).not.toContain('paid_at: null')
   })
 
-  it('records audit trail with reopen reason', () => {
+  it('records audit trail with paid reopen reason', () => {
     expect(body).toContain("action: 'status_change'")
-    expect(body).toContain('master_reopen_final_confirmed')
+    expect(body).toContain('master_reopen_paid_correction')
   })
 
   it('returns admin edit redirect target on success', () => {
@@ -245,7 +307,23 @@ describe('recallSettlement unchanged for assignment-recall semantics', () => {
   })
 })
 
-describe('paid reopen path unchanged', () => {
+describe('reviewSettlement request_edit from final-confirmed unpaid', () => {
+  const source = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
+  const start = source.indexOf("case 'request_edit':")
+  const end = source.indexOf("case 'pay':", start)
+  const body = source.slice(start, end)
+
+  it('clears guide confirmation pointers when reopening correction before payment', () => {
+    expect(body).toContain('isGuideFinalConfirmedSettlement')
+    expect(body).toContain('updates.guide_confirmed_at = null')
+    expect(body).toContain('updates.guide_confirmed_by = null')
+    expect(body).toContain('updates.active_confirmation_id = null')
+    expect(body).toContain("updates.status = 'edit_requested'")
+    expect(body).not.toContain('paid_at: null')
+  })
+})
+
+describe('reviewSettlement paid reopen path unchanged', () => {
   const source = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
   const start = source.indexOf("if (params.action === 'reopen')")
   const end = source.indexOf('const updates: Record<string, unknown>', start)

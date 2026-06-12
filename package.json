@@ -20,6 +20,7 @@
     "verify:deploy": "node scripts/verify-deploy.mjs",
     "measure:settlement-save": "node scripts/measure-settlement-save-performance.mjs",
     "measure:settlement-save:workflow": "node scripts/run-settlement-save-performance-workflow.mjs",
+    "measure:page-load": "node scripts/measure-page-load-performance.mjs",
     "db:migrate:external-receivable": "node scripts/apply-external-receivable-migration.mjs"
   },
   "dependencies": {

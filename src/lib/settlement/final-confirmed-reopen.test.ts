@@ -235,6 +235,13 @@ describe('admin settlement detail UI wiring', () => {
     expect(detailPage).toContain('canRequestEdit={canReqEdit}')
   })
 
+  it('wires canMarkSettlementPaidForRole with guide_confirmed_at on the detail page', () => {
+    expect(detailPage).toContain('canMarkSettlementPaidForRole')
+    expect(detailPage).toContain('guide_submit_snapshot_id: s.guide_submit_snapshot_id')
+    expect(detailPage).toContain('canPay={canPay}')
+    expect(reviewPanel).toContain('지급완료 처리')
+  })
+
   it('navigates to admin edit route after successful reopen (not detail refresh)', () => {
     const handleStart = reviewPanel.indexOf('const handleFinalReopen = () => {')
     const handleEnd = reviewPanel.indexOf('const showActions =', handleStart)

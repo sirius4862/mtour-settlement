@@ -18,11 +18,16 @@ export function ConfirmPanel({ settlementId }: Props) {
   const handleConfirm = () => {
     setError('')
     start(async () => {
-      const res = await guideConfirm(settlementId)
-      if (res.ok) {
-        router.push(`/guide/settlements/${settlementId}`)
-      } else {
-        setError(res.error ?? '오류 발생')
+      try {
+        const res = await guideConfirm(settlementId)
+        if (res.ok) {
+          router.push(`/guide/settlements/${settlementId}`)
+          router.refresh()
+        } else {
+          setError(res.error ?? '오류 발생')
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '오류 발생')
       }
     })
   }
@@ -30,11 +35,16 @@ export function ConfirmPanel({ settlementId }: Props) {
   const handleClarify = () => {
     setError('')
     start(async () => {
-      const res = await guideRequestClarification(settlementId, message)
-      if (res.ok) {
-        router.push(`/guide/settlements/${settlementId}`)
-      } else {
-        setError(res.error ?? '오류 발생')
+      try {
+        const res = await guideRequestClarification(settlementId, message)
+        if (res.ok) {
+          router.push(`/guide/settlements/${settlementId}`)
+          router.refresh()
+        } else {
+          setError(res.error ?? '오류 발생')
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '오류 발생')
       }
     })
   }

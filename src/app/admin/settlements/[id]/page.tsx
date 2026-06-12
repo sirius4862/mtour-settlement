@@ -88,7 +88,11 @@ export default async function AdminSettlementDetailPage({
     },
     session.role,
   )
-  const canPay     = canMarkSettlementPaidForRole(session.role, s)
+  const canPay = canMarkSettlementPaidForRole(session.role, {
+    status: s.status,
+    guide_confirmed_at: s.guide_confirmed_at,
+    guide_submit_snapshot_id: s.guide_submit_snapshot_id,
+  })
   const canReopenFinalConfirmed = canMasterReopenFinalConfirmed(
     {
       status: s.status,

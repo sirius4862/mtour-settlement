@@ -96,6 +96,12 @@ describe('guideConfirm — RPC + separate confirmation update (source-level)', (
     expect(confIdx).toBeGreaterThan(rpcIdx)
   })
 
+  it('verifies guide_confirmed_at after RPC and confirmation row count', () => {
+    expect(body).toContain('guide_confirmed_at, guide_confirmed_by')
+    expect(body).toContain('assertSingleOptimisticUpdate(confRows)')
+    expect(body).toContain('snapshot_after_id')
+  })
+
   it('documents atomic RPC improvement as future DB migration work', () => {
     expect(body).toContain('TODO(audit)')
     expect(body).toContain('isStuckGuideConfirmation')

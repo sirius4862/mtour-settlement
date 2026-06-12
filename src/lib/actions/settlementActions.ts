@@ -2598,14 +2598,32 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
     return { ok: false, error: '활성 확인 요청이 없습니다.' }
   }
 
-  const full = await getSettlementFull(id, { audience: 'guide' })
-  if (!full) return { ok: false, error: '정산서를 찾을 수 없습니다.' }
+  const { data: confirmation } = await supabase
+    .from(GUIDE_READ.settlement_confirmations)
+    .select('snapshot_after_id')
+    .eq('id', current.active_confirmation_id)
+    .eq('status', 'pending')
+    .maybeSingle()
 
-  const payload = buildSnapshotPayload(full)
+  if (!confirmation?.snapshot_after_id) {
+    return { ok: false, error: '확인 요청 패킷을 찾을 수 없습니다.' }
+  }
+
+  const { data: afterRow } = await supabase
+    .from(GUIDE_READ.settlement_snapshots)
+    .select('payload_json')
+    .eq('id', confirmation.snapshot_after_id)
+    .maybeSingle()
+
+  const confirmPayload = parseSnapshotPayload(afterRow?.payload_json)
+  if (!confirmPayload) {
+    return { ok: false, error: '확인 요청 스냅샷을 읽을 수 없습니다.' }
+  }
+
   const snap = await insertSnapshot(supabase, {
     settlementId: id,
     kind: 'guide_confirmed',
-    payload,
+    payload: confirmPayload,
     createdBy: profile.id,
   })
   if (!snap.ok) return { ok: false, error: snap.error }
@@ -2621,11 +2639,24 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
     return { ok: false, error: '최종확인 처리에 실패했습니다.' }
   }
 
+  const { data: confirmedRow } = await supabase
+    .from(GUIDE_READ.settlements)
+    .select('guide_confirmed_at, guide_confirmed_by')
+    .eq('id', id)
+    .single()
+
+  if (!confirmedRow?.guide_confirmed_at) {
+    return {
+      ok: false,
+      error: '최종확인 처리에 실패했습니다. 확인 시각이 저장되지 않았습니다.',
+    }
+  }
+
   // TODO(audit): True atomic guide confirm requires moving settlement_confirmations
   // update into guide_confirm_settlement RPC via a reviewed DB migration. The app
   // currently calls the RPC first, then updates the confirmation row separately;
   // partial failure can desync — isStuckGuideConfirmation() detects that state.
-  const { error: confErr } = await supabase
+  const { data: confRows, error: confErr } = await supabase
     .from('settlement_confirmations')
     .update({
       status: 'confirmed',
@@ -2634,8 +2665,11 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
     })
     .eq('id', current.active_confirmation_id)
     .eq('status', 'pending')
+    .select('id')
 
   if (confErr) return { ok: false, error: confErr.message }
+  const confCheck = assertSingleOptimisticUpdate(confRows)
+  if (!confCheck.ok) return { ok: false, error: confCheck.error }
 
   await insertAuditEvent(supabase, {
     settlementId: id,

@@ -265,13 +265,15 @@ describe('guide confirm page source', () => {
     expect(source).not.toMatch(/status !== 'pending_guide_confirmation'[\s\S]*notFound\(\)/)
   })
 
-  it('ConfirmPanel navigates without refresh after success', () => {
+  it('ConfirmPanel navigates and refreshes after success; surfaces errors', () => {
     const source = readFileSync(
       join(process.cwd(), 'src/app/guide/settlements/[id]/confirm/ConfirmPanel.tsx'),
       'utf8',
     )
 
     expect(source).toContain('router.push(`/guide/settlements/${settlementId}`)')
-    expect(source).not.toContain('router.refresh()')
+    expect(source).toContain('router.refresh()')
+    expect(source).toContain('try {')
+    expect(source).toContain('setError(res.error')
   })
 })

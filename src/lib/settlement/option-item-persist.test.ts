@@ -257,6 +257,50 @@ describe('option item persist — save payload', () => {
     expect(merged[0]?.option_name).toBe('보트투어')
   })
 
+  it('preserves existing guide options when incoming payload is empty', () => {
+    const existing = existingSettlementWithOptions()
+    const sanitized = sanitizeGuideDraftPayload(
+      { ...toDraftPayload(draftStateWithOptions(SETTLEMENT_ID)), options: [] },
+      existing,
+    )
+
+    expect(sanitized.options.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+    expect(sanitized.options[0]?.option_name).toBe('보트투어')
+    expect(sanitized.options[0]?.id).toBe('opt-db-1')
+  })
+
+  it('treats only is_extra_vehicle === true as extra vehicle on save rows', () => {
+    const rows = buildOptionDbRows(
+      [
+        guideOptionRow({ is_extra_vehicle: false }),
+        guideOptionRow({ is_extra_vehicle: null as unknown as undefined }),
+        guideOptionRow({ is_extra_vehicle: undefined }),
+      ],
+      SETTLEMENT_ID,
+      26000,
+    )
+
+    expect(rows.every((r) => r.is_extra_vehicle === false)).toBe(true)
+    expect(rows).toHaveLength(3)
+  })
+
+  it('admin review hydrate sees guide option rows after guide save round-trip', () => {
+    const existing = existingSettlementWithOptions()
+    const hydrated = stateFromSettlementFull(existing, '가이드')
+    const payload = toDraftPayload({
+      ...hydrated,
+      options: [],
+    })
+    const sanitized = sanitizeGuideDraftPayload(payload, existing)
+    const adminView = stateFromSettlementFull(
+      { ...existing, options: buildOptionDbRows(sanitized.options, SETTLEMENT_ID, sanitized.exchange_rate) as SettlementFull['options'] },
+      'Admin',
+    )
+
+    expect(adminView.options.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+    expect(adminView.options[0]?.option_name).toBe('보트투어')
+  })
+
   it('still persists meals alongside options in the same draft payload', () => {
     const payload = toDraftPayload(draftStateWithOptions())
     const optionRows = buildOptionDbRows(payload.options, SETTLEMENT_ID, payload.exchange_rate)

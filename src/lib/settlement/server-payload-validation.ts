@@ -179,7 +179,7 @@ export function validateSettlementDraftPayload(
     () => validateOthers(payload.others),
     () => validateCompanyExpenses(payload.companyExpenses ?? []),
     () => validateShoppings(payload.shoppings),
-    () => validateOptions(payload.options),
+    () => validateOptions(payload.options ?? []),
   ]
 
   for (const run of checks) {
@@ -209,7 +209,7 @@ export function validateSettlementItemsPayload(payload: {
     () => validateEntrances(payload.entrances),
     () => validateOthers(payload.others),
     () => validateShoppings(payload.shoppings),
-    () => validateOptions(payload.options),
+    () => validateOptions(payload.options ?? []),
   ]
 
   for (const run of checks) {

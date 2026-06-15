@@ -266,4 +266,49 @@ describe('mergeGuideOptionRowsForSave', () => {
     expect(merged.filter((r) => r.is_extra_vehicle === true)).toHaveLength(1)
     expect(merged[0]?.option_name).toBe('보트투어')
   })
+
+  it('falls back to existing guide options when incoming payload is empty', () => {
+    const existing = [
+      {
+        ...emptyOptionRow(false),
+        id: 'opt-db-1',
+        clientId: 'opt-db-1',
+        option_name: '보트투어',
+        unit_price_usd: 25,
+        pax: 8,
+      },
+      {
+        ...emptyOptionRow(true),
+        id: 'extra-1',
+        clientId: 'extra-1',
+        expense_usd: 35,
+        expense_vnd: 780000,
+      },
+    ]
+
+    const merged = mergeGuideOptionRowsForSave([], existing)
+
+    expect(merged.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+    expect(merged.filter((r) => r.is_extra_vehicle === true)).toHaveLength(1)
+    expect(merged[0]?.id).toBe('opt-db-1')
+  })
+
+  it('applies explicit soft-deletes when incoming carries deleted guide option rows', () => {
+    const existing = [
+      {
+        ...emptyOptionRow(false),
+        id: 'opt-db-1',
+        clientId: 'opt-db-1',
+        option_name: '보트투어',
+      },
+    ]
+
+    const merged = mergeGuideOptionRowsForSave(
+      [{ ...existing[0]!, deleted: true }],
+      existing,
+    )
+
+    expect(merged.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+    expect(merged[0]?.deleted).toBe(true)
+  })
 })

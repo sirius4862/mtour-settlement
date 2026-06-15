@@ -207,8 +207,8 @@ export function mergeAdminOptionRowsForSave(
   incoming: DraftOptionRow[],
   existing: DraftOptionRow[],
 ): DraftOptionRow[] {
-  const guideOptions = existing.filter((r) => !r.is_extra_vehicle)
-  const incomingExtra = incoming.filter((r) => r.is_extra_vehicle && !r.deleted)
+  const guideOptions = existing.filter((r) => r.is_extra_vehicle !== true)
+  const incomingExtra = incoming.filter((r) => r.is_extra_vehicle === true && !r.deleted)
   return [...guideOptions, ...incomingExtra]
 }
 
@@ -281,10 +281,15 @@ export function mergeGuideOptionRowsForSave(
   incoming: DraftOptionRow[],
   existing: DraftOptionRow[] | null | undefined,
 ): DraftOptionRow[] {
-  const guideOptions = (incoming ?? []).filter((r) => r.is_extra_vehicle !== true)
+  const incomingGuide = (incoming ?? []).filter((r) => r.is_extra_vehicle !== true)
+  const existingGuide = (existing ?? []).filter(
+    (r) => r.is_extra_vehicle !== true && !r.deleted,
+  )
   const existingExtra = (existing ?? []).filter(
     (r) => r.is_extra_vehicle === true && !r.deleted,
   )
+  // Empty client payload must not wipe DB guide options (e.g. stale store after sync).
+  const guideOptions = incomingGuide.length > 0 ? incomingGuide : existingGuide
   return [...guideOptions, ...existingExtra]
 }
 
@@ -318,7 +323,9 @@ export function hasGuideOwnedLineItemData(state: {
   const entrances = (state.entrances ?? []).filter((r) => !r.deleted)
   const others = (state.others ?? []).filter((r) => !r.deleted)
   const shoppings = (state.shoppings ?? []).filter((r) => !r.deleted)
-  const options = (state.options ?? []).filter((r) => !r.deleted && !r.is_extra_vehicle)
+  const options = (state.options ?? []).filter(
+    (r) => !r.deleted && r.is_extra_vehicle !== true,
+  )
 
   if (hotels.some((r) => r.hotel_name.trim() || r.guide_amount_usd > 0 || r.sgl_count + r.twn_count + r.trp_count > 0)) {
     return true

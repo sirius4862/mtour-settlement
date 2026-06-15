@@ -11,6 +11,10 @@ import { isWorkflowStatus } from '@/lib/settlement/status-display'
 
 export const GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE = 20
 
+/** List-card fields for /guide/settlements — excludes calc_summary_json and financial columns. */
+export const GUIDE_SETTLEMENT_HISTORY_SELECT =
+  'id,tour_id,status,reject_reason,guide_confirmed_at,year_month,created_at,submitted_at,updated_at,tour:tours(id,tour_code,pattern,agency_name,start_date,end_date,pax_count)'
+
 export const GUIDE_HISTORY_PERIODS = [
   '7d',
   '30d',

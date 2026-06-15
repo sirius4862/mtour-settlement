@@ -6,6 +6,7 @@ import { GUIDE_DASHBOARD_SETTLEMENT_SELECT } from './dashboard-settlements'
 import {
   GUIDE_HISTORY_EMPTY_MESSAGE,
   GUIDE_HISTORY_PERIOD_HELPER,
+  GUIDE_SETTLEMENT_HISTORY_SELECT,
   buildGuideHistoryUrl,
   expandGuideHistoryStatusFilter,
   guideHistoryRecent30Days,
@@ -354,5 +355,78 @@ describe('guide settlement history filters', () => {
     expect(helper).toContain('GUIDE_DASHBOARD_SETTLEMENT_SELECT')
     expect(helper).toContain(GUIDE_DASHBOARD_SETTLEMENT_SELECT)
     expect(GUIDE_DASHBOARD_SETTLEMENT_SELECT).not.toContain('calc_summary_json')
+  })
+
+  function getMySettlementHistoryBody(): string {
+    const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
+    const start = actions.indexOf('export async function getMySettlementHistory')
+    const end = actions.indexOf('export async function getSettlementFullForGuide', start)
+    return actions.slice(start, end)
+  }
+
+  it('uses GUIDE_SETTLEMENT_HISTORY_SELECT in getMySettlementHistory', () => {
+    const body = getMySettlementHistoryBody()
+    expect(body).toContain('GUIDE_SETTLEMENT_HISTORY_SELECT')
+    expect(body).toContain(".select(GUIDE_SETTLEMENT_HISTORY_SELECT, { count: 'exact' })")
+    expect(body).not.toContain("select('*, tour:tours(*)'")
+    expect(body).not.toContain('select("*"')
+  })
+
+  it('excludes calc_summary_json and heavy fields from history list select', () => {
+    expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('*')
+    expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('tour:tours(*)')
+    expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('calc_summary_json')
+    expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('guide_note')
+    expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('admin_note')
+  })
+
+  it('includes settlement and tour fields used by guide settlements list cards', () => {
+    const historyPage = readFileSync(join(ROOT, 'src/app/guide/settlements/page.tsx'), 'utf8')
+
+    for (const field of [
+      'id',
+      'status',
+      'guide_confirmed_at',
+      'year_month',
+      'reject_reason',
+      'created_at',
+    ]) {
+      expect(GUIDE_SETTLEMENT_HISTORY_SELECT).toContain(field)
+    }
+    for (const tourField of [
+      'tour_code',
+      'pattern',
+      'agency_name',
+      'start_date',
+      'end_date',
+      'pax_count',
+    ]) {
+      expect(GUIDE_SETTLEMENT_HISTORY_SELECT).toContain(tourField)
+    }
+    expect(historyPage).toContain('s.tour?.pattern')
+    expect(historyPage).toContain('s.year_month')
+    expect(historyPage).toContain('s.reject_reason')
+  })
+
+  it('keeps default 7-day, custom fallback, status, search, pagination, and guide scope unchanged', () => {
+    const body = getMySettlementHistoryBody()
+
+    expect(body).toContain('resolveGuideHistoryDateRange')
+    expect(body).toContain('parseGuideHistoryPeriod')
+    expect(body).toContain('expandGuideHistoryStatusFilter')
+    expect(body).toContain('escapeIlikePattern')
+    expect(body).toContain('GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE')
+    expect(body).toContain("count: 'exact'")
+    expect(body).toContain('.range(from, to)')
+    expect(body).toContain(".eq('guide_id', user.id)")
+    expect(body).toContain(".order('created_at', { ascending: false })")
+    expect(body).toContain(".gte('start_date', range.from)")
+    expect(body).toContain(".lte('start_date', range.to)")
+  })
+
+  it('does not modify settlement save files', () => {
+    const noop = readFileSync(join(ROOT, 'src/lib/settlement/noop-draft-save-fast-path.ts'), 'utf8')
+    expect(noop).toContain('canSkipPostSaveReloadForNoopSave')
+    expect(noop).not.toContain('GUIDE_SETTLEMENT_HISTORY_SELECT')
   })
 })

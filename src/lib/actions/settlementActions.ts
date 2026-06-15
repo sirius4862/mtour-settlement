@@ -152,6 +152,7 @@ import {
 } from '@/lib/admin/settlement-unsubmitted-list'
 import {
   GUIDE_SETTLEMENT_HISTORY_PAGE_SIZE,
+  GUIDE_SETTLEMENT_HISTORY_SELECT,
   expandGuideHistoryStatusFilter,
   normalizeGuideHistoryPage,
   parseGuideHistoryPeriod,
@@ -506,7 +507,7 @@ export async function getMySettlementHistory(
   const useGuideRead = await shouldUseGuideReadTables('guide')
   let q = supabase
     .from(tableForAudience('settlements', useGuideRead))
-    .select('*, tour:tours(*)', { count: 'exact' })
+    .select(GUIDE_SETTLEMENT_HISTORY_SELECT, { count: 'exact' })
     .eq('guide_id', user.id)
     .order('created_at', { ascending: false })
 
@@ -523,7 +524,7 @@ export async function getMySettlementHistory(
   const total = count ?? 0
   return {
     items: (data ?? []).map((row) =>
-      sanitizeSettlementForGuide(row as SettlementWithTour),
+      sanitizeSettlementForGuide(row as unknown as SettlementWithTour),
     ) as SettlementWithTour[],
     total,
     page,

@@ -42,7 +42,13 @@ import {
 import { timed } from '@/lib/server/perf'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
 import { resolveSettlementOperatingBranchId } from '@/lib/guide/assignment'
-import { GUIDE_AVAILABLE_TOUR_SELECT } from '@/lib/guide/available-tours'
+import {
+  GUIDE_AVAILABLE_TOUR_SELECT,
+  GUIDE_DASHBOARD_AVAILABLE_TOUR_SELECT,
+  collectUsedTourIds,
+  filterToursWithoutSettlements,
+  type GuideDashboardAvailableTour,
+} from '@/lib/guide/available-tours'
 import {
   EMPTY_GUIDE_DASHBOARD_SETTLEMENTS,
   GUIDE_DASHBOARD_QUEUE_LIMIT,
@@ -291,29 +297,57 @@ async function persistSettlementCalcSummary(
 
 // ── 투어 조회 ──────────────────────────────────────────────────
 
+async function loadGuideTourAvailability(guideId: string, tourSelect: string) {
+  const supabase = await createClient()
+
+  const [toursRes, usedRes] = await Promise.all([
+    supabase
+      .from('tours')
+      .select(tourSelect)
+      .eq('guide_id', guideId)
+      .neq('assignment_status', 'recalled')
+      .order('start_date', { ascending: false }),
+    supabase
+      .from(GUIDE_READ.settlements)
+      .select('tour_id')
+      .eq('guide_id', guideId),
+  ])
+
+  return {
+    tours: toursRes.data ?? [],
+    usedTourIds: collectUsedTourIds(usedRes.data),
+  }
+}
+
 /** 가이드의 미정산 배정 투어 목록 (기간 제한 없음 — 지연 제출 backlog 포함). */
 export async function getAvailableTours(): Promise<Tour[]> {
   const session = await getSession()
   if (!session) return []
 
-  const supabase = await createClient()
+  const { tours, usedTourIds } = await loadGuideTourAvailability(
+    session.id,
+    GUIDE_AVAILABLE_TOUR_SELECT,
+  )
+  if (!tours.length) return []
 
-  const { data: tours } = await supabase
-    .from('tours')
-    .select(GUIDE_AVAILABLE_TOUR_SELECT)
-    .eq('guide_id', session.id)
-    .neq('assignment_status', 'recalled')
-    .order('start_date', { ascending: false })
+  return filterToursWithoutSettlements(tours as unknown as Tour[], usedTourIds)
+}
 
-  if (!tours?.length) return []
+/** /guide 대시보드 배정 투어 — 카드 렌더에 필요한 최소 컬럼만 로드. */
+export async function getGuideDashboardAvailableTours(): Promise<GuideDashboardAvailableTour[]> {
+  const session = await getSession()
+  if (!session) return []
 
-  const { data: used } = await supabase
-    .from(GUIDE_READ.settlements)
-    .select('tour_id')
-    .eq('guide_id', session.id)
+  const { tours, usedTourIds } = await loadGuideTourAvailability(
+    session.id,
+    GUIDE_DASHBOARD_AVAILABLE_TOUR_SELECT,
+  )
+  if (!tours.length) return []
 
-  const usedSet = new Set((used ?? []).map((r: { tour_id: string }) => r.tour_id))
-  return (tours as Tour[]).filter((t) => !usedSet.has(t.id))
+  return filterToursWithoutSettlements(
+    tours as unknown as GuideDashboardAvailableTour[],
+    usedTourIds,
+  )
 }
 
 const LINE_ITEM_TABLES = [

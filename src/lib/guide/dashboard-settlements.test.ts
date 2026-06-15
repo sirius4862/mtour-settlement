@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SettlementWithTour } from '@/types'
-import { GUIDE_AVAILABLE_TOUR_SELECT } from './available-tours'
+import { GUIDE_AVAILABLE_TOUR_SELECT, GUIDE_DASHBOARD_AVAILABLE_TOUR_SELECT } from './available-tours'
 import {
   GUIDE_DASHBOARD_DRAFT_STATUSES,
   GUIDE_DASHBOARD_EDIT_REQUESTED_STATUSES,
@@ -176,27 +176,28 @@ describe('guide dashboard loader wiring', () => {
 })
 
 describe('guide dashboard page wiring', () => {
-  it('loads assigned tours without a recent-date cutoff', () => {
+  it('loads assigned tours without a recent-date cutoff via shared availability loader', () => {
     const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
-    const start = actions.indexOf('export async function getAvailableTours')
+    const start = actions.indexOf('async function loadGuideTourAvailability')
     const end = actions.indexOf('const LINE_ITEM_TABLES', start)
     const body = actions.slice(start, end)
 
     expect(body).not.toContain('90 * 24 * 60 * 60 * 1000')
     expect(body).not.toContain(".gte('start_date', since)")
     expect(body).toContain(".neq('assignment_status', 'recalled')")
-    expect(body).toContain('GUIDE_AVAILABLE_TOUR_SELECT')
+    expect(body).toContain('Promise.all')
     expect(body).not.toContain(".select('*')")
     expect(body).toContain('getSession()')
     expect(body).not.toContain('auth.getUser()')
     expect(GUIDE_AVAILABLE_TOUR_SELECT).toContain('tour_code')
     expect(GUIDE_AVAILABLE_TOUR_SELECT).toContain('branch_id')
     expect(GUIDE_AVAILABLE_TOUR_SELECT).not.toContain('*')
+    expect(GUIDE_DASHBOARD_AVAILABLE_TOUR_SELECT).not.toContain('vehicle_type')
   })
 
   it('scopes dashboard loaders to the authenticated guide id', () => {
     const actions = readFileSync(join(ROOT, 'src/lib/actions/settlementActions.ts'), 'utf8')
-    const toursStart = actions.indexOf('export async function getAvailableTours')
+    const toursStart = actions.indexOf('async function loadGuideTourAvailability')
     const toursEnd = actions.indexOf('const LINE_ITEM_TABLES', toursStart)
     const toursBody = actions.slice(toursStart, toursEnd)
 
@@ -204,7 +205,7 @@ describe('guide dashboard page wiring', () => {
     const settlementsEnd = actions.indexOf('export async function getMySettlementHistory', settlementsStart)
     const settlementsBody = actions.slice(settlementsStart, settlementsEnd)
 
-    expect(toursBody).toContain(".eq('guide_id', session.id)")
+    expect(toursBody).toContain(".eq('guide_id', guideId)")
     expect(settlementsBody).toContain(".eq('guide_id', session.id)")
   })
 
@@ -212,6 +213,8 @@ describe('guide dashboard page wiring', () => {
     const dashboard = readFileSync(join(ROOT, 'src/app/guide/page.tsx'), 'utf8')
 
     expect(dashboard).toContain('getGuideDashboardSettlements')
+    expect(dashboard).toContain('getGuideDashboardAvailableTours')
+    expect(dashboard).not.toContain('getAvailableTours')
     expect(dashboard).not.toContain('getMySettlements')
     expect(dashboard).not.toContain('settlements.filter((s) => s.status ===')
     expect(dashboard).not.toContain('settlements.slice(0, 3)')

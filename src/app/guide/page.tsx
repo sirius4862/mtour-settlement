@@ -1,8 +1,11 @@
 ﻿import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { getSession } from '@/lib/auth/session'
-import { getAvailableTours, getGuideDashboardSettlements } from '@/lib/actions/settlementActions'
-import { tourLabel } from '@/lib/settlement/mappers'
+import { guideDashboardTourLabel } from '@/lib/guide/available-tours'
+import {
+  getGuideDashboardAvailableTours,
+  getGuideDashboardSettlements,
+} from '@/lib/actions/settlementActions'
 import { timed } from '@/lib/server/perf'
 import type { SettlementStatus } from '@/types'
 
@@ -73,7 +76,7 @@ export default async function GuidePage() {
   if (!session) return null
 
   const [availableTours, dashboardSettlements] = await Promise.all([
-    timed('guide dashboard assigned tours', () => getAvailableTours()),
+    timed('guide dashboard assigned tours', () => getGuideDashboardAvailableTours()),
     timed('guide dashboard settlements', () => getGuideDashboardSettlements()),
   ])
 
@@ -106,7 +109,7 @@ export default async function GuidePage() {
           ) : (
             availableTours.map((t) => (
               <Link key={t.id} href={`/guide/settlements/new?tourId=${t.id}`} className={cardBase}>
-                <p className="text-[15px] font-bold leading-6 tracking-[-0.01em] text-[#2B2118]">{tourLabel(t)}</p>
+                <p className="text-[15px] font-bold leading-6 tracking-[-0.01em] text-[#2B2118]">{guideDashboardTourLabel(t)}</p>
                 <p className={`mt-1 ${mutedText}`}>
                   {t.agency_name} · {t.start_date} ~ {t.end_date} · {t.pax_count}명
                 </p>

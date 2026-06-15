@@ -6,6 +6,7 @@ import {
   getGuideDashboardAvailableTours,
   getGuideDashboardSettlements,
 } from '@/lib/actions/settlementActions'
+import { correctionReasonForDisplay } from '@/lib/settlement/correction-request-meta'
 import { timed } from '@/lib/server/perf'
 import type { SettlementStatus } from '@/types'
 
@@ -162,6 +163,11 @@ export default async function GuidePage() {
                 </div>
                 {s.reject_reason && (
                   <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#B42318]">반려: {s.reject_reason}</p>
+                )}
+                {s.status === 'edit_requested' && correctionReasonForDisplay(s.admin_note) && (
+                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#B42318]">
+                    수정요청: {correctionReasonForDisplay(s.admin_note)}
+                  </p>
                 )}
                 <p className="mt-3 text-xs font-bold text-[#F37021]">수정하기 →</p>
               </Link>

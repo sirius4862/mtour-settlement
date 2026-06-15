@@ -20,7 +20,7 @@ describe('SettlementFormFooter loading states', () => {
 
   it('SettlementForm tracks save and process actions separately', () => {
     const form = readFileSync(join(ROOT, 'src/components/settlement/SettlementForm.tsx'), 'utf8')
-    expect(form).toContain("useState<'save' | 'send' | 'submit' | null>(null)")
+    expect(form).toContain("useState<'save' | 'send' | 'submit' | 'request_edit' | null>(null)")
     expect(form).toContain("setPendingAction('save')")
     expect(form).toContain("setPendingAction('send')")
     expect(form).toContain('pendingAction={pendingAction}')

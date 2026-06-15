@@ -155,7 +155,7 @@ test('guide confirmation integrity — submit, admin edit, send, guide confirm',
   }
 
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: '가이드 검토 요청' }).click()
+  await page.getByRole('button', { name: '가이드 최종확인 요청' }).click()
 
   const detailUrl = new RegExp(`/admin/settlements/${settlementId}$`)
   try {

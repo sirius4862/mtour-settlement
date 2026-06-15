@@ -1,12 +1,20 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { SettlementFull, Tour } from '@/types'
-import { saveSettlementDraft, saveAdminSettlementEdits, sendForConfirmation, submitSettlement } from '@/lib/actions/settlementActions'
+import type { SettlementFull, Tour, UserRole } from '@/types'
+import { saveSettlementDraft, saveAdminSettlementEdits, sendForConfirmation, submitSettlement, reviewSettlement } from '@/lib/actions/settlementActions'
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
 import { sanitizeSettlementFullForGuide } from '@/lib/settlement/snapshot'
-import { canAdminSendForConfirmation } from '@/lib/settlement/status-guards'
+import { canAdminSendForConfirmation, canAdminRequestEditOnSettlement } from '@/lib/settlement/status-guards'
+import {
+  encodeCorrectionNote,
+  getCorrectionSectionDefaultMessage,
+  parseCorrectionNote,
+  SEND_FOR_CONFIRMATION_WARNING,
+  validateCorrectionRequestInput,
+  type CorrectionSectionId,
+} from '@/lib/settlement/correction-request-meta'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
   shouldShowAdminSettlementSections,
@@ -48,6 +56,8 @@ import { FinalSummarySection } from './sections/FinalSummarySection'
 import { ReceiptsSection } from './sections/ReceiptsSection'
 import type { SettlementFormRole } from '@/lib/settlement/field-ownership'
 import { SettlementFormProvider, summaryAudienceFromRole } from './SettlementFormContext'
+import { AdminCorrectionRequestFields } from './AdminCorrectionRequestFields'
+import { GuideCorrectionBanner } from './GuideCorrectionBanner'
 
 export type SettlementFormMode = 'new' | 'edit' | 'preview'
 
@@ -63,6 +73,7 @@ interface Props {
   /** Admin review edit — save admin fields only, no submit. */
   adminEdit?: {
     backHref: string
+    actorRole?: UserRole
   }
 }
 
@@ -70,9 +81,13 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const router = useRouter()
   const hydrated = useRef(false)
   const saveInFlightRef = useRef(false)
-  const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'submit' | null>(null)
+  const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'submit' | 'request_edit' | null>(null)
   const [openSectionId, setOpenSectionId] = useState('basic')
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([])
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false)
+  const [correctionReason, setCorrectionReason] = useState('')
+  const [correctionSections, setCorrectionSections] = useState<CorrectionSectionId[]>([])
+  const correctionAutoExpanded = useRef(false)
 
   const hydrateFromFull = useSettlementFormStore((s) => s.hydrateFromFull)
   const resetNew = useSettlementFormStore((s) => s.resetNew)
@@ -111,6 +126,37 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     && !!settlementStatus
     && canAdminSendForConfirmation(settlementStatus)
     && !!guideSubmitSnapshotId
+
+  const adminActorRole = adminEdit?.actorRole ?? 'admin'
+  const canRequestGuideCorrection = isAdminReview
+    && !!settlementStatus
+    && canAdminRequestEditOnSettlement(
+      {
+        status: settlementStatus,
+        guide_confirmed_at: initialFull?.guide_confirmed_at ?? null,
+        guide_submit_snapshot_id: guideSubmitSnapshotId,
+      },
+      adminActorRole,
+    )
+
+  const guideCorrection = useMemo(() => {
+    if (isAdminReview || settlementStatus !== 'edit_requested') {
+      return parseCorrectionNote(null)
+    }
+    return parseCorrectionNote(initialFull?.admin_note)
+  }, [isAdminReview, settlementStatus, initialFull?.admin_note])
+
+  const attentionSectionIds = useMemo(
+    () => new Set(guideCorrection.sections),
+    [guideCorrection.sections],
+  )
+
+  useEffect(() => {
+    if (correctionAutoExpanded.current) return
+    if (settlementStatus !== 'edit_requested' || guideCorrection.sections.length === 0) return
+    correctionAutoExpanded.current = true
+    setOpenSectionId(guideCorrection.sections[0])
+  }, [settlementStatus, guideCorrection.sections])
 
   useEffect(() => {
     if (hydrated.current) return
@@ -295,7 +341,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       return
     }
 
-    if (!window.confirm('변경사항을 저장한 뒤 가이드에게 확인을 요청하시겠습니까?')) {
+    if (!window.confirm(`${SEND_FOR_CONFIRMATION_WARNING}\n\n변경사항을 저장한 뒤 가이드에게 최종 확인을 요청하시겠습니까?`)) {
       return
     }
 
@@ -312,13 +358,55 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         router.push(adminEdit.backHref)
         return
       }
-      setSaveError(result.error ?? '가이드 검토 요청 실패')
+      setSaveError(result.error ?? '가이드 최종확인 요청 실패')
     } catch {
       setSaveError('네트워크 오류가 발생했습니다.')
     } finally {
       setPendingAction(null)
     }
   }, [isPreview, isAdminReview, adminEdit, canSendForConfirmation, handleSave, router, setSaveError])
+
+  const handleRequestGuideCorrection = useCallback(async () => {
+    if (isPreview || !isAdminReview || !adminEdit || !canRequestGuideCorrection) return
+
+    const validation = validateCorrectionRequestInput(correctionSections, correctionReason)
+    if (!validation.ok) {
+      setSaveError(validation.error)
+      return
+    }
+
+    const id = useSettlementFormStore.getState().settlementId
+    if (!id) return
+
+    setPendingAction('request_edit')
+    try {
+      const encoded = encodeCorrectionNote(correctionSections, correctionReason)
+      const result = await reviewSettlement({
+        id,
+        action: 'request_edit',
+        adminNote: encoded,
+      })
+      if (result.ok) {
+        setShowCorrectionModal(false)
+        router.push(adminEdit.backHref)
+        return
+      }
+      setSaveError(result.error ?? '가이드 수정 요청 실패')
+    } catch {
+      setSaveError('네트워크 오류가 발생했습니다.')
+    } finally {
+      setPendingAction(null)
+    }
+  }, [
+    isPreview,
+    isAdminReview,
+    adminEdit,
+    canRequestGuideCorrection,
+    correctionSections,
+    correctionReason,
+    router,
+    setSaveError,
+  ])
 
   const handleSubmit = useCallback(async () => {
     if (isPreview || isAdminReview) return
@@ -556,6 +644,18 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     },
   ]
 
+  const withSectionAttention = (section: AccordionSection): AccordionSection => {
+    if (!attentionSectionIds.has(section.id as CorrectionSectionId)) return section
+    const defaultMsg = getCorrectionSectionDefaultMessage(section.id as CorrectionSectionId)
+    return {
+      ...section,
+      needsAttention: true,
+      attentionMessage: defaultMsg ?? guideCorrection.reason,
+    }
+  }
+
+  const sectionsWithAttention = accordionSections.map(withSectionAttention)
+
   return (
     <SettlementFormProvider role={role} adminReviewEdit={isAdminReview}>
     <div className="flex flex-col min-h-screen pb-36">
@@ -588,6 +688,9 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       </div>
 
       <div className="flex-1 px-4 py-4">
+        {!isPreview && guideCorrection.reason && settlementStatus === 'edit_requested' && (
+          <GuideCorrectionBanner correction={guideCorrection} />
+        )}
         {!isPreview && (
           <ValidationBanner
             issues={validationIssues}
@@ -595,7 +698,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           />
         )}
         <SettlementAccordion
-          sections={accordionSections}
+          sections={sectionsWithAttention}
           openId={openSectionId}
           onOpenIdChange={setOpenSectionId}
           showSectionMeta={showSectionMeta}
@@ -620,13 +723,58 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           onSave={handleSave}
           onSubmit={handleSubmit}
           onSendForConfirmation={isAdminReview ? handleSendForConfirmation : undefined}
+          onRequestGuideCorrection={
+            isAdminReview && canRequestGuideCorrection
+              ? () => setShowCorrectionModal(true)
+              : undefined
+          }
           pendingAction={pendingAction}
           hideSubmit={isAdminReview}
           showSendForConfirmation={canSendForConfirmation}
+          showRequestGuideCorrection={canRequestGuideCorrection}
           saveLabel="임시저장"
           submitLabel="저장 후 제출"
-          sendForConfirmationLabel="가이드 검토 요청"
+          sendForConfirmationLabel="가이드 최종확인 요청"
+          requestGuideCorrectionLabel="가이드 수정 요청"
         />
+      )}
+
+      {showCorrectionModal && isAdminReview && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-4 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">가이드 수정 요청</p>
+              <p className="text-xs text-gray-500 mt-1">
+                가이드 입력 항목이 누락되었거나 틀린 경우 사용하세요. 가이드에게 수정 사유와 확인할 섹션이 전달됩니다.
+              </p>
+            </div>
+            <AdminCorrectionRequestFields
+              reason={correctionReason}
+              sections={correctionSections}
+              onReasonChange={setCorrectionReason}
+              onSectionsChange={setCorrectionSections}
+              disabled={pendingAction === 'request_edit'}
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCorrectionModal(false)}
+                disabled={pendingAction === 'request_edit'}
+                className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleRequestGuideCorrection}
+                disabled={pendingAction === 'request_edit'}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {pendingAction === 'request_edit' ? '처리 중…' : '수정요청 보내기'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
     </SettlementFormProvider>

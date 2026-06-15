@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import type { AnnotatedNumber } from '@/lib/settlement/types-calc'
+import { CorrectionSectionAlert } from './GuideCorrectionBanner'
 import { SubtotalPreview } from './SectionSubtotal'
 
 export interface AccordionSection {
@@ -10,6 +11,8 @@ export interface AccordionSection {
   excelRows?: string
   preview?: AnnotatedNumber
   badge?: string
+  needsAttention?: boolean
+  attentionMessage?: string
   children: ReactNode
   footer?: ReactNode
 }
@@ -37,28 +40,55 @@ export function SettlementAccordion({
     <div className="space-y-2">
       {sections.map((section) => {
         const isOpen = openId === section.id
+        const needsAttention = section.needsAttention === true
         return (
           <div
             key={section.id}
-            className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm"
+            className={
+              'rounded-2xl overflow-hidden shadow-sm ' +
+              (needsAttention
+                ? 'bg-red-50 border border-red-200'
+                : 'bg-white border border-gray-100')
+            }
           >
             <button
               type="button"
               onClick={() => setOpenId(isOpen ? '' : section.id)}
-              className="w-full flex items-center gap-3 px-4 py-3.5 text-left min-h-[52px] active:bg-gray-50"
+              className={
+                'w-full flex items-center gap-3 px-4 py-3.5 text-left min-h-[52px] ' +
+                (needsAttention ? 'active:bg-red-100/60' : 'active:bg-gray-50')
+              }
               aria-expanded={isOpen}
             >
               <span
                 className={
                   'w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold shrink-0 ' +
-                  (isOpen ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500')
+                  (needsAttention
+                    ? isOpen
+                      ? 'bg-red-600 text-white'
+                      : 'bg-red-100 text-red-700'
+                    : isOpen
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-500')
                 }
               >
                 {isOpen ? '−' : '+'}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-gray-800 text-sm">{section.title}</span>
+                  <span
+                    className={
+                      'font-semibold text-sm ' +
+                      (needsAttention ? 'text-red-800' : 'text-gray-800')
+                    }
+                  >
+                    {section.title}
+                  </span>
+                  {needsAttention && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-semibold">
+                      확인 필요
+                    </span>
+                  )}
                   {showSectionMeta && section.badge && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
                       {section.badge}
@@ -71,7 +101,12 @@ export function SettlementAccordion({
 
             {isOpen && (
               <div className="px-4 pb-4 border-t border-gray-50">
-                <div className={section.footer ? 'pt-4 pb-20' : 'pt-4'}>{section.children}</div>
+                <div className={section.footer ? 'pt-4 pb-20' : 'pt-4'}>
+                  {section.attentionMessage && (
+                    <CorrectionSectionAlert message={section.attentionMessage} />
+                  )}
+                  {section.children}
+                </div>
                 {section.footer}
               </div>
             )}

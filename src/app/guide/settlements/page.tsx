@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { requireGuide } from '@/lib/auth/session'
 import { getMySettlementHistory } from '@/lib/actions/settlementActions'
+import { correctionReasonForDisplay } from '@/lib/settlement/correction-request-meta'
 import { STATUS_META, type SettlementStatus } from '@/types'
 import { getSettlementStatusDisplay } from '@/lib/settlement/status-display'
 import {
@@ -125,6 +126,14 @@ export default async function SettlementsPage({
                 {s.status === 'rejected' && s.reject_reason && (
                   <div className="mt-2 px-3 py-2 bg-red-50 rounded-lg">
                     <p className="text-xs text-red-600">반려: {s.reject_reason}</p>
+                  </div>
+                )}
+
+                {s.status === 'edit_requested' && correctionReasonForDisplay(s.admin_note) && (
+                  <div className="mt-2 px-3 py-2 bg-red-50 rounded-lg border border-red-100">
+                    <p className="text-xs text-red-700">
+                      수정요청: {correctionReasonForDisplay(s.admin_note)}
+                    </p>
                   </div>
                 )}
 

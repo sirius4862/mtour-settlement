@@ -377,7 +377,7 @@ describe('guide settlement history filters', () => {
     expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('tour:tours(*)')
     expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('calc_summary_json')
     expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('guide_note')
-    expect(GUIDE_SETTLEMENT_HISTORY_SELECT).not.toContain('admin_note')
+    expect(GUIDE_SETTLEMENT_HISTORY_SELECT).toContain('admin_note')
   })
 
   it('includes settlement and tour fields used by guide settlements list cards', () => {

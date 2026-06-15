@@ -93,6 +93,7 @@ import {
   sanitizeSettlementForGuide,
   sanitizeSettlementSyncForGuide,
 } from '@/lib/settlement/snapshot'
+import { validateEncodedCorrectionNote } from '@/lib/settlement/correction-request-meta'
 import type { FieldChangeDraft, SnapshotPayload } from '@/lib/settlement/snapshot'
 import { externalReceivableDbFields } from '@/lib/settlement/external-receivable'
 import {
@@ -2112,6 +2113,11 @@ export async function reviewSettlement(params: {
     profile.role,
   )
   if (!guard.ok) return { ok: false, error: guard.error }
+
+  if (params.action === 'request_edit') {
+    const noteCheck = validateEncodedCorrectionNote(params.adminNote)
+    if (!noteCheck.ok) return { ok: false, error: noteCheck.error }
+  }
 
   if (params.action === 'approve') {
     return { ok: false, error: '최종 승인은 더 이상 사용하지 않습니다. 지급완료 처리를 사용하세요.' }

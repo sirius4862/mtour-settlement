@@ -24,12 +24,15 @@ export function SettlementFormFooter({
   onSave,
   onSubmit,
   onSendForConfirmation,
+  onRequestGuideCorrection,
   pendingAction = null,
   hideSubmit = false,
   showSendForConfirmation = false,
+  showRequestGuideCorrection = false,
   saveLabel = '임시저장',
   submitLabel = '저장 후 제출',
-  sendForConfirmationLabel = '가이드 검토 요청',
+  sendForConfirmationLabel = '가이드 최종확인 요청',
+  requestGuideCorrectionLabel = '가이드 수정 요청',
 }: {
   calc: SettlementCalcResult
   companyDeposit: AnnotatedNumber
@@ -41,18 +44,22 @@ export function SettlementFormFooter({
   onSave: () => void
   onSubmit: () => void
   onSendForConfirmation?: () => void
-  pendingAction?: 'save' | 'send' | 'submit' | null
+  onRequestGuideCorrection?: () => void
+  pendingAction?: 'save' | 'send' | 'submit' | 'request_edit' | null
   hideSubmit?: boolean
   showSendForConfirmation?: boolean
+  showRequestGuideCorrection?: boolean
   saveLabel?: string
   submitLabel?: string
   sendForConfirmationLabel?: string
+  requestGuideCorrectionLabel?: string
 }) {
   const isSaving =
     pendingAction === 'save' || (saveStatus === 'saving' && pendingAction !== 'submit')
   const statusLabel =
     isSaving ? '저장 중…'
     : pendingAction === 'send' ? '처리 중…'
+    : pendingAction === 'request_edit' ? '수정요청 처리 중…'
     : pendingAction === 'submit' ? '저장 후 제출 중…'
     : saveStatus === 'saved' && !dirty ? `저장됨 ${lastSavedAt ? formatTime(lastSavedAt) : ''}`
     : saveStatus === 'error' ? (saveError ?? '저장 실패')
@@ -144,21 +151,31 @@ export function SettlementFormFooter({
         }`}>
           {statusLabel}
         </p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             type="button"
             onClick={onSave}
             disabled={pendingAction !== null}
-            className="flex-1 min-h-12 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 min-w-[120px] min-h-12 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             {pendingAction === 'save' ? '저장 중…' : saveLabel}
           </button>
+          {hideSubmit && showRequestGuideCorrection && onRequestGuideCorrection && (
+            <button
+              type="button"
+              onClick={onRequestGuideCorrection}
+              disabled={pendingAction !== null}
+              className="flex-1 min-w-[120px] min-h-12 py-3 border border-red-200 text-red-700 rounded-xl text-sm font-semibold hover:bg-red-50 disabled:opacity-50"
+            >
+              {pendingAction === 'request_edit' ? '처리 중…' : requestGuideCorrectionLabel}
+            </button>
+          )}
           {hideSubmit && showSendForConfirmation && onSendForConfirmation && (
             <button
               type="button"
               onClick={onSendForConfirmation}
               disabled={pendingAction !== null}
-              className="flex-1 min-h-12 py-3 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-50"
+              className="flex-1 min-w-[120px] min-h-12 py-3 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-50"
             >
               {pendingAction === 'send' ? '처리 중…' : sendForConfirmationLabel}
             </button>

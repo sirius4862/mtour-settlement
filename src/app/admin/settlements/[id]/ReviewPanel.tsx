@@ -7,6 +7,13 @@ import {
   saveAdminNoteBeforeConfirmation,
   sendForConfirmation,
 } from '@/lib/actions/settlementActions'
+import {
+  encodeCorrectionNote,
+  SEND_FOR_CONFIRMATION_WARNING,
+  validateCorrectionRequestInput,
+  type CorrectionSectionId,
+} from '@/lib/settlement/correction-request-meta'
+import { AdminCorrectionRequestFields } from '@/components/settlement/AdminCorrectionRequestFields'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -32,11 +39,36 @@ export function ReviewPanel({
   const router = useRouter()
   const [pending, start] = useTransition()
   const [adminNote, setAdminNote] = useState(currentAdminNote)
+  const [correctionReason, setCorrectionReason] = useState('')
+  const [correctionSections, setCorrectionSections] = useState<CorrectionSectionId[]>([])
   const [error, setError] = useState('')
   const [confirmingFinalReopen, setConfirmingFinalReopen] = useState(false)
   const [finalReopenReason, setFinalReopenReason] = useState('')
 
-  const handleReview = (action: 'request_edit' | 'pay') => {
+  const handleRequestEdit = () => {
+    setError('')
+    const validation = validateCorrectionRequestInput(correctionSections, correctionReason)
+    if (!validation.ok) {
+      setError(validation.error)
+      return
+    }
+
+    start(async () => {
+      const encoded = encodeCorrectionNote(correctionSections, correctionReason)
+      const res = await reviewSettlement({
+        id: settlementId,
+        action: 'request_edit',
+        adminNote: encoded,
+      })
+      if (res.ok) {
+        router.refresh()
+      } else {
+        setError(res.error ?? '오류 발생')
+      }
+    })
+  }
+
+  const handleReview = (action: 'pay') => {
     setError('')
     start(async () => {
       const res = await reviewSettlement({
@@ -54,6 +86,10 @@ export function ReviewPanel({
 
   const handleSendForConfirmation = () => {
     setError('')
+    if (!window.confirm(`${SEND_FOR_CONFIRMATION_WARNING}\n\n가이드에게 최종 확인을 요청하시겠습니까?`)) {
+      return
+    }
+
     start(async () => {
       const note = adminNote.trim() || undefined
       const saveRes = await saveAdminNoteBeforeConfirmation(settlementId, note)
@@ -150,22 +186,40 @@ export function ReviewPanel({
         </div>
       )}
 
-      <textarea
-        value={adminNote}
-        onChange={(e) => setAdminNote(e.target.value)}
-        placeholder="관리자 메모 (선택)"
-        rows={2}
-        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      {canRequestEdit && (
+        <div className="rounded-xl border border-red-100 bg-red-50/40 p-3 space-y-2">
+          <p className="text-sm font-semibold text-red-800">가이드 수정 요청</p>
+          <p className="text-xs text-red-700">
+            가이드 입력 항목이 누락되었거나 틀린 경우 사용하세요. 사유와 확인할 섹션을 선택해야 합니다.
+          </p>
+          <AdminCorrectionRequestFields
+            reason={correctionReason}
+            sections={correctionSections}
+            onReasonChange={setCorrectionReason}
+            onSectionsChange={setCorrectionSections}
+            disabled={pending}
+          />
+        </div>
+      )}
+
+      {(canSendForConfirmation || canPay) && (
+        <textarea
+          value={adminNote}
+          onChange={(e) => setAdminNote(e.target.value)}
+          placeholder="관리자 메모 (선택)"
+          rows={2}
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      )}
 
       <div className="flex gap-2 flex-wrap">
         {canRequestEdit && (
           <button
-            onClick={() => handleReview('request_edit')}
+            onClick={handleRequestEdit}
             disabled={pending}
-            className="px-4 py-2.5 border border-blue-200 text-blue-600 rounded-xl text-sm font-medium hover:bg-blue-50 disabled:opacity-40"
+            className="px-4 py-2.5 border border-red-200 text-red-700 rounded-xl text-sm font-semibold hover:bg-red-50 disabled:opacity-40"
           >
-            수정요청
+            {pending ? '처리 중…' : '가이드 수정 요청'}
           </button>
         )}
 
@@ -175,7 +229,7 @@ export function ReviewPanel({
             disabled={pending}
             className="flex-1 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-40"
           >
-            {pending ? '처리 중…' : '최종확인 보내기'}
+            {pending ? '처리 중…' : '가이드 최종확인 요청'}
           </button>
         )}
 

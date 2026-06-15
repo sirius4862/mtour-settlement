@@ -17,7 +17,7 @@ export const GUIDE_DASHBOARD_PENDING_CONFIRMATION_STATUS: SettlementStatus = 'pe
 
 /** 가이드 대시보드 정산 카드에 필요한 최소 컬럼 (calc_summary_json 제외). */
 export const GUIDE_DASHBOARD_SETTLEMENT_SELECT =
-  'id,tour_id,guide_id,branch_id,status,reject_reason,guide_confirmed_at,created_at,updated_at,tour:tours(id,tour_code,pattern,start_date,end_date)'
+  'id,tour_id,guide_id,branch_id,status,reject_reason,admin_note,guide_confirmed_at,created_at,updated_at,tour:tours(id,tour_code,pattern,start_date,end_date)'
 
 export interface GuideDashboardSettlements {
   draft: SettlementWithTour[]

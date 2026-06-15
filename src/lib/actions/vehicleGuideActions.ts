@@ -12,8 +12,11 @@ import {
 import {
   GUIDE_VEHICLE_REPORT_LIST_SELECT,
   filterGuideVehicleReportsByPeriod,
+  filterUncheckedReportRows,
   resolveGuideVehicleReportDateRange,
-  tourStartDateInGuideVehicleReportRange,
+  shouldExcludeCheckedReportIdsInDb,
+  sortGuideVehicleReportListItems,
+  type GuideVehicleReportDateRange,
 } from '@/lib/vehicle/guide-vehicle-report-list'
 import type { UserRole } from '@/types'
 
@@ -102,6 +105,54 @@ async function getGuideCtx(): Promise<GuideCtx | null> {
   return { supabase, guideId: session.id }
 }
 
+function baseGuideToursQuery(supabase: GuideCtx['supabase'], guideId: string) {
+  return supabase
+    .from('tours')
+    .select('id')
+    .eq('guide_id', guideId)
+    .neq('assignment_status', 'recalled')
+}
+
+async function fetchGuideCheckedReportIds(
+  supabase: GuideCtx['supabase'],
+  guideId: string,
+): Promise<Set<string>> {
+  const { data: checkRows } = await supabase
+    .from('vehicle_report_checks')
+    .select('report_id')
+    .eq('guide_id', guideId)
+
+  const checkedReportIds = new Set<string>()
+  for (const row of checkRows ?? []) {
+    checkedReportIds.add((row as { report_id: string }).report_id)
+  }
+  return checkedReportIds
+}
+
+async function fetchInRangeTourIds(
+  supabase: GuideCtx['supabase'],
+  guideId: string,
+  range: GuideVehicleReportDateRange,
+): Promise<string[]> {
+  const { data: tourRows } = await baseGuideToursQuery(supabase, guideId)
+    .gte('start_date', range.from)
+    .lte('start_date', range.to)
+
+  return (tourRows ?? []).map((row) => (row as { id: string }).id)
+}
+
+async function fetchOutOfRangeTourIds(
+  supabase: GuideCtx['supabase'],
+  guideId: string,
+  range: GuideVehicleReportDateRange,
+): Promise<string[]> {
+  const { data: tourRows } = await baseGuideToursQuery(supabase, guideId).or(
+    `start_date.lt.${range.from},start_date.gt.${range.to},start_date.is.null`,
+  )
+
+  return (tourRows ?? []).map((row) => (row as { id: string }).id)
+}
+
 /**
  * Submitted vehicle reports for tours assigned to the current guide, with the
  * guide's check status. Draft reports are never returned (RLS guide_select
@@ -110,16 +161,32 @@ async function getGuideCtx(): Promise<GuideCtx | null> {
 async function fetchSubmittedReportsForTours(
   supabase: GuideCtx['supabase'],
   tourIds: string[],
+  options?: { excludeCheckedReportIds?: ReadonlySet<string> },
 ): Promise<Array<Record<string, unknown>>> {
   if (tourIds.length === 0) return []
 
-  const { data: reportRows } = await supabase
+  const exclude = options?.excludeCheckedReportIds
+  let query = supabase
     .from('vehicle_route_reports')
     .select(GUIDE_VEHICLE_REPORT_LIST_SELECT)
     .eq('status', 'submitted')
     .in('tour_id', tourIds)
 
-  return (reportRows ?? []) as unknown as Array<Record<string, unknown>>
+  if (exclude && shouldExcludeCheckedReportIdsInDb(exclude.size)) {
+    query = query.not('id', 'in', `(${[...exclude].join(',')})`)
+  }
+
+  const { data: reportRows } = await query
+  let rows = (reportRows ?? []) as unknown as Array<Record<string, unknown>>
+
+  if (exclude && !shouldExcludeCheckedReportIdsInDb(exclude.size)) {
+    rows = filterUncheckedReportRows(
+      rows.map((row) => ({ ...row, id: row.id as string })),
+      exclude,
+    )
+  }
+
+  return rows
 }
 
 function toGuideVehicleReportListItem(
@@ -146,62 +213,30 @@ export async function getGuideVehicleReports(options?: {
 
   const range = resolveGuideVehicleReportDateRange({ period: options?.period })
 
-  const { data: tourRows } = await ctx.supabase
-    .from('tours')
-    .select('id, start_date')
-    .eq('guide_id', ctx.guideId)
-    .neq('assignment_status', 'recalled')
-
-  const tours = (tourRows ?? []) as Array<{ id: string; start_date: string | null }>
-  if (tours.length === 0) return []
-
-  const inRangeTourIds: string[] = []
-  const outRangeTourIds: string[] = []
-  for (const tour of tours) {
-    if (tourStartDateInGuideVehicleReportRange(tour.start_date, range)) {
-      inRangeTourIds.push(tour.id)
-    } else {
-      outRangeTourIds.push(tour.id)
-    }
-  }
-
-  const [inRangeReports, outRangeReports] = await Promise.all([
-    fetchSubmittedReportsForTours(ctx.supabase, inRangeTourIds),
-    fetchSubmittedReportsForTours(ctx.supabase, outRangeTourIds),
+  const [checkedReportIds, inRangeTourIds, outRangeTourIds] = await Promise.all([
+    fetchGuideCheckedReportIds(ctx.supabase, ctx.guideId),
+    fetchInRangeTourIds(ctx.supabase, ctx.guideId, range),
+    fetchOutOfRangeTourIds(ctx.supabase, ctx.guideId, range),
   ])
 
-  const fetchedReports = [...inRangeReports, ...outRangeReports]
-  if (fetchedReports.length === 0) return []
+  if (inRangeTourIds.length === 0 && outRangeTourIds.length === 0) return []
 
-  const reportIds = fetchedReports.map((r) => r.id as string)
-  const { data: checkRows } = await ctx.supabase
-    .from('vehicle_report_checks')
-    .select('report_id')
-    .eq('guide_id', ctx.guideId)
-    .in('report_id', reportIds)
+  const [inRangeReports, outRangeUncheckedReports] = await Promise.all([
+    fetchSubmittedReportsForTours(ctx.supabase, inRangeTourIds),
+    fetchSubmittedReportsForTours(ctx.supabase, outRangeTourIds, {
+      excludeCheckedReportIds: checkedReportIds,
+    }),
+  ])
 
-  const checkedReportIds = new Set<string>()
-  for (const row of checkRows ?? []) {
-    checkedReportIds.add((row as { report_id: string }).report_id)
-  }
-
-  // Outside the selected period, only unchecked action-required rows are kept.
-  const outRangeUncheckedReports = outRangeReports.filter(
-    (r) => !checkedReportIds.has(r.id as string),
-  )
   const reports = [...inRangeReports, ...outRangeUncheckedReports]
+  if (reports.length === 0) return []
 
   const items = filterGuideVehicleReportsByPeriod(
     reports.map((r) => toGuideVehicleReportListItem(r, checkedReportIds)),
     range,
   )
 
-  // Unchecked first, then by start date for stable ordering.
-  items.sort((a, b) => {
-    if (a.checked !== b.checked) return a.checked ? 1 : -1
-    return (a.start_date ?? '').localeCompare(b.start_date ?? '')
-  })
-  return items
+  return sortGuideVehicleReportListItems(items)
 }
 
 /** A single submitted report for an assigned tour + the guide's check (if any). */

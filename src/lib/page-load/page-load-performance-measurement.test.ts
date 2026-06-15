@@ -3,6 +3,8 @@ import {
   buildPageLoadReport,
   buildPageLoadRouteList,
   buildPageLoadRunWarnings,
+  classifyRouteFilter,
+  isGuideEditMeasurementEnabled,
   PAGE_LOAD_ROUTE_DEFS,
   PAGE_LOAD_WARNING_THRESHOLDS,
   parseRouteFilter,
@@ -11,6 +13,7 @@ import {
   redactUnknown,
   resolveGroupsInScope,
   resolveMeasurementCredentials,
+  routeMatchesFilter,
   summarizeNumeric,
 } from '../../../scripts/lib/page-load-performance-summary.mjs'
 
@@ -48,6 +51,56 @@ describe('page-load route list generation', () => {
     const routes = buildPageLoadRouteList({ routeFilter: 'admin' })
     expect(routes.map((r) => r.id)).not.toContain('admin-settlement-detail')
     expect(PAGE_LOAD_ROUTE_DEFS.some((d) => d.dynamic)).toBe(true)
+  })
+
+  it('skips guide-settlement-edit when guide edit path is unset or skip', () => {
+    expect(isGuideEditMeasurementEnabled(undefined)).toBe(false)
+    expect(isGuideEditMeasurementEnabled('')).toBe(false)
+    expect(isGuideEditMeasurementEnabled('skip')).toBe(false)
+    expect(isGuideEditMeasurementEnabled('SKIP')).toBe(false)
+    expect(isGuideEditMeasurementEnabled('/guide/settlements/abc/edit')).toBe(true)
+
+    const withoutEdit = buildPageLoadRouteList({ routeFilter: 'guide' })
+    expect(withoutEdit.map((r) => r.id)).not.toContain('guide-settlement-edit')
+    expect(withoutEdit.map((r) => r.id)).toContain('guide-vehicle-reports')
+
+    const withEdit = buildPageLoadRouteList({
+      routeFilter: 'guide',
+      guideEditPath: '/guide/settlements/abc/edit',
+    })
+    expect(withEdit.map((r) => r.id)).toContain('guide-settlement-edit')
+  })
+
+  it('filters routes by route id tokens', () => {
+    const vehicleOnly = buildPageLoadRouteList({ routeFilter: 'guide-vehicle-reports' })
+    expect(vehicleOnly.map((r) => r.id)).toEqual(['guide-vehicle-reports'])
+
+    const dashboardOnly = buildPageLoadRouteList({ routeFilter: 'guide-dashboard' })
+    expect(dashboardOnly.map((r) => r.id)).toEqual(['guide-dashboard'])
+  })
+
+  it('route id filter derives guide credentials scope', () => {
+    const plan = resolveMeasurementCredentials({
+      routeFilter: 'guide-vehicle-reports',
+      env: {
+        PERF_GUIDE_EMAIL: 'guide@test.com',
+        PERF_GUIDE_PASSWORD: 'guide-pass',
+      },
+    })
+    expect(plan.rolesToLogin).toEqual(['guide'])
+    expect(resolveGroupsInScope('guide-vehicle-reports')).toEqual(new Set(['guide']))
+  })
+
+  it('classifies mixed route id and group tokens', () => {
+    const classified = classifyRouteFilter('guide-dashboard,admin')
+    const guideDashboard = PAGE_LOAD_ROUTE_DEFS.find((d) => d.id === 'guide-dashboard')!
+    const adminDashboard = PAGE_LOAD_ROUTE_DEFS.find((d) => d.id === 'admin-dashboard')!
+    const guideVehicleReports = PAGE_LOAD_ROUTE_DEFS.find((d) => d.id === 'guide-vehicle-reports')!
+    expect(classified.routeIds?.has('guide-dashboard')).toBe(true)
+    expect(classified.groups?.has('admin')).toBe(true)
+    expect(routeMatchesFilter(guideDashboard, classified)).toBe(true)
+    expect(routeMatchesFilter(adminDashboard, classified)).toBe(true)
+    expect(routeMatchesFilter(guideVehicleReports, classified)).toBe(false)
   })
 })
 

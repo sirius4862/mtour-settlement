@@ -2,13 +2,17 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  GUIDE_VEHICLE_REPORT_CHECKED_IDS_DB_EXCLUDE_MAX,
   GUIDE_VEHICLE_REPORT_EMPTY_MESSAGE,
   GUIDE_VEHICLE_REPORT_LIST_SELECT,
   GUIDE_VEHICLE_REPORT_PERIOD_HELPER,
   buildGuideVehicleReportsUrl,
   filterGuideVehicleReportsByPeriod,
+  filterUncheckedReportRows,
   parseGuideVehicleReportPeriod,
   resolveGuideVehicleReportDateRange,
+  shouldExcludeCheckedReportIdsInDb,
+  sortGuideVehicleReportListItems,
   tourStartDateInGuideVehicleReportRange,
 } from './guide-vehicle-report-list'
 
@@ -126,6 +130,70 @@ describe('filterGuideVehicleReportsByPeriod', () => {
   })
 })
 
+describe('guide vehicle report list query helpers', () => {
+  it('shows in-range reports via period filter', () => {
+    const range7 = resolveGuideVehicleReportDateRange({ period: '7d' }, now)
+    const items = filterGuideVehicleReportsByPeriod(
+      [
+        { start_date: '2026-05-29', checked: true, tour_id: 'in-range' },
+        { start_date: '2026-04-01', checked: true, tour_id: 'out-range' },
+      ],
+      range7,
+    )
+    expect(items.map((r) => r.tour_id)).toEqual(['in-range'])
+  })
+
+  it('shows out-of-range unchecked reports regardless of period', () => {
+    const range7 = resolveGuideVehicleReportDateRange({ period: '7d' }, now)
+    const items = filterGuideVehicleReportsByPeriod(
+      [{ start_date: '2026-04-01', checked: false, tour_id: 'old-unchecked' }],
+      range7,
+    )
+    expect(items).toHaveLength(1)
+  })
+
+  it('hides out-of-range already checked reports', () => {
+    const range7 = resolveGuideVehicleReportDateRange({ period: '7d' }, now)
+    const items = filterGuideVehicleReportsByPeriod(
+      [{ start_date: '2026-04-01', checked: true, tour_id: 'old-checked' }],
+      range7,
+    )
+    expect(items).toHaveLength(0)
+  })
+
+  it('filters unchecked rows when checked ids are known', () => {
+    const rows = [
+      { id: 'r1', tour_id: 't1' },
+      { id: 'r2', tour_id: 't2' },
+    ]
+    expect(filterUncheckedReportRows(rows, new Set(['r1']))).toEqual([{ id: 'r2', tour_id: 't2' }])
+    expect(filterUncheckedReportRows(rows, new Set())).toEqual(rows)
+  })
+
+  it('does not use DB exclude for empty checked ids', () => {
+    expect(shouldExcludeCheckedReportIdsInDb(0)).toBe(false)
+  })
+
+  it('uses DB exclude only for reasonably small checked id sets', () => {
+    expect(shouldExcludeCheckedReportIdsInDb(1)).toBe(true)
+    expect(shouldExcludeCheckedReportIdsInDb(GUIDE_VEHICLE_REPORT_CHECKED_IDS_DB_EXCLUDE_MAX)).toBe(
+      true,
+    )
+    expect(
+      shouldExcludeCheckedReportIdsInDb(GUIDE_VEHICLE_REPORT_CHECKED_IDS_DB_EXCLUDE_MAX + 1),
+    ).toBe(false)
+  })
+
+  it('keeps unchecked-first then start_date sorting', () => {
+    const sorted = sortGuideVehicleReportListItems([
+      { checked: true, start_date: '2026-06-01', tour_id: 'a' },
+      { checked: false, start_date: '2026-05-29', tour_id: 'b' },
+      { checked: false, start_date: '2026-06-02', tour_id: 'c' },
+    ])
+    expect(sorted.map((r) => r.tour_id)).toEqual(['b', 'c', 'a'])
+  })
+})
+
 describe('guide vehicle report list page wiring', () => {
   const listPage = readFileSync(join(ROOT, 'src/app/guide/vehicle-reports/page.tsx'), 'utf8')
   const filter = readFileSync(
@@ -157,26 +225,23 @@ describe('guide vehicle report list page wiring', () => {
     expect(filter).not.toContain('type="date"')
   })
 
-  it('loads assigned tours without SQL date bounds and applies period via in-app split', () => {
+  it('loads in-range and out-of-range tours with DB date bounds', () => {
     const start = actions.indexOf('export async function getGuideVehicleReports')
     const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
     const body = actions.slice(start, end)
 
-    expect(body).toContain('resolveGuideVehicleReportDateRange')
-    expect(body).toContain('filterGuideVehicleReportsByPeriod')
-    expect(body).toContain('tourStartDateInGuideVehicleReportRange')
-    expect(body).toMatch(/\.from\(['"]tours['"]\)/)
-    expect(body).toContain("'id, start_date'")
-    expect(body).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
-    expect(body).toMatch(/\.neq\(['"]assignment_status['"],\s*['"]recalled['"]\)/)
-    expect(body).not.toMatch(/\.gte\(['"]start_date['"],\s*range\.from\)/)
-    expect(body).not.toMatch(/\.lte\(['"]start_date['"],\s*range\.to\)/)
-    expect(actions).toContain('fetchSubmittedReportsForTours')
-    expect(actions).toMatch(/fetchSubmittedReportsForTours[\s\S]*?\.from\(['"]vehicle_route_reports['"]\)/)
-    expect(body).toContain('inRangeTourIds')
-    expect(body).toContain('outRangeTourIds')
+    expect(body).toContain('fetchInRangeTourIds')
+    expect(body).toContain('fetchOutOfRangeTourIds')
+    expect(body).toContain('fetchGuideCheckedReportIds')
+    expect(actions).toMatch(/fetchInRangeTourIds[\s\S]*?\.gte\(['"]start_date['"],\s*range\.from\)/)
+    expect(actions).toMatch(/fetchInRangeTourIds[\s\S]*?\.lte\(['"]start_date['"],\s*range\.to\)/)
+    expect(actions).toContain('start_date.is.null')
+    expect(actions).toMatch(/baseGuideToursQuery[\s\S]*?\.eq\(['"]guide_id['"],\s*guideId\)/)
+    expect(actions).toMatch(/baseGuideToursQuery[\s\S]*?\.neq\(['"]assignment_status['"],\s*['"]recalled['"]\)/)
     expect(body).toContain('Promise.all')
-    expect(body.indexOf(".from('tours')")).toBeLessThan(actions.indexOf('fetchSubmittedReportsForTours'))
+    expect(body).toContain('excludeCheckedReportIds')
+    expect(actions).toContain('shouldExcludeCheckedReportIdsInDb')
+    expect(actions).toContain('filterUncheckedReportRows')
     expect(body).not.toContain('.limit(200)')
     expect(body).not.toContain('.delete(')
   })
@@ -216,7 +281,7 @@ describe('guide vehicle report list page wiring', () => {
     expect(ctxBody).toContain('getSession()')
     expect(ctxBody).toContain('isGuide(session.role')
     expect(ctxBody).not.toContain('auth.getUser()')
-    expect(listBody).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
+    expect(actions).toMatch(/baseGuideToursQuery[\s\S]*?\.eq\(['"]guide_id['"],\s*guideId\)/)
   })
 
   it('drops checked out-of-range reports before final period filter', () => {
@@ -225,7 +290,9 @@ describe('guide vehicle report list page wiring', () => {
     const body = actions.slice(start, end)
 
     expect(body).toContain('outRangeUncheckedReports')
+    expect(body).toContain('excludeCheckedReportIds')
     expect(body).toContain('filterGuideVehicleReportsByPeriod')
+    expect(body).toContain('sortGuideVehicleReportListItems')
   })
 
   it('keeps guide ownership restriction while supporting the extended period', () => {
@@ -235,16 +302,42 @@ describe('guide vehicle report list page wiring', () => {
 
     expect(parseGuideVehicleReportPeriod('180d')).toBe('180d')
     expect(body).toContain('resolveGuideVehicleReportDateRange')
-    expect(body).toMatch(/\.eq\(['"]guide_id['"],\s*ctx\.guideId\)/)
+    expect(actions).toMatch(/baseGuideToursQuery[\s\S]*?\.eq\(['"]guide_id['"],\s*guideId\)/)
     expect(actions).toMatch(/fetchSubmittedReportsForTours[\s\S]*?\.eq\(['"]status['"],\s*['"]submitted['"]\)/)
   })
 
-  it('returns early when the guide has no assigned tours', () => {
+  it('returns early when the guide has no in-range or out-of-range tours', () => {
     const start = actions.indexOf('export async function getGuideVehicleReports')
     const end = actions.indexOf('export async function getGuideVehicleReportDetail', start)
     const body = actions.slice(start, end)
 
-    expect(body).toContain('if (tours.length === 0) return []')
+    expect(body).toContain(
+      'if (inRangeTourIds.length === 0 && outRangeTourIds.length === 0) return []',
+    )
+  })
+
+  it('does not use invalid in() when checked ids are empty', () => {
+    expect(actions).toContain('shouldExcludeCheckedReportIdsInDb')
+    expect(actions).toContain("if (tourIds.length === 0) return []")
+    const fetchStart = actions.indexOf('async function fetchSubmittedReportsForTours')
+    const fetchEnd = actions.indexOf('function toGuideVehicleReportListItem', fetchStart)
+    const fetchBody = actions.slice(fetchStart, fetchEnd)
+    expect(fetchBody).toContain('if (exclude && shouldExcludeCheckedReportIdsInDb(exclude.size))')
+  })
+
+  it('keeps settlement save files untouched by this optimization', () => {
+    const settlementActions = readFileSync(
+      join(ROOT, 'src/lib/actions/settlementActions.ts'),
+      'utf8',
+    )
+    const settlementForm = readFileSync(
+      join(ROOT, 'src/components/settlement/SettlementForm.tsx'),
+      'utf8',
+    )
+    expect(settlementActions).toContain('saveSettlementDraft')
+    expect(settlementForm).toContain('saveInFlightRef')
+    expect(actions).not.toContain('saveSettlementDraft')
+    expect(actions).not.toContain('saveInFlightRef')
   })
 })
 

@@ -90,3 +90,27 @@ export function filterGuideVehicleReportsByPeriod<T extends GuideVehicleReportLi
       !item.checked || tourStartDateInGuideVehicleReportRange(item.start_date, range),
   )
 }
+
+/** Max checked report ids safe for a single PostgREST `.not('id', 'in', ...)` filter. */
+export const GUIDE_VEHICLE_REPORT_CHECKED_IDS_DB_EXCLUDE_MAX = 100
+
+export function shouldExcludeCheckedReportIdsInDb(checkedCount: number): boolean {
+  return checkedCount > 0 && checkedCount <= GUIDE_VEHICLE_REPORT_CHECKED_IDS_DB_EXCLUDE_MAX
+}
+
+export function filterUncheckedReportRows<T extends { id: string }>(
+  rows: T[],
+  checkedReportIds: ReadonlySet<string>,
+): T[] {
+  if (checkedReportIds.size === 0) return rows
+  return rows.filter((row) => !checkedReportIds.has(row.id))
+}
+
+export function sortGuideVehicleReportListItems<
+  T extends { checked: boolean; start_date: string | null },
+>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    if (a.checked !== b.checked) return a.checked ? 1 : -1
+    return (a.start_date ?? '').localeCompare(b.start_date ?? '')
+  })
+}

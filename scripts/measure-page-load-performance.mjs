@@ -176,10 +176,11 @@ async function main() {
     console.warn(`[measure-page-load] ${warning}`)
   }
 
-  const guideEditPath = opt(
-    'PERF_GUIDE_SETTLEMENT_EDIT_URL',
-    '/guide/settlements/045abef1-a8d7-432a-b691-d7a24a5cefdb/edit',
-  )
+  const guideEditPathRaw = opt('PERF_GUIDE_SETTLEMENT_EDIT_URL', '')
+  const guideEditPath =
+    guideEditPathRaw && guideEditPathRaw.toLowerCase() !== 'skip'
+      ? normalizePath(guideEditPathRaw)
+      : undefined
   let adminDetailPath = opt('PERF_ADMIN_SETTLEMENT_DETAIL_URL', '')
   let vehicleReportPath = opt('PERF_VEHICLE_REPORT_URL', '')
 

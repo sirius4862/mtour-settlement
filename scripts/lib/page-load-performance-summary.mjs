@@ -126,6 +126,9 @@ export const PAGE_LOAD_ROUTE_DEFS = [
   },
 ]
 
+/** @type {Set<string>} */
+export const PAGE_LOAD_ROUTE_IDS = new Set(PAGE_LOAD_ROUTE_DEFS.map((d) => d.id))
+
 const SECRET_PATTERNS = [
   /PERF_[A-Z_]*PASSWORD[=:]\s*\S+/gi,
   /\b(password|token|access_token|refresh_token|apikey|api_key)\s*[:=]\s*["']?[^"'\s]+/gi,
@@ -179,13 +182,73 @@ export function parseRouteFilter(filterCsv) {
 }
 
 /**
+ * Split PERF_ROUTE_FILTER tokens into route ids and role groups.
+ * Route ids (e.g. guide-vehicle-reports) take precedence for route list building;
+ * groups (e.g. guide) still select all routes in that role.
+ * @param {string | null | undefined} filterCsv
+ */
+export function classifyRouteFilter(filterCsv) {
+  const tokens = parseRouteFilter(filterCsv)
+  if (!tokens) return { routeIds: null, groups: null }
+
+  /** @type {Set<string>} */
+  const routeIds = new Set()
+  /** @type {Set<PageLoadRole>} */
+  const groups = new Set()
+
+  for (const token of tokens) {
+    if (PAGE_LOAD_ROUTE_IDS.has(token)) routeIds.add(token)
+    else if (/** @type {readonly PageLoadRole[]} */ (ALL_PAGE_LOAD_GROUPS).includes(token)) {
+      groups.add(/** @type {PageLoadRole} */ (token))
+    }
+  }
+
+  return {
+    routeIds: routeIds.size ? routeIds : null,
+    groups: groups.size ? groups : null,
+  }
+}
+
+/**
+ * @param {PageLoadRouteDef} def
+ * @param {ReturnType<typeof classifyRouteFilter>} classified
+ */
+export function routeMatchesFilter(def, classified) {
+  if (!classified.routeIds && !classified.groups) return true
+  if (classified.routeIds?.has(def.id)) return true
+  if (classified.groups?.has(def.group)) return true
+  return false
+}
+
+/**
+ * Whether guide settlement edit should be measured.
+ * Unset, empty, or "skip" disables the dynamic edit route.
+ * @param {string | undefined | null} guideEditPathOption
+ */
+export function isGuideEditMeasurementEnabled(guideEditPathOption) {
+  const raw = guideEditPathOption?.trim()
+  return Boolean(raw && raw.toLowerCase() !== 'skip')
+}
+
+/**
  * Groups included in this measurement run.
  * Explicit PERF_ROUTE_FILTER limits scope; otherwise all roles are candidates.
  * @param {string | null | undefined} routeFilter
  */
 export function resolveGroupsInScope(routeFilter) {
-  const filter = parseRouteFilter(routeFilter)
-  return filter ?? new Set(ALL_PAGE_LOAD_GROUPS)
+  const { routeIds, groups } = classifyRouteFilter(routeFilter)
+  if (!routeIds && !groups) return new Set(ALL_PAGE_LOAD_GROUPS)
+
+  if (routeIds) {
+    /** @type {Set<PageLoadRole>} */
+    const derived = new Set()
+    for (const def of PAGE_LOAD_ROUTE_DEFS) {
+      if (routeIds.has(def.id)) derived.add(def.group)
+    }
+    return derived
+  }
+
+  return groups
 }
 
 /**
@@ -267,16 +330,18 @@ export function resolveMeasurementCredentials(options = {}) {
  * }} options
  */
 export function buildPageLoadRouteList(options = {}) {
-  const filter = parseRouteFilter(options.routeFilter)
+  const classified = classifyRouteFilter(options.routeFilter)
   const overrides = {
-    'guide-settlement-edit': options.guideEditPath,
+    'guide-settlement-edit': isGuideEditMeasurementEnabled(options.guideEditPath)
+      ? options.guideEditPath
+      : undefined,
     'admin-settlement-detail': options.adminDetailPath,
     'vehicle-report-detail': options.vehicleReportPath,
   }
 
   const routes = []
   for (const def of PAGE_LOAD_ROUTE_DEFS) {
-    if (filter && !filter.has(def.group)) continue
+    if (!routeMatchesFilter(def, classified)) continue
 
     const override = overrides[/** @type {keyof typeof overrides} */ (def.id)]
     let path = def.path

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   CORRECTION_SECTIONS,
+  adminMemoInputValue,
   correctionReasonForDisplay,
   correctionTargetMatchesRow,
   encodeCorrectionNote,
   encodeCorrectionNoteFromTargets,
+  hasStructuredCorrectionNote,
   parseCorrectionNote,
   sectionAttentionMessage,
   validateCorrectionRequestInput,
@@ -52,6 +54,22 @@ describe('correction-request-meta v1', () => {
     expect(parsed.targets).toEqual([])
     expect(parsed.reason).toBe(legacy)
     expect(correctionReasonForDisplay(legacy)).toBe(legacy)
+    expect(adminMemoInputValue(legacy)).toBe(legacy)
+    expect(hasStructuredCorrectionNote(legacy)).toBe(false)
+  })
+
+  it('admin memo input hides raw v1 and v2 encoded correction metadata', () => {
+    const v1 = encodeCorrectionNote(['options'], '옵션 누락')
+    expect(adminMemoInputValue(v1)).toBe('')
+    expect(correctionReasonForDisplay(v1)).toBe('옵션 누락')
+    expect(hasStructuredCorrectionNote(v1)).toBe(true)
+    expect(v1).toContain('@@correction@@sections=')
+
+    const v2 = encodeCorrectionNoteFromTargets([sampleTarget()])
+    expect(adminMemoInputValue(v2)).toBe('')
+    expect(correctionReasonForDisplay(v2)).toContain('보트투어 옵션 누락')
+    expect(hasStructuredCorrectionNote(v2)).toBe(true)
+    expect(v2).toContain('@@correction@@v=2@@targets=')
   })
 
   it('validateCorrectionRequestInput requires reason and section', () => {

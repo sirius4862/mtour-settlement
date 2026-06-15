@@ -8,6 +8,7 @@ import { formatUsd, formatVnd } from '@/lib/settlement/format-currency'
 import { normalizeOtherAmountsFromDb } from '@/lib/settlement/other-expense-migrate'
 import { stateFromSettlementFull, toCalcInput } from '@/lib/settlement/mappers'
 import { normalizeExternalReceivableForForm } from '@/lib/settlement/external-receivable'
+import { correctionReasonForDisplay } from '@/lib/settlement/correction-request-meta'
 import { STATUS_META, canGuideEdit, canGuideConfirm } from '@/types'
 export const dynamic = 'force-dynamic'
 
@@ -245,10 +246,12 @@ export default async function SettlementDetailPage({
           <p className="text-sm text-gray-600 whitespace-pre-wrap">{s.guide_note}</p>
         </Card>
       )}
-      {s.admin_note && (
-        <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
-          <p className="text-sm font-semibold text-blue-700 mb-1">관리자 메모</p>
-          <p className="text-sm text-blue-600 whitespace-pre-wrap">{s.admin_note}</p>
+      {correctionReasonForDisplay(s.admin_note) && (
+        <div className="bg-red-50 rounded-2xl p-4 border border-red-100">
+          <p className="text-sm font-semibold text-red-800 mb-1">관리자 수정 요청</p>
+          <p className="text-sm text-red-700 whitespace-pre-wrap">
+            {correctionReasonForDisplay(s.admin_note)}
+          </p>
         </div>
       )}
 

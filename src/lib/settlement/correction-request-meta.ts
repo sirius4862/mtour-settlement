@@ -602,6 +602,28 @@ export function correctionReasonForDisplay(adminNote: string | null | undefined)
 
 
 
+/** Optional admin memo field — never prefill with encoded correction metadata. */
+
+export function adminMemoInputValue(adminNote: string | null | undefined): string {
+
+  const parsed = parseCorrectionNote(adminNote)
+
+  if (parsed.isStructured) return ''
+
+  return parsed.reason
+
+}
+
+
+
+export function hasStructuredCorrectionNote(adminNote: string | null | undefined): boolean {
+
+  return parseCorrectionNote(adminNote).isStructured
+
+}
+
+
+
 export function validateCorrectionTargets(
 
   targets: CorrectionTarget[],

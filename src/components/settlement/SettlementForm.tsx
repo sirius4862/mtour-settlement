@@ -85,7 +85,6 @@ interface Props {
 
 export function SettlementForm({ tours, guideName, mode, initialFull, initialTourId, formRole = 'guide', adminEdit }: Props) {
   const router = useRouter()
-  const hydrated = useRef(false)
   const saveInFlightRef = useRef(false)
   const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'submit' | 'request_edit' | null>(null)
   const [openSectionId, setOpenSectionId] = useState('basic')
@@ -130,6 +129,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const { sections } = calc
   const isPreview = mode === 'preview'
   const isAdminReview = !!adminEdit
+  const effectiveSettlementStatus = useMemo(
+    () => settlementStatus ?? initialFull?.status ?? null,
+    [settlementStatus, initialFull?.status],
+  )
+  const isGuideEditRequested = !isAdminReview && effectiveSettlementStatus === 'edit_requested'
   const role: SettlementFormRole = isPreview ? 'readOnly' : (isAdminReview ? 'admin' : formRole)
   const audience = summaryAudienceFromRole(role)
   const isAdmin = role === 'admin'
@@ -153,11 +157,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     )
 
   const guideCorrection = useMemo(() => {
-    if (isAdminReview || settlementStatus !== 'edit_requested') {
+    if (!isGuideEditRequested) {
       return parseCorrectionNote(null)
     }
     return parseCorrectionNote(initialFull?.admin_note)
-  }, [isAdminReview, settlementStatus, initialFull?.admin_note])
+  }, [isGuideEditRequested, initialFull?.admin_note])
 
   const attentionSectionIds = useMemo(
     () => new Set(guideCorrection.sections),
@@ -165,7 +169,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   )
 
   const guideRowHighlights = useMemo(() => {
-    if (isAdminReview || settlementStatus !== 'edit_requested' || guideCorrection.targets.length === 0) {
+    if (!isGuideEditRequested || guideCorrection.targets.length === 0) {
       return new Map<string, GuideRowCorrectionHighlight>()
     }
 
@@ -221,7 +225,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     }
 
     return map
-  }, [isAdminReview, settlementStatus, guideCorrection.targets, hotelRowCount, mealRowCount, entranceRowCount, otherRowCount, shoppingRowCount, optionRowCount])
+  }, [isGuideEditRequested, guideCorrection.targets, hotelRowCount, mealRowCount, entranceRowCount, otherRowCount, shoppingRowCount, optionRowCount])
 
   const openSectionCorrection = useCallback((sectionId: CorrectionSectionId) => {
     setCorrectionModalMode('contextual')
@@ -264,7 +268,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   )
 
   const guideCorrectionHighlight = useMemo(() => {
-    if (isAdminReview || settlementStatus !== 'edit_requested') return null
+    if (!isGuideEditRequested) return null
     return {
       activeJumpClientId,
       getRowHighlight: (clientId: string) => guideRowHighlights.get(clientId),
@@ -273,7 +277,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         return !!hl?.field && hl.field === field
       },
     }
-  }, [isAdminReview, settlementStatus, activeJumpClientId, guideRowHighlights])
+  }, [isGuideEditRequested, activeJumpClientId, guideRowHighlights])
 
   const handleJumpToCorrectionTarget = useCallback(() => {
     const jumpTargets =
@@ -369,25 +373,28 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
   useEffect(() => {
     if (correctionAutoExpanded.current) return
-    if (settlementStatus !== 'edit_requested') return
+    if (!isGuideEditRequested) return
     const first = guideCorrection.targets[0]?.section ?? guideCorrection.sections[0]
     if (!first) return
     correctionAutoExpanded.current = true
     setOpenSectionId(first)
-  }, [settlementStatus, guideCorrection.targets, guideCorrection.sections])
+  }, [isGuideEditRequested, guideCorrection.targets, guideCorrection.sections])
+
+  const hydratedFromFullId = useRef<string | null>(null)
 
   useEffect(() => {
-    if (hydrated.current) return
-
     const bootstrap = () => {
-      hydrated.current = true
-
       if (mode === 'preview') {
+        if (hydratedFromFullId.current === 'preview') return
+        hydratedFromFullId.current = 'preview'
         useSettlementFormStore.setState(stateFromMock(guideName))
         return
       }
 
-      if (mode === 'edit' && initialFull) {
+      if (mode === 'edit') {
+        if (!initialFull) return
+        if (hydratedFromFullId.current === initialFull.id) return
+        hydratedFromFullId.current = initialFull.id
         // Server data must win over sessionStorage draft on edit reload
         useSettlementFormStore.persist.clearStorage()
         const fullForRole = formRole === 'guide'
@@ -396,6 +403,9 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         hydrateFromFull(fullForRole, guideName)
         return
       }
+
+      if (hydratedFromFullId.current === 'new') return
+      hydratedFromFullId.current = 'new'
 
       const s = useSettlementFormStore.getState()
       const decision = resolveNewSettlementBinding(
@@ -902,7 +912,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       correctionRequest={correctionRequestHandlers}
       guideCorrectionHighlight={guideCorrectionHighlight}
     >
-    <div className="flex flex-col min-h-screen pb-36">
+    <div className={`flex flex-col min-h-screen ${isAdminReview ? 'pb-52' : 'pb-36'}`}>
       <div className="sticky top-14 z-20 bg-white border-b border-gray-100 px-4 py-3">
         <div className="flex items-center gap-3">
           <button
@@ -932,7 +942,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       </div>
 
       <div className="flex-1 px-4 py-4">
-        {!isPreview && guideCorrection.reason && settlementStatus === 'edit_requested' && (
+        {!isPreview && guideCorrection.reason && isGuideEditRequested && (
           <GuideCorrectionBanner
             correction={guideCorrection}
             onJumpToTarget={handleJumpToCorrectionTarget}

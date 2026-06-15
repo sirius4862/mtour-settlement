@@ -6,6 +6,7 @@ import {
   canAdminSendForConfirmation,
 } from '@/lib/settlement/status-guards'
 import {
+  adminMemoInputValue,
   encodeCorrectionNote,
   encodeCorrectionNoteFromTargets,
   parseCorrectionNote,
@@ -53,6 +54,10 @@ const GUIDE_CORRECTION_BANNER = readFileSync(
   join(ROOT, 'src/components/settlement/GuideCorrectionBanner.tsx'),
   'utf8',
 )
+const GUIDE_DETAIL_PAGE = readFileSync(
+  join(ROOT, 'src/app/guide/settlements/[id]/page.tsx'),
+  'utf8',
+)
 
 const submitted = {
   status: 'submitted' as SettlementStatus,
@@ -96,12 +101,30 @@ describe('admin contextual correction UI wiring', () => {
     expect(CORRECTION_MODAL).toContain('preselectedRowLabel')
   })
 
-  it('ReviewPanel demotes inline form to section chips + modal', () => {
+  it('ReviewPanel uses compact footer actions and modal-only correction request', () => {
     expect(REVIEW_PANEL).toContain('CorrectionRequestModal')
     expect(REVIEW_PANEL).toContain('encodeCorrectionNoteFromTargets')
     expect(REVIEW_PANEL).toContain('기타 수정 요청')
     expect(REVIEW_PANEL).not.toContain('AdminCorrectionRequestFields')
-    expect(REVIEW_PANEL).toContain('openSectionCorrection')
+    expect(REVIEW_PANEL).not.toContain('CORRECTION_SECTIONS.map')
+    expect(REVIEW_PANEL).toContain('openGlobalCorrection')
+    expect(REVIEW_PANEL).toContain('adminMemoInputValue')
+  })
+
+  it('admin edit keeps company sections and extra bottom padding for admin footer', () => {
+    expect(SETTLEMENT_FORM).toContain("title: '회사 입력 항목'")
+    expect(SETTLEMENT_FORM).toContain('showAdminSections')
+    expect(SETTLEMENT_FORM).toContain('isAdminReview ? \'pb-52\' : \'pb-36\'')
+    expect(SETTLEMENT_FORM_FOOTER).toContain('showRequestGuideCorrection')
+    expect(SETTLEMENT_FORM_FOOTER).not.toContain('AdminCorrectionRequestFields')
+  })
+
+  it('ReviewPanel does not prefill memo with raw encoded correction metadata', () => {
+    const v1 = encodeCorrectionNote(['options'], '옵션 누락')
+    expect(adminMemoInputValue(v1)).toBe('')
+    expect(REVIEW_PANEL).toContain('adminMemoInputValue(currentAdminNote)')
+    expect(REVIEW_PANEL).toContain('correctionReasonForDisplay(currentAdminNote)')
+    expect(REVIEW_PANEL).not.toContain('useState(currentAdminNote)')
   })
 
   it('admin edit SettlementForm still allows request edit for submitted', () => {
@@ -160,14 +183,47 @@ describe('admin contextual correction UI wiring', () => {
 describe('guide targeted correction visibility wiring', () => {
   it('guide edit shows compact correction banner with jump action', () => {
     expect(SETTLEMENT_FORM).toContain('GuideCorrectionBanner')
-    expect(SETTLEMENT_FORM).toContain("settlementStatus === 'edit_requested'")
+    expect(SETTLEMENT_FORM).toContain('isGuideEditRequested')
     expect(GUIDE_CORRECTION_BANNER).toContain('관리자 수정 요청')
     expect(GUIDE_CORRECTION_BANNER).toContain('문제 항목으로 이동')
     expect(GUIDE_CORRECTION_BANNER).toContain('수정 요청')
   })
 
+  it('uses effective settlement status from initialFull when Zustand status is unset', () => {
+    expect(SETTLEMENT_FORM).toContain('effectiveSettlementStatus')
+    expect(SETTLEMENT_FORM).toContain('settlementStatus ?? initialFull?.status ?? null')
+    expect(SETTLEMENT_FORM).toContain(
+      "effectiveSettlementStatus === 'edit_requested'",
+    )
+    expect(SETTLEMENT_FORM).toMatch(
+      /guideCorrection\.reason && isGuideEditRequested/,
+    )
+  })
+
+  it('derives guide correction from initialFull admin_note before Zustand hydration', () => {
+    expect(SETTLEMENT_FORM).toMatch(
+      /if \(!isGuideEditRequested\)[\s\S]*parseCorrectionNote\(null\)/,
+    )
+    expect(SETTLEMENT_FORM).toContain('parseCorrectionNote(initialFull?.admin_note)')
+    expect(SETTLEMENT_FORM).toContain('guideRowHighlights')
+    expect(SETTLEMENT_FORM).toContain('guideCorrectionHighlight')
+    expect(SETTLEMENT_FORM).not.toMatch(
+      /guideCorrection[\s\S]*settlementStatus !== 'edit_requested'/,
+    )
+  })
+
+  it('re-bootstraps edit mode when initialFull arrives instead of one-shot hydrated guard', () => {
+    expect(SETTLEMENT_FORM).toContain('hydratedFromFullId')
+    expect(SETTLEMENT_FORM).toContain('if (!initialFull) return')
+    expect(SETTLEMENT_FORM).toContain('hydratedFromFullId.current === initialFull.id')
+    expect(SETTLEMENT_FORM).not.toContain('hydrated.current')
+  })
+
   it('does not show correction banner outside edit_requested', () => {
     expect(SETTLEMENT_FORM).toMatch(
+      /guideCorrection\.reason && isGuideEditRequested/,
+    )
+    expect(SETTLEMENT_FORM).not.toMatch(
       /guideCorrection\.reason && settlementStatus === 'edit_requested'/,
     )
   })
@@ -201,12 +257,37 @@ describe('guide targeted correction visibility wiring', () => {
     expect(GUIDE_PAGE).toContain("s.status === 'edit_requested'")
     expect(GUIDE_SETTLEMENTS_PAGE).toContain('correctionReasonForDisplay')
     expect(GUIDE_SETTLEMENTS_PAGE).toContain("s.status === 'edit_requested'")
+    expect(GUIDE_DETAIL_PAGE).toContain('correctionReasonForDisplay')
+    expect(GUIDE_DETAIL_PAGE).not.toContain('whitespace-pre-wrap">{s.admin_note}')
   })
 
-  it('legacy plain admin_note still has display reason', () => {
+  it('legacy plain admin_note still has display reason for edit_requested guide edit', () => {
     const legacy = parseCorrectionNote('옵션 금액 확인 필요')
     expect(legacy.reason).toBe('옵션 금액 확인 필요')
     expect(legacy.sections).toEqual([])
+    expect(adminMemoInputValue('옵션 금액 확인 필요')).toBe('옵션 금액 확인 필요')
+    expect(SETTLEMENT_FORM).toContain('parseCorrectionNote(initialFull?.admin_note)')
+  })
+
+  it('v2 admin_note renders guide correction targets for jump/highlight', () => {
+    const parsed = parseCorrectionNote(
+      encodeCorrectionNoteFromTargets([
+        {
+          section: 'options',
+          kind: 'amount_mismatch',
+          rowId: null,
+          clientId: null,
+          rowLabel: '보트투어',
+          field: 'unit_price_usd',
+          reason: '보트투어 옵션 금액 확인 필요',
+          proposed: null,
+        },
+      ]),
+    )
+    expect(parsed.reason).toContain('보트투어')
+    expect(parsed.sections).toContain('options')
+    expect(SETTLEMENT_FORM).toContain('handleJumpToCorrectionTarget')
+    expect(GUIDE_CORRECTION_BANNER).toContain('문제 항목으로 이동')
   })
 })
 

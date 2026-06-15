@@ -8,12 +8,18 @@ import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
 import { sanitizeSettlementFullForGuide } from '@/lib/settlement/snapshot'
 import { canAdminSendForConfirmation, canAdminRequestEditOnSettlement } from '@/lib/settlement/status-guards'
 import {
-  encodeCorrectionNote,
+  emptyCorrectionTarget,
+  encodeCorrectionNoteFromTargets,
+  correctionTargetMatchesRow,
   getCorrectionSectionDefaultMessage,
   parseCorrectionNote,
+  sectionAttentionMessage,
+  sectionsToTargets,
   SEND_FOR_CONFIRMATION_WARNING,
   validateCorrectionRequestInput,
+  validateCorrectionTargets,
   type CorrectionSectionId,
+  type CorrectionTarget,
 } from '@/lib/settlement/correction-request-meta'
 import { EXCEL_SECTIONS } from '@/lib/settlement/excel-sections'
 import {
@@ -55,8 +61,8 @@ import { TCSettlementSection, FinalAdjustmentsSection, GuideMegugiDailySection }
 import { FinalSummarySection } from './sections/FinalSummarySection'
 import { ReceiptsSection } from './sections/ReceiptsSection'
 import type { SettlementFormRole } from '@/lib/settlement/field-ownership'
-import { SettlementFormProvider, summaryAudienceFromRole } from './SettlementFormContext'
-import { AdminCorrectionRequestFields } from './AdminCorrectionRequestFields'
+import { SettlementFormProvider, summaryAudienceFromRole, type GuideRowCorrectionHighlight } from './SettlementFormContext'
+import { CorrectionRequestModal, type CorrectionModalMode } from './CorrectionRequestModal'
 import { GuideCorrectionBanner } from './GuideCorrectionBanner'
 
 export type SettlementFormMode = 'new' | 'edit' | 'preview'
@@ -85,9 +91,16 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const [openSectionId, setOpenSectionId] = useState('basic')
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([])
   const [showCorrectionModal, setShowCorrectionModal] = useState(false)
-  const [correctionReason, setCorrectionReason] = useState('')
-  const [correctionSections, setCorrectionSections] = useState<CorrectionSectionId[]>([])
+  const [correctionModalMode, setCorrectionModalMode] = useState<CorrectionModalMode>('contextual')
+  const [correctionTarget, setCorrectionTarget] = useState<CorrectionTarget>(
+    emptyCorrectionTarget('options'),
+  )
+  const [globalCorrectionSections, setGlobalCorrectionSections] = useState<CorrectionSectionId[]>([])
+  const [globalCorrectionReason, setGlobalCorrectionReason] = useState('')
+  const [correctionJumpIndex, setCorrectionJumpIndex] = useState(0)
+  const [activeJumpClientId, setActiveJumpClientId] = useState<string | null>(null)
   const correctionAutoExpanded = useRef(false)
+  const correctionJumpPending = useRef<{ sectionId: string; clientId: string | null } | null>(null)
 
   const hydrateFromFull = useSettlementFormStore((s) => s.hydrateFromFull)
   const resetNew = useSettlementFormStore((s) => s.resetNew)
@@ -151,12 +164,217 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     [guideCorrection.sections],
   )
 
+  const guideRowHighlights = useMemo(() => {
+    if (isAdminReview || settlementStatus !== 'edit_requested' || guideCorrection.targets.length === 0) {
+      return new Map<string, GuideRowCorrectionHighlight>()
+    }
+
+    const state = useSettlementFormStore.getState()
+    const map = new Map<string, GuideRowCorrectionHighlight>()
+
+    const rowCollections: Record<string, { clientId: string; id?: string | null; label?: string | null }[]> = {
+      hotels: state.hotels.filter((r) => !r.deleted).map((r) => ({
+        clientId: r.clientId,
+        id: r.id,
+        label: r.hotel_name,
+      })),
+      meals: state.meals.filter((r) => !r.deleted).map((r) => ({
+        clientId: r.clientId,
+        id: r.id,
+        label: r.restaurant_name,
+      })),
+      entrances: state.entrances.filter((r) => !r.deleted).map((r) => ({
+        clientId: r.clientId,
+        id: r.id,
+        label: r.attraction_name,
+      })),
+      others: state.others.filter((r) => !r.deleted).map((r) => ({
+        clientId: r.clientId,
+        id: r.id,
+        label: r.description,
+      })),
+      shopping: state.shoppings.filter((r) => !r.deleted).map((r) => ({
+        clientId: r.clientId,
+        id: r.id,
+        label: r.shop_name,
+      })),
+      options: state.options
+        .filter((r) => !r.deleted && r.is_extra_vehicle !== true)
+        .map((r) => ({
+          clientId: r.clientId,
+          id: r.id,
+          label: r.option_name,
+        })),
+    }
+
+    for (const target of guideCorrection.targets) {
+      if (target.kind !== 'row' && target.kind !== 'amount_mismatch') continue
+      const rows = rowCollections[target.section] ?? []
+      const matched = rows.find((row) => correctionTargetMatchesRow(target, row))
+      if (matched) {
+        map.set(matched.clientId, {
+          message: target.reason,
+          field: target.field,
+          proposed: target.proposed,
+        })
+      }
+    }
+
+    return map
+  }, [isAdminReview, settlementStatus, guideCorrection.targets, hotelRowCount, mealRowCount, entranceRowCount, otherRowCount, shoppingRowCount, optionRowCount])
+
+  const openSectionCorrection = useCallback((sectionId: CorrectionSectionId) => {
+    setCorrectionModalMode('contextual')
+    setCorrectionTarget(emptyCorrectionTarget(sectionId, { kind: 'section' }))
+    setShowCorrectionModal(true)
+  }, [])
+
+  const openRowCorrection = useCallback(
+    (draft: Omit<CorrectionTarget, 'reason' | 'proposed'>) => {
+      setCorrectionModalMode('contextual')
+      setCorrectionTarget(
+        emptyCorrectionTarget(draft.section, {
+          ...draft,
+          reason: '',
+          proposed: null,
+        }),
+      )
+      setShowCorrectionModal(true)
+    },
+    [],
+  )
+
+  const openGlobalCorrection = useCallback(() => {
+    setCorrectionModalMode('global')
+    setGlobalCorrectionSections([])
+    setGlobalCorrectionReason('')
+    setShowCorrectionModal(true)
+  }, [])
+
+  const correctionRequestHandlers = useMemo(
+    () =>
+      canRequestGuideCorrection
+        ? {
+            canRequest: true,
+            requestSection: openSectionCorrection,
+            requestRow: openRowCorrection,
+          }
+        : null,
+    [canRequestGuideCorrection, openSectionCorrection, openRowCorrection],
+  )
+
+  const guideCorrectionHighlight = useMemo(() => {
+    if (isAdminReview || settlementStatus !== 'edit_requested') return null
+    return {
+      activeJumpClientId,
+      getRowHighlight: (clientId: string) => guideRowHighlights.get(clientId),
+      isFieldHighlighted: (clientId: string, field: string) => {
+        const hl = guideRowHighlights.get(clientId)
+        return !!hl?.field && hl.field === field
+      },
+    }
+  }, [isAdminReview, settlementStatus, activeJumpClientId, guideRowHighlights])
+
+  const handleJumpToCorrectionTarget = useCallback(() => {
+    const jumpTargets =
+      guideCorrection.targets.length > 0
+        ? guideCorrection.targets
+        : guideCorrection.sections.map((section) =>
+            emptyCorrectionTarget(section, {
+              kind: 'section',
+              reason: guideCorrection.reason,
+            }),
+          )
+
+    if (jumpTargets.length === 0) return
+
+    const target = jumpTargets[correctionJumpIndex % jumpTargets.length]
+    const nextIndex = correctionJumpIndex + 1
+    setCorrectionJumpIndex(nextIndex)
+
+    setOpenSectionId(target.section)
+
+    const state = useSettlementFormStore.getState()
+    let matchedClientId: string | null = target.clientId
+
+    if (target.kind === 'row' || target.kind === 'amount_mismatch') {
+      const rowsBySection: Record<string, { clientId: string; id?: string | null; label?: string | null }[]> = {
+        hotels: state.hotels.filter((r) => !r.deleted).map((r) => ({
+          clientId: r.clientId,
+          id: r.id,
+          label: r.hotel_name,
+        })),
+        meals: state.meals.filter((r) => !r.deleted).map((r) => ({
+          clientId: r.clientId,
+          id: r.id,
+          label: r.restaurant_name,
+        })),
+        entrances: state.entrances.filter((r) => !r.deleted).map((r) => ({
+          clientId: r.clientId,
+          id: r.id,
+          label: r.attraction_name,
+        })),
+        others: state.others.filter((r) => !r.deleted).map((r) => ({
+          clientId: r.clientId,
+          id: r.id,
+          label: r.description,
+        })),
+        shopping: state.shoppings.filter((r) => !r.deleted).map((r) => ({
+          clientId: r.clientId,
+          id: r.id,
+          label: r.shop_name,
+        })),
+        options: state.options
+          .filter((r) => !r.deleted && r.is_extra_vehicle !== true)
+          .map((r) => ({
+            clientId: r.clientId,
+            id: r.id,
+            label: r.option_name,
+          })),
+      }
+      const rows = rowsBySection[target.section] ?? []
+      const matched = rows.find((row) => correctionTargetMatchesRow(target, row))
+      matchedClientId = matched?.clientId ?? target.clientId
+    }
+
+    setActiveJumpClientId(matchedClientId)
+    correctionJumpPending.current = {
+      sectionId: target.section,
+      clientId: matchedClientId,
+    }
+  }, [guideCorrection, correctionJumpIndex])
+
+  useEffect(() => {
+    const pending = correctionJumpPending.current
+    if (!pending) return
+    correctionJumpPending.current = null
+
+    const scroll = () => {
+      if (pending.clientId) {
+        const el = document.getElementById(`correction-row-${pending.clientId}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          return
+        }
+      }
+      document
+        .getElementById(`correction-section-${pending.sectionId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scroll)
+    })
+  }, [openSectionId, correctionJumpIndex, activeJumpClientId])
+
   useEffect(() => {
     if (correctionAutoExpanded.current) return
-    if (settlementStatus !== 'edit_requested' || guideCorrection.sections.length === 0) return
+    if (settlementStatus !== 'edit_requested') return
+    const first = guideCorrection.targets[0]?.section ?? guideCorrection.sections[0]
+    if (!first) return
     correctionAutoExpanded.current = true
-    setOpenSectionId(guideCorrection.sections[0])
-  }, [settlementStatus, guideCorrection.sections])
+    setOpenSectionId(first)
+  }, [settlementStatus, guideCorrection.targets, guideCorrection.sections])
 
   useEffect(() => {
     if (hydrated.current) return
@@ -369,10 +587,26 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const handleRequestGuideCorrection = useCallback(async () => {
     if (isPreview || !isAdminReview || !adminEdit || !canRequestGuideCorrection) return
 
-    const validation = validateCorrectionRequestInput(correctionSections, correctionReason)
-    if (!validation.ok) {
-      setSaveError(validation.error)
-      return
+    let encoded = ''
+    if (correctionModalMode === 'contextual') {
+      const validation = validateCorrectionTargets([correctionTarget])
+      if (!validation.ok) {
+        setSaveError(validation.error)
+        return
+      }
+      encoded = encodeCorrectionNoteFromTargets([correctionTarget])
+    } else {
+      const validation = validateCorrectionRequestInput(
+        globalCorrectionSections,
+        globalCorrectionReason,
+      )
+      if (!validation.ok) {
+        setSaveError(validation.error)
+        return
+      }
+      encoded = encodeCorrectionNoteFromTargets(
+        sectionsToTargets(globalCorrectionSections, globalCorrectionReason),
+      )
     }
 
     const id = useSettlementFormStore.getState().settlementId
@@ -380,7 +614,6 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
     setPendingAction('request_edit')
     try {
-      const encoded = encodeCorrectionNote(correctionSections, correctionReason)
       const result = await reviewSettlement({
         id,
         action: 'request_edit',
@@ -402,8 +635,10 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     isAdminReview,
     adminEdit,
     canRequestGuideCorrection,
-    correctionSections,
-    correctionReason,
+    correctionModalMode,
+    correctionTarget,
+    globalCorrectionSections,
+    globalCorrectionReason,
     router,
     setSaveError,
   ])
@@ -646,18 +881,27 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
   const withSectionAttention = (section: AccordionSection): AccordionSection => {
     if (!attentionSectionIds.has(section.id as CorrectionSectionId)) return section
-    const defaultMsg = getCorrectionSectionDefaultMessage(section.id as CorrectionSectionId)
+    const sectionId = section.id as CorrectionSectionId
+    const msg =
+      sectionAttentionMessage(guideCorrection, sectionId) ??
+      getCorrectionSectionDefaultMessage(sectionId) ??
+      guideCorrection.reason
     return {
       ...section,
       needsAttention: true,
-      attentionMessage: defaultMsg ?? guideCorrection.reason,
+      attentionMessage: msg,
     }
   }
 
   const sectionsWithAttention = accordionSections.map(withSectionAttention)
 
   return (
-    <SettlementFormProvider role={role} adminReviewEdit={isAdminReview}>
+    <SettlementFormProvider
+      role={role}
+      adminReviewEdit={isAdminReview}
+      correctionRequest={correctionRequestHandlers}
+      guideCorrectionHighlight={guideCorrectionHighlight}
+    >
     <div className="flex flex-col min-h-screen pb-36">
       <div className="sticky top-14 z-20 bg-white border-b border-gray-100 px-4 py-3">
         <div className="flex items-center gap-3">
@@ -689,7 +933,10 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
       <div className="flex-1 px-4 py-4">
         {!isPreview && guideCorrection.reason && settlementStatus === 'edit_requested' && (
-          <GuideCorrectionBanner correction={guideCorrection} />
+          <GuideCorrectionBanner
+            correction={guideCorrection}
+            onJumpToTarget={handleJumpToCorrectionTarget}
+          />
         )}
         {!isPreview && (
           <ValidationBanner
@@ -702,6 +949,8 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           openId={openSectionId}
           onOpenIdChange={setOpenSectionId}
           showSectionMeta={showSectionMeta}
+          showSectionCorrectionAction={canRequestGuideCorrection}
+          onSectionCorrectionRequest={openSectionCorrection}
         />
       </div>
 
@@ -724,9 +973,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           onSubmit={handleSubmit}
           onSendForConfirmation={isAdminReview ? handleSendForConfirmation : undefined}
           onRequestGuideCorrection={
-            isAdminReview && canRequestGuideCorrection
-              ? () => setShowCorrectionModal(true)
-              : undefined
+            isAdminReview && canRequestGuideCorrection ? openGlobalCorrection : undefined
           }
           pendingAction={pendingAction}
           hideSubmit={isAdminReview}
@@ -735,47 +982,23 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
           saveLabel="임시저장"
           submitLabel="저장 후 제출"
           sendForConfirmationLabel="가이드 최종확인 요청"
-          requestGuideCorrectionLabel="가이드 수정 요청"
+          requestGuideCorrectionLabel="기타 수정 요청"
         />
       )}
 
-      {showCorrectionModal && isAdminReview && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-4 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div>
-              <p className="text-sm font-semibold text-gray-800">가이드 수정 요청</p>
-              <p className="text-xs text-gray-500 mt-1">
-                가이드 입력 항목이 누락되었거나 틀린 경우 사용하세요. 가이드에게 수정 사유와 확인할 섹션이 전달됩니다.
-              </p>
-            </div>
-            <AdminCorrectionRequestFields
-              reason={correctionReason}
-              sections={correctionSections}
-              onReasonChange={setCorrectionReason}
-              onSectionsChange={setCorrectionSections}
-              disabled={pendingAction === 'request_edit'}
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCorrectionModal(false)}
-                disabled={pendingAction === 'request_edit'}
-                className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleRequestGuideCorrection}
-                disabled={pendingAction === 'request_edit'}
-                className="flex-1 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
-              >
-                {pendingAction === 'request_edit' ? '처리 중…' : '수정요청 보내기'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CorrectionRequestModal
+        open={showCorrectionModal && isAdminReview}
+        onClose={() => setShowCorrectionModal(false)}
+        mode={correctionModalMode}
+        target={correctionTarget}
+        globalSections={globalCorrectionSections}
+        globalReason={globalCorrectionReason}
+        onTargetChange={setCorrectionTarget}
+        onGlobalSectionsChange={setGlobalCorrectionSections}
+        onGlobalReasonChange={setGlobalCorrectionReason}
+        onSubmit={handleRequestGuideCorrection}
+        pending={pendingAction === 'request_edit'}
+      />
     </div>
     </SettlementFormProvider>
   )

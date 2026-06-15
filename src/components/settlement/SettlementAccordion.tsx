@@ -2,6 +2,8 @@
 
 import { useState, type ReactNode } from 'react'
 import type { AnnotatedNumber } from '@/lib/settlement/types-calc'
+import type { CorrectionSectionId } from '@/lib/settlement/correction-request-meta'
+import { CorrectionSectionAction } from './CorrectionRequestModal'
 import { CorrectionSectionAlert } from './GuideCorrectionBanner'
 import { SubtotalPreview } from './SectionSubtotal'
 
@@ -22,11 +24,15 @@ export function SettlementAccordion({
   openId: controlledOpenId,
   onOpenIdChange,
   showSectionMeta = true,
+  showSectionCorrectionAction = false,
+  onSectionCorrectionRequest,
 }: {
   sections: AccordionSection[]
   openId?: string
   onOpenIdChange?: (id: string) => void
   showSectionMeta?: boolean
+  showSectionCorrectionAction?: boolean
+  onSectionCorrectionRequest?: (sectionId: CorrectionSectionId) => void
 }) {
   const [internalOpenId, setInternalOpenId] = useState<string>(sections[0]?.id ?? '')
   const openId = controlledOpenId ?? internalOpenId
@@ -44,6 +50,7 @@ export function SettlementAccordion({
         return (
           <div
             key={section.id}
+            id={`correction-section-${section.id}`}
             className={
               'rounded-2xl overflow-hidden shadow-sm ' +
               (needsAttention
@@ -51,53 +58,61 @@ export function SettlementAccordion({
                 : 'bg-white border border-gray-100')
             }
           >
-            <button
-              type="button"
-              onClick={() => setOpenId(isOpen ? '' : section.id)}
-              className={
-                'w-full flex items-center gap-3 px-4 py-3.5 text-left min-h-[52px] ' +
-                (needsAttention ? 'active:bg-red-100/60' : 'active:bg-gray-50')
-              }
-              aria-expanded={isOpen}
-            >
-              <span
+            <div className="flex items-center gap-1 pr-2">
+              <button
+                type="button"
+                onClick={() => setOpenId(isOpen ? '' : section.id)}
                 className={
-                  'w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold shrink-0 ' +
-                  (needsAttention
-                    ? isOpen
-                      ? 'bg-red-600 text-white'
-                      : 'bg-red-100 text-red-700'
-                    : isOpen
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-500')
+                  'flex-1 flex items-center gap-3 px-4 py-3.5 text-left min-h-[52px] ' +
+                  (needsAttention ? 'active:bg-red-100/60' : 'active:bg-gray-50')
                 }
+                aria-expanded={isOpen}
               >
-                {isOpen ? '−' : '+'}
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={
-                      'font-semibold text-sm ' +
-                      (needsAttention ? 'text-red-800' : 'text-gray-800')
-                    }
-                  >
-                    {section.title}
-                  </span>
-                  {needsAttention && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-semibold">
-                      확인 필요
+                <span
+                  className={
+                    'w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold shrink-0 ' +
+                    (needsAttention
+                      ? isOpen
+                        ? 'bg-red-600 text-white'
+                        : 'bg-red-100 text-red-700'
+                      : isOpen
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-500')
+                  }
+                >
+                  {isOpen ? '−' : '+'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={
+                        'font-semibold text-sm ' +
+                        (needsAttention ? 'text-red-800' : 'text-gray-800')
+                      }
+                    >
+                      {section.title}
                     </span>
-                  )}
-                  {showSectionMeta && section.badge && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                      {section.badge}
-                    </span>
-                  )}
+                    {needsAttention && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-semibold">
+                        확인 필요
+                      </span>
+                    )}
+                    {showSectionMeta && section.badge && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                        {section.badge}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              {!isOpen && <SubtotalPreview field={section.preview} />}
-            </button>
+                {!isOpen && <SubtotalPreview field={section.preview} />}
+              </button>
+              {showSectionCorrectionAction && onSectionCorrectionRequest && (
+                <CorrectionSectionAction
+                  compact
+                  onClick={() => onSectionCorrectionRequest(section.id as CorrectionSectionId)}
+                />
+              )}
+            </div>
 
             {isOpen && (
               <div className="px-4 pb-4 border-t border-gray-50">

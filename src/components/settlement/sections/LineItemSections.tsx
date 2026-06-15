@@ -24,6 +24,11 @@ import {
   canEditExtraVehicle,
 } from '@/lib/settlement/field-ownership'
 import { useSettlementFormRole, useAdminReviewEdit } from '../SettlementFormContext'
+import {
+  LineItemCorrectionAlert,
+  LineItemCorrectionToolbar,
+  useLineItemRowListCorrectionProps,
+} from './line-item-correction'
 
 export function HotelsSection() {
   const role = useSettlementFormRole()
@@ -35,6 +40,7 @@ export function HotelsSection() {
   const addRow = useSettlementFormStore((s) => s.addRow)
   const duplicateRow = useSettlementFormStore((s) => s.duplicateRow)
   const softDeleteRow = useSettlementFormStore((s) => s.softDeleteRow)
+  const rowCorrectionProps = useLineItemRowListCorrectionProps()
 
   return (
     <div className="space-y-3">
@@ -44,10 +50,18 @@ export function HotelsSection() {
       onAdd={() => addRow('hotels')}
       hideAdd={!canAddHotelRows(role)}
       addLabel="+ 호텔 추가"
+      {...rowCorrectionProps}
       renderRow={(row: DraftHotelRow) => {
         const calc = calcHotelRow(row)
         return (
           <>
+            <LineItemCorrectionToolbar
+              section="hotels"
+              rowId={row.id}
+              clientId={row.clientId}
+              rowLabel={row.hotel_name}
+            />
+            <LineItemCorrectionAlert clientId={row.clientId} />
             <ManualField label="호텔명" value={row.hotel_name} disabled={lockGuideOwnedHotelFields}
               onChange={(e) => updateRow('hotels', row.clientId, { hotel_name: e.target.value })} />
             <ManualField label="체크인" type="date" value={row.check_in_date ?? ''} disabled={lockGuideOwnedHotelFields}
@@ -102,6 +116,7 @@ export function MealsSection() {
   const addRow = useSettlementFormStore((s) => s.addRow)
   const duplicateRow = useSettlementFormStore((s) => s.duplicateRow)
   const softDeleteRow = useSettlementFormStore((s) => s.softDeleteRow)
+  const rowCorrectionProps = useLineItemRowListCorrectionProps()
 
   return (
     <div className="space-y-3">
@@ -111,10 +126,18 @@ export function MealsSection() {
       onAdd={() => addRow('meals')}
       hideAdd={adminReview}
       addLabel="+ 식사 추가"
+      {...rowCorrectionProps}
       renderRow={(row) => {
         const amount = calcMealAmountVnd(row)
         return (
           <>
+            <LineItemCorrectionToolbar
+              section="meals"
+              rowId={row.id}
+              clientId={row.clientId}
+              rowLabel={row.restaurant_name}
+            />
+            <LineItemCorrectionAlert clientId={row.clientId} />
             <ManualField label="날짜" type="date" value={row.meal_date ?? ''} disabled={adminReview}
               onChange={(e) => updateRow('meals', row.clientId, { meal_date: e.target.value || null })} />
             <ManualField label="식당명" value={row.restaurant_name} disabled={adminReview}
@@ -161,6 +184,7 @@ export function EntrancesSection() {
   const addRow = useSettlementFormStore((s) => s.addRow)
   const duplicateRow = useSettlementFormStore((s) => s.duplicateRow)
   const softDeleteRow = useSettlementFormStore((s) => s.softDeleteRow)
+  const rowCorrectionProps = useLineItemRowListCorrectionProps()
 
   return (
     <div className="space-y-3">
@@ -170,10 +194,18 @@ export function EntrancesSection() {
       onAdd={() => addRow('entrances')}
       hideAdd={adminReview}
       addLabel="+ 입장료 추가"
+      {...rowCorrectionProps}
       renderRow={(row) => {
         const amount = calcEntranceAmountVnd(row)
         return (
           <>
+            <LineItemCorrectionToolbar
+              section="entrances"
+              rowId={row.id}
+              clientId={row.clientId}
+              rowLabel={row.attraction_name}
+            />
+            <LineItemCorrectionAlert clientId={row.clientId} />
             <ManualField label="날짜" type="date" value={row.visit_date ?? ''} disabled={adminReview}
               onChange={(e) => updateRow('entrances', row.clientId, { visit_date: e.target.value || null })} />
             <ManualField label="내역" value={row.attraction_name} disabled={adminReview}
@@ -215,6 +247,7 @@ export function OthersSection() {
   const addRow = useSettlementFormStore((s) => s.addRow)
   const duplicateRow = useSettlementFormStore((s) => s.duplicateRow)
   const softDeleteRow = useSettlementFormStore((s) => s.softDeleteRow)
+  const rowCorrectionProps = useLineItemRowListCorrectionProps()
 
   return (
     <div className="space-y-3">
@@ -224,10 +257,18 @@ export function OthersSection() {
       onAdd={() => addRow('others')}
       hideAdd={adminReview}
       addLabel="+ 지출 추가"
+      {...rowCorrectionProps}
       renderRow={(row) => {
         const combinedUsd = calcOtherRowCombinedUsd(row, rate)
         return (
           <>
+            <LineItemCorrectionToolbar
+              section="others"
+              rowId={row.id}
+              clientId={row.clientId}
+              rowLabel={row.description}
+            />
+            <LineItemCorrectionAlert clientId={row.clientId} />
             <ManualField label="지출 항목" value={row.description} disabled={adminReview}
               onChange={(e) => updateRow('others', row.clientId, { description: e.target.value })} />
             <div className="grid grid-cols-2 gap-2">
@@ -278,6 +319,7 @@ export function ShoppingSection() {
   const addRow = useSettlementFormStore((s) => s.addRow)
   const duplicateRow = useSettlementFormStore((s) => s.duplicateRow)
   const softDeleteRow = useSettlementFormStore((s) => s.softDeleteRow)
+  const rowCorrectionProps = useLineItemRowListCorrectionProps()
 
   return (
     <div className="space-y-3">
@@ -287,8 +329,16 @@ export function ShoppingSection() {
       onAdd={() => addRow('shoppings')}
       hideAdd={adminReview}
       addLabel="+ 쇼핑 추가"
+      {...rowCorrectionProps}
       renderRow={(row) => (
         <>
+          <LineItemCorrectionToolbar
+            section="shopping"
+            rowId={row.id}
+            clientId={row.clientId}
+            rowLabel={row.shop_name}
+          />
+          <LineItemCorrectionAlert clientId={row.clientId} />
           <ManualField label="날짜" type="date" value={row.visit_date ?? ''} disabled={adminReview}
             onChange={(e) => updateRow('shoppings', row.clientId, { visit_date: e.target.value || null })} />
           <ManualField label="샵명" value={row.shop_name} disabled={adminReview}
@@ -332,6 +382,7 @@ export function OptionsSection() {
   const addRow = useSettlementFormStore((s) => s.addRow)
   const duplicateRow = useSettlementFormStore((s) => s.duplicateRow)
   const softDeleteRow = useSettlementFormStore((s) => s.softDeleteRow)
+  const rowCorrectionProps = useLineItemRowListCorrectionProps()
 
   const addExtraVehicle = () => {
     useSettlementFormStore.setState((s) => ({
@@ -348,6 +399,7 @@ export function OptionsSection() {
         onAdd={() => addRow('options')}
         hideAdd={adminReview}
         addLabel="+ 옵션 추가"
+        {...rowCorrectionProps}
         renderRow={(row) => {
           if (row.is_extra_vehicle) {
             return (
@@ -378,6 +430,13 @@ export function OptionsSection() {
           const com = calcOptionRowComUsd(row, rate)
           return (
             <>
+              <LineItemCorrectionToolbar
+                section="options"
+                rowId={row.id}
+                clientId={row.clientId}
+                rowLabel={row.option_name}
+              />
+              <LineItemCorrectionAlert clientId={row.clientId} />
               <ManualField label="날짜" type="date" value={row.option_date ?? ''} disabled={adminReview}
                 onChange={(e) => updateRow('options', row.clientId, { option_date: e.target.value || null })} />
               <ManualField label="옵션명" value={row.option_name} disabled={adminReview}

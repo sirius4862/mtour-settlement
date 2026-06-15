@@ -36,6 +36,8 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
   addLabel = '+ 행 추가',
   emptyLabel = '항목이 없습니다. 아래 버튼으로 추가하세요.',
   hideAdd = false,
+  getRowClassName,
+  getRowDomId,
 }: {
   rows: T[]
   renderRow: (row: T, index: number) => ReactNode
@@ -43,6 +45,8 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
   addLabel?: string
   emptyLabel?: string
   hideAdd?: boolean
+  getRowClassName?: (row: T) => string | undefined
+  getRowDomId?: (row: T) => string | undefined
 }) {
   const visible = rows.filter((r) => !r.deleted)
   const resolvedEmptyLabel =
@@ -55,14 +59,23 @@ export function DynamicRowList<T extends { clientId: string; deleted?: boolean }
       {visible.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-4">{resolvedEmptyLabel}</p>
       ) : (
-        visible.map((row, index) => (
-          <div
-            key={row.clientId}
-            className="rounded-xl border border-gray-100 bg-gray-50/50 p-3 space-y-2"
-          >
-            {renderRow(row, index)}
-          </div>
-        ))
+        visible.map((row, index) => {
+          const extraClass = getRowClassName?.(row)
+          const domId = getRowDomId?.(row)
+          return (
+            <div
+              key={row.clientId}
+              id={domId}
+              data-correction-row={domId ? domId.replace('correction-row-', '') : row.clientId}
+              className={
+                'rounded-xl border p-3 space-y-2 ' +
+                (extraClass ?? 'border-gray-100 bg-gray-50/50')
+              }
+            >
+              {renderRow(row, index)}
+            </div>
+          )
+        })
       )}
       {!hideAdd && (
       <button

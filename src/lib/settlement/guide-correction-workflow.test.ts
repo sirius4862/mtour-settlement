@@ -7,6 +7,7 @@ import {
 } from '@/lib/settlement/status-guards'
 import {
   encodeCorrectionNote,
+  encodeCorrectionNoteFromTargets,
   parseCorrectionNote,
   SEND_FOR_CONFIRMATION_WARNING,
   validateEncodedCorrectionNote,
@@ -29,6 +30,14 @@ const SETTLEMENT_FORM_FOOTER = readFileSync(
 )
 const SETTLEMENT_ACCORDION = readFileSync(
   join(ROOT, 'src/components/settlement/SettlementAccordion.tsx'),
+  'utf8',
+)
+const LINE_ITEM_SECTIONS = readFileSync(
+  join(ROOT, 'src/components/settlement/sections/LineItemSections.tsx'),
+  'utf8',
+)
+const CORRECTION_MODAL = readFileSync(
+  join(ROOT, 'src/components/settlement/CorrectionRequestModal.tsx'),
   'utf8',
 )
 const GUIDE_PAGE = readFileSync(join(ROOT, 'src/app/guide/page.tsx'), 'utf8')
@@ -69,20 +78,36 @@ const pendingUnconfirmed = {
   guide_submit_snapshot_id: 'snap-1',
 }
 
-describe('admin correction request UI wiring', () => {
-  it('ReviewPanel requires reason + section and encodes adminNote', () => {
-    expect(REVIEW_PANEL).toContain('AdminCorrectionRequestFields')
-    expect(REVIEW_PANEL).toContain('validateCorrectionRequestInput')
-    expect(REVIEW_PANEL).toContain('encodeCorrectionNote')
-    expect(REVIEW_PANEL).toContain("action: 'request_edit'")
-    expect(REVIEW_PANEL).toContain('가이드 수정 요청')
+describe('admin contextual correction UI wiring', () => {
+  it('SettlementForm uses v2 encode and shared CorrectionRequestModal', () => {
+    expect(SETTLEMENT_FORM).toContain('encodeCorrectionNoteFromTargets')
+    expect(SETTLEMENT_FORM).toContain('CorrectionRequestModal')
+    expect(SETTLEMENT_FORM).toContain('showSectionCorrectionAction')
+    expect(SETTLEMENT_FORM).toContain('onSectionCorrectionRequest')
+    expect(SETTLEMENT_FORM).toContain('기타 수정 요청')
+    expect(SETTLEMENT_FORM).toContain("action: 'request_edit'")
   })
 
-  it('admin edit SettlementForm shows request-edit button for submitted', () => {
+  it('accordion and line items expose contextual correction actions', () => {
+    expect(SETTLEMENT_ACCORDION).toContain('CorrectionSectionAction')
+    expect(SETTLEMENT_ACCORDION).toContain('onSectionCorrectionRequest')
+    expect(LINE_ITEM_SECTIONS).toContain('LineItemCorrectionToolbar')
+    expect(CORRECTION_MODAL).toContain('가이드 수정 요청')
+    expect(CORRECTION_MODAL).toContain('preselectedRowLabel')
+  })
+
+  it('ReviewPanel demotes inline form to section chips + modal', () => {
+    expect(REVIEW_PANEL).toContain('CorrectionRequestModal')
+    expect(REVIEW_PANEL).toContain('encodeCorrectionNoteFromTargets')
+    expect(REVIEW_PANEL).toContain('기타 수정 요청')
+    expect(REVIEW_PANEL).not.toContain('AdminCorrectionRequestFields')
+    expect(REVIEW_PANEL).toContain('openSectionCorrection')
+  })
+
+  it('admin edit SettlementForm still allows request edit for submitted', () => {
     expect(SETTLEMENT_FORM).toContain('canAdminRequestEditOnSettlement')
     expect(SETTLEMENT_FORM).toContain('showRequestGuideCorrection')
     expect(SETTLEMENT_FORM_FOOTER).toContain('requestGuideCorrectionLabel')
-    expect(SETTLEMENT_FORM_FOOTER).toContain('가이드 수정 요청')
     expect(canAdminRequestEditOnSettlement(submitted, 'admin')).toBe(true)
   })
 
@@ -94,16 +119,25 @@ describe('admin correction request UI wiring', () => {
     expect(canAdminSendForConfirmation(editRequested.status, 'admin')).toBe(false)
   })
 
-  it('request_edit passes encoded adminNote through reviewSettlement', () => {
-    const encoded = encodeCorrectionNote(['options'], '옵션 확인')
-    expect(encoded).toContain('options')
-    expect(SETTLEMENT_FORM).toContain("action: 'request_edit'")
-    expect(SETTLEMENT_FORM).toContain('adminNote: encoded')
-  })
-
   it('server-side request_edit rejects empty correction reason', () => {
     expect(ACTIONS).toContain('validateEncodedCorrectionNote')
     expect(validateEncodedCorrectionNote('').ok).toBe(false)
+    expect(
+      validateEncodedCorrectionNote(
+        encodeCorrectionNoteFromTargets([
+          {
+            section: 'options',
+            kind: 'section',
+            rowId: null,
+            clientId: null,
+            rowLabel: null,
+            field: null,
+            reason: '사유',
+            proposed: null,
+          },
+        ]),
+      ).ok,
+    ).toBe(true)
     expect(validateEncodedCorrectionNote(encodeCorrectionNote(['options'], '사유')).ok).toBe(true)
   })
 
@@ -123,11 +157,13 @@ describe('admin correction request UI wiring', () => {
   })
 })
 
-describe('guide correction visibility wiring', () => {
-  it('guide edit shows correction banner for edit_requested', () => {
+describe('guide targeted correction visibility wiring', () => {
+  it('guide edit shows compact correction banner with jump action', () => {
     expect(SETTLEMENT_FORM).toContain('GuideCorrectionBanner')
     expect(SETTLEMENT_FORM).toContain("settlementStatus === 'edit_requested'")
     expect(GUIDE_CORRECTION_BANNER).toContain('관리자 수정 요청')
+    expect(GUIDE_CORRECTION_BANNER).toContain('문제 항목으로 이동')
+    expect(GUIDE_CORRECTION_BANNER).toContain('수정 요청')
   })
 
   it('does not show correction banner outside edit_requested', () => {
@@ -136,20 +172,27 @@ describe('guide correction visibility wiring', () => {
     )
   })
 
-  it('highlights affected section headers, especially options', () => {
+  it('highlights affected sections and supports row-level highlight props', () => {
     expect(SETTLEMENT_FORM).toContain('needsAttention')
-    expect(SETTLEMENT_FORM).toContain('getCorrectionSectionDefaultMessage')
+    expect(SETTLEMENT_FORM).toContain('sectionAttentionMessage')
+    expect(SETTLEMENT_FORM).toContain('guideRowHighlights')
+    expect(SETTLEMENT_FORM).toContain('handleJumpToCorrectionTarget')
     expect(SETTLEMENT_ACCORDION).toContain('확인 필요')
-    expect(SETTLEMENT_ACCORDION).toContain('needsAttention')
-    const parsed = parseCorrectionNote(
-      encodeCorrectionNote(['options'], '옵션 항목이 누락되었습니다.'),
-    )
-    expect(parsed.sections).toContain('options')
+    expect(SETTLEMENT_ACCORDION).toContain('correction-section-')
+    expect(LINE_ITEM_SECTIONS).toContain('LineItemCorrectionAlert')
   })
 
   it('auto-expands first affected section on guide edit', () => {
     expect(SETTLEMENT_FORM).toContain('correctionAutoExpanded')
-    expect(SETTLEMENT_FORM).toContain('setOpenSectionId(guideCorrection.sections[0])')
+    expect(SETTLEMENT_FORM).toContain('guideCorrection.targets[0]?.section')
+  })
+
+  it('v1 notes still parse for section highlight', () => {
+    const parsed = parseCorrectionNote(
+      encodeCorrectionNote(['options'], '옵션 항목이 누락되었습니다.'),
+    )
+    expect(parsed.sections).toContain('options')
+    expect(parsed.targets).toHaveLength(1)
   })
 
   it('dashboard and list show admin_note correction reason', () => {
@@ -175,5 +218,11 @@ describe('unchanged flows regression guards', () => {
 
   it('paid-lock guards unchanged in status-guards usage', () => {
     expect(canAdminRequestEditOnSettlement(paid, 'master_admin')).toBe(false)
+  })
+
+  it('does not unlock guide-owned line item editing in admin review', () => {
+    expect(LINE_ITEM_SECTIONS).toContain('disabled={adminReview}')
+    expect(SETTLEMENT_FORM).not.toContain('mergeAdminOptionRowsForSave')
+    expect(SETTLEMENT_FORM).not.toContain('sanitizeAdminDraftPayload')
   })
 })

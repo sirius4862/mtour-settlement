@@ -133,6 +133,20 @@ export function canAdminSendForConfirmation(status: SettlementStatus, role?: Use
   return status === 'submitted' || status === 'clarification_requested'
 }
 
+export type AdminSendForConfirmationGuardInput = Pick<
+  Settlement,
+  'status' | 'guide_submit_snapshot_id'
+>
+
+/** Status + snapshot guard for admin "send for guide confirmation" UI. */
+export function canAdminSendForConfirmationOnSettlement(
+  s: AdminSendForConfirmationGuardInput,
+  role?: UserRole,
+): boolean {
+  if (role !== undefined && !canOperationalAdminReview(role)) return false
+  return assertAdminSendForConfirmation(s.status, s.guide_submit_snapshot_id ?? null).ok
+}
+
 export function assertGuideConfirmAction(
   s: Pick<Settlement, 'status' | 'guide_id'>,
   uid: string,

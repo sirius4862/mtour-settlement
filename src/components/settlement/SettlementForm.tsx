@@ -6,7 +6,11 @@ import type { SettlementFull, Tour, UserRole } from '@/types'
 import { saveSettlementDraft, saveAdminSettlementEdits, sendForConfirmation, submitSettlement, reviewSettlement } from '@/lib/actions/settlementActions'
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
 import { sanitizeSettlementFullForGuide } from '@/lib/settlement/snapshot'
-import { canAdminSendForConfirmation, canAdminRequestEditOnSettlement } from '@/lib/settlement/status-guards'
+import {
+  assertAdminSendForConfirmation,
+  canAdminRequestEditOnSettlement,
+  canAdminSendForConfirmationOnSettlement,
+} from '@/lib/settlement/status-guards'
 import {
   emptyCorrectionTarget,
   encodeCorrectionNoteFromTargets,
@@ -272,19 +276,43 @@ export function SettlementForm({
   const isAdmin = role === 'admin'
   const showSectionMeta = isAdmin || isAdminReview || isPreview
   const showAdminSections = shouldShowAdminSettlementSections(isAdmin, isAdminReview)
-  const canSendForConfirmation = isAdminReview
-    && !!settlementStatus
-    && canAdminSendForConfirmation(settlementStatus)
-    && !!guideSubmitSnapshotId
-
   const adminActorRole = adminEdit?.actorRole ?? 'admin'
+  const adminWorkflowSource = useMemo(() => {
+    const status = isExistingSettlementEdit
+      ? (initialFull?.status ?? settlementStatus ?? null)
+      : (settlementStatus ?? initialFull?.status ?? null)
+    const guide_submit_snapshot_id = isExistingSettlementEdit
+      ? (initialFull?.guide_submit_snapshot_id ?? guideSubmitSnapshotId ?? null)
+      : (guideSubmitSnapshotId ?? initialFull?.guide_submit_snapshot_id ?? null)
+    return {
+      status,
+      guide_submit_snapshot_id,
+      guide_confirmed_at: initialFull?.guide_confirmed_at ?? null,
+    }
+  }, [
+    isExistingSettlementEdit,
+    initialFull?.status,
+    initialFull?.guide_submit_snapshot_id,
+    initialFull?.guide_confirmed_at,
+    settlementStatus,
+    guideSubmitSnapshotId,
+  ])
+  const canSendForConfirmation = isAdminReview
+    && adminWorkflowSource.status !== null
+    && canAdminSendForConfirmationOnSettlement(
+      {
+        status: adminWorkflowSource.status,
+        guide_submit_snapshot_id: adminWorkflowSource.guide_submit_snapshot_id,
+      },
+      adminActorRole,
+    )
   const canRequestGuideCorrection = isAdminReview
-    && !!settlementStatus
+    && adminWorkflowSource.status !== null
     && canAdminRequestEditOnSettlement(
       {
-        status: settlementStatus,
-        guide_confirmed_at: initialFull?.guide_confirmed_at ?? null,
-        guide_submit_snapshot_id: guideSubmitSnapshotId,
+        status: adminWorkflowSource.status,
+        guide_submit_snapshot_id: adminWorkflowSource.guide_submit_snapshot_id,
+        guide_confirmed_at: adminWorkflowSource.guide_confirmed_at,
       },
       adminActorRole,
     )
@@ -700,8 +728,16 @@ export function SettlementForm({
   const handleSendForConfirmation = useCallback(async () => {
     if (isPreview || !isAdminReview || !adminEdit) return
 
-    if (!canSendForConfirmation) {
-      setSaveError('가이드 제출 스냅샷이 없어 확인 요청을 보낼 수 없습니다.')
+    if (!adminWorkflowSource.status) {
+      setSaveError('정산서 상태를 확인할 수 없습니다.')
+      return
+    }
+    const guard = assertAdminSendForConfirmation(
+      adminWorkflowSource.status,
+      adminWorkflowSource.guide_submit_snapshot_id,
+    )
+    if (!guard.ok) {
+      setSaveError(guard.error)
       return
     }
 
@@ -713,7 +749,10 @@ export function SettlementForm({
     if (!saved.ok) return
 
     const id = useSettlementFormStore.getState().settlementId
-    if (!id) return
+    if (!id) {
+      setSaveError('정산서 ID를 찾을 수 없습니다. 페이지를 새로고침 후 다시 시도해주세요.')
+      return
+    }
 
     setPendingAction('send')
     try {
@@ -728,7 +767,7 @@ export function SettlementForm({
     } finally {
       setPendingAction(null)
     }
-  }, [isPreview, isAdminReview, adminEdit, canSendForConfirmation, handleSave, router, setSaveError])
+  }, [isPreview, isAdminReview, adminEdit, adminWorkflowSource, handleSave, router, setSaveError])
 
   const handleRequestGuideCorrection = useCallback(async () => {
     if (isPreview || !isAdminReview || !adminEdit || !canRequestGuideCorrection) return
@@ -1139,7 +1178,7 @@ export function SettlementForm({
           showRequestGuideCorrection={canRequestGuideCorrection}
           saveLabel="임시저장"
           submitLabel="저장 후 제출"
-          sendForConfirmationLabel="가이드 최종확인 요청"
+          sendForConfirmationLabel="저장 후 가이드 최종확인 요청"
           requestGuideCorrectionLabel="기타 수정 요청"
         />
       )}

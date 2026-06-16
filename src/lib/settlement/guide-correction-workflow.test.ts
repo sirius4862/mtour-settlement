@@ -219,16 +219,16 @@ describe('admin contextual correction UI wiring', () => {
     )
   })
 
-  it('가이드 최종확인 요청 still calls sendForConfirmation with warning', () => {
+  it('admin edit send uses 저장 후 가이드 최종확인 요청; detail page keeps compact label', () => {
     expect(SETTLEMENT_FORM).toContain('sendForConfirmation')
     expect(SETTLEMENT_FORM).toContain('SEND_FOR_CONFIRMATION_WARNING')
-    expect(SETTLEMENT_FORM).toContain('가이드 최종확인 요청')
+    expect(SETTLEMENT_FORM).toContain('저장 후 가이드 최종확인 요청')
     expect(SETTLEMENT_FORM).not.toContain('가이드 검토 요청')
-    expect(SETTLEMENT_FORM_FOOTER).toContain('가이드 최종확인 요청')
-    expect(SETTLEMENT_FORM_FOOTER).not.toContain('가이드 검토 요청')
+    expect(SETTLEMENT_FORM_FOOTER).toContain('sendForConfirmationLabel')
     expect(REVIEW_PANEL).toContain('sendForConfirmation')
     expect(REVIEW_PANEL).toContain('SEND_FOR_CONFIRMATION_WARNING')
     expect(REVIEW_PANEL).toContain('가이드 최종확인 요청')
+    expect(REVIEW_PANEL).not.toContain('저장 후 가이드 최종확인 요청')
     expect(REVIEW_PANEL).not.toContain('가이드 검토 요청')
     expect(SEND_FOR_CONFIRMATION_WARNING).toContain('가이드 최종확인 요청')
     expect(SEND_FOR_CONFIRMATION_WARNING).toContain('가이드 수정 요청')
@@ -263,9 +263,10 @@ describe('guide targeted correction visibility wiring', () => {
     expect(SETTLEMENT_FORM).toMatch(
       /isExistingSettlementEdit[\s\S]*initialFull\?\.status \?\? settlementStatus/,
     )
-    expect(SETTLEMENT_FORM).not.toMatch(
-      /isGuideCorrectionDisplayActive[\s\S]*settlementStatus \?\? initialFull/,
+    expect(SETTLEMENT_FORM).toMatch(
+      /isGuideCorrectionDisplayActive[\s\S]*correctionSourceStatus === 'edit_requested'/,
     )
+    expect(SETTLEMENT_FORM).toContain('adminWorkflowSource')
   })
 
   it('correction display note uses initialFull.admin_note on existing edit pages', () => {

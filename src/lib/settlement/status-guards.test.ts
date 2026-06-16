@@ -8,6 +8,7 @@ import {
   canAdminPaySettlement,
   canAdminReject,
   canAdminSendForConfirmation,
+  canAdminSendForConfirmationOnSettlement,
   canGuideConfirm,
   canGuideEdit,
   canGuideRequestClarification,
@@ -195,6 +196,26 @@ describe('canAdminSendForConfirmation', () => {
     expect(canAdminSendForConfirmation('clarification_requested')).toBe(true)
     expect(canAdminSendForConfirmation('pending_guide_confirmation')).toBe(false)
     expect(canAdminSendForConfirmation('paid')).toBe(false)
+  })
+})
+
+describe('canAdminSendForConfirmationOnSettlement', () => {
+  it('requires submitted/clarification_requested and guide submit snapshot', () => {
+    expect(
+      canAdminSendForConfirmationOnSettlement(
+        { status: 'submitted', guide_submit_snapshot_id: 'snap-1' },
+      ),
+    ).toBe(true)
+    expect(
+      canAdminSendForConfirmationOnSettlement(
+        { status: 'submitted', guide_submit_snapshot_id: null },
+      ),
+    ).toBe(false)
+    expect(
+      canAdminSendForConfirmationOnSettlement(
+        { status: 'paid', guide_submit_snapshot_id: 'snap-1' },
+      ),
+    ).toBe(false)
   })
 })
 

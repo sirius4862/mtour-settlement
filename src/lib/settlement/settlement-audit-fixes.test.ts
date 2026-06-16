@@ -86,25 +86,40 @@ describe('recallSettlement — optimistic row-count verification (source-level)'
   })
 })
 
-describe('guideConfirm — RPC + separate confirmation update (source-level)', () => {
+describe('guideConfirm — bridge RPC rollout (source-level)', () => {
   const body = actionBody('guideConfirm')
 
-  it('calls guide_confirm_settlement RPC before settlement_confirmations update', () => {
-    const rpcIdx = body.indexOf("rpc('guide_confirm_settlement'")
-    const confIdx = body.indexOf("from('settlement_confirmations')")
-    expect(rpcIdx).toBeGreaterThan(-1)
-    expect(confIdx).toBeGreaterThan(rpcIdx)
+  it('calls guide_confirm_settlement RPC and classifies response via bridge helper', () => {
+    expect(body).toContain("rpc('guide_confirm_settlement'")
+    expect(body).toContain('resolveGuideConfirmRpcBridge')
   })
 
-  it('verifies guide_confirmed_at after RPC and confirmation row count', () => {
-    expect(body).toContain('guide_confirmed_at, guide_confirmed_by')
+  it('legacy RPC path updates settlement_confirmations pending → confirmed', () => {
+    expect(body).toContain("bridge.mode === 'legacy'")
+    expect(body).toMatch(
+      /bridge\.mode === 'legacy'[\s\S]*\.update\([\s\S]*status: 'confirmed'/,
+    )
+    expect(body).toContain(".eq('status', 'pending')")
     expect(body).toContain('assertSingleOptimisticUpdate(confRows)')
+  })
+
+  it('atomic RPC path skips duplicate app-side packet update', () => {
+    const legacyBlock = body.match(
+      /if \(bridge\.mode === 'legacy'\) \{([\s\S]*?)\n  \}/,
+    )?.[1]
+    expect(legacyBlock).toBeTruthy()
+    expect(legacyBlock).toContain('.update(')
+  })
+
+  it('verifies guide_confirmed_at and guide_confirmed_by after RPC', () => {
+    expect(body).toContain('guide_confirmed_at, guide_confirmed_by')
+    expect(body).toContain('확인 시각이 저장되지 않았습니다')
     expect(body).toContain('snapshot_after_id')
   })
 
-  it('documents atomic RPC improvement as future DB migration work', () => {
-    expect(body).toContain('TODO(audit)')
-    expect(body).toContain('isStuckGuideConfirmation')
+  it('read-back fails clearly when confirmation packet is not confirmed', () => {
+    expect(body).toContain('confirmedPacket.status !== \'confirmed\'')
+    expect(body).toContain('확인 패킷이 확정되지 않았습니다')
   })
 
   it('does not rewrite guide_confirm_settlement RPC in app code', () => {

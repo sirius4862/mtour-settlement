@@ -65,10 +65,29 @@ describe('guideConfirm server action wiring', () => {
     expect(body).toContain('확인 시각이 저장되지 않았습니다')
   })
 
-  it('verifies exactly one pending confirmation row is confirmed', () => {
-    expect(body).toContain("from('settlement_confirmations')")
-    expect(body).toContain('.select(\'id\')')
+  it('uses bridge helper to support legacy and atomic RPC responses', () => {
+    expect(body).toContain('resolveGuideConfirmRpcBridge')
+    expect(body).toContain("bridge.mode === 'legacy'")
+    expect(body).toContain("bridge.mode === 'error'")
+  })
+
+  it('performs app-side settlement_confirmations UPDATE only on legacy RPC path', () => {
+    expect(body).toContain("bridge.mode === 'legacy'")
+    expect(body).toMatch(
+      /bridge\.mode === 'legacy'[\s\S]*GUIDE_READ\.settlement_confirmations[\s\S]*\.update\(/,
+    )
     expect(body).toContain('assertSingleOptimisticUpdate(confRows)')
+  })
+
+  it('skips app-side packet UPDATE when atomic RPC confirms packet', () => {
+    expect(body).not.toMatch(
+      /bridge\.mode === 'atomic'[\s\S]*\.update\(/,
+    )
+  })
+
+  it('verifies confirmation packet via read-back for both RPC paths', () => {
+    expect(body).toContain('confirmedPacket.status !== \'confirmed\'')
+    expect(body).toContain('확인 패킷이 확정되지 않았습니다')
   })
 
   it('blocks double confirmation when guide_confirmed_at is already set', () => {

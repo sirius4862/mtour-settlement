@@ -41,6 +41,7 @@ import {
 } from '@/lib/settlement/save-step-diagnostics'
 import { timed } from '@/lib/server/perf'
 import { buildSnapshotInsertRow } from '@/lib/settlement/guide-workflow-writes'
+import { resolveGuideConfirmRpcBridge } from '@/lib/settlement/guide-confirm-rpc-bridge'
 import { resolveSettlementOperatingBranchId } from '@/lib/guide/assignment'
 import {
   GUIDE_AVAILABLE_TOUR_SELECT,
@@ -2675,8 +2676,34 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
     p_confirmed_at: now,
   })
   if (rpcErr) return { ok: false, error: rpcErr.message }
-  if (!rpcRes || typeof rpcRes !== 'object' || (rpcRes as { ok?: boolean }).ok !== true) {
-    return { ok: false, error: '최종확인 처리에 실패했습니다.' }
+
+  const bridge = resolveGuideConfirmRpcBridge(
+    rpcRes as {
+      ok?: boolean
+      confirmation_id?: string
+      confirmation_status?: string
+    } | null,
+    current.active_confirmation_id as string,
+  )
+  if (bridge.mode === 'error') {
+    return { ok: false, error: bridge.error }
+  }
+
+  if (bridge.mode === 'legacy') {
+    const { data: confRows, error: confErr } = await supabase
+      .from(GUIDE_READ.settlement_confirmations)
+      .update({
+        status: 'confirmed',
+        confirmed_by: profile.id,
+        confirmed_at: now,
+      })
+      .eq('id', current.active_confirmation_id)
+      .eq('status', 'pending')
+      .select('id')
+
+    if (confErr) return { ok: false, error: confErr.message }
+    const confCheck = assertSingleOptimisticUpdate(confRows)
+    if (!confCheck.ok) return { ok: false, error: confCheck.error }
   }
 
   const { data: confirmedRow } = await supabase
@@ -2685,31 +2712,29 @@ export async function guideConfirm(id: string): Promise<{ ok: boolean; error?: s
     .eq('id', id)
     .single()
 
-  if (!confirmedRow?.guide_confirmed_at) {
+  if (!confirmedRow?.guide_confirmed_at || !confirmedRow?.guide_confirmed_by) {
     return {
       ok: false,
       error: '최종확인 처리에 실패했습니다. 확인 시각이 저장되지 않았습니다.',
     }
   }
 
-  // TODO(audit): True atomic guide confirm requires moving settlement_confirmations
-  // update into guide_confirm_settlement RPC via a reviewed DB migration. The app
-  // currently calls the RPC first, then updates the confirmation row separately;
-  // partial failure can desync — isStuckGuideConfirmation() detects that state.
-  const { data: confRows, error: confErr } = await supabase
-    .from('settlement_confirmations')
-    .update({
-      status: 'confirmed',
-      confirmed_by: profile.id,
-      confirmed_at: now,
-    })
+  const { data: confirmedPacket } = await supabase
+    .from(GUIDE_READ.settlement_confirmations)
+    .select('id, status, confirmed_by, confirmed_at')
     .eq('id', current.active_confirmation_id)
-    .eq('status', 'pending')
-    .select('id')
+    .maybeSingle()
 
-  if (confErr) return { ok: false, error: confErr.message }
-  const confCheck = assertSingleOptimisticUpdate(confRows)
-  if (!confCheck.ok) return { ok: false, error: confCheck.error }
+  if (
+    !confirmedPacket ||
+    confirmedPacket.status !== 'confirmed' ||
+    confirmedPacket.confirmed_by !== profile.id
+  ) {
+    return {
+      ok: false,
+      error: '최종확인 처리에 실패했습니다. 확인 패킷이 확정되지 않았습니다.',
+    }
+  }
 
   await insertAuditEvent(supabase, {
     settlementId: id,

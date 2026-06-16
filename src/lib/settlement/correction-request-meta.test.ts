@@ -9,6 +9,7 @@ import {
   hasStructuredCorrectionNote,
   parseCorrectionNote,
   sectionAttentionMessage,
+  sectionsToTargets,
   validateCorrectionRequestInput,
   validateCorrectionTargets,
   validateEncodedCorrectionNote,
@@ -77,6 +78,19 @@ describe('correction-request-meta v1', () => {
     expect(validateCorrectionRequestInput(['options'], '').ok).toBe(false)
     expect(validateCorrectionRequestInput([], '사유').ok).toBe(false)
     expect(validateCorrectionRequestInput(['options'], '사유').ok).toBe(true)
+    expect(
+      validateCorrectionRequestInput(['guide-adjustments'], '메꾸기 금액 확인해 주세요').ok,
+    ).toBe(true)
+  })
+
+  it('guide-adjustments section encodes and validates for request_edit payload', () => {
+    const encoded = encodeCorrectionNoteFromTargets(
+      sectionsToTargets(['guide-adjustments'], '메꾸기 금액 확인해 주세요'),
+    )
+    expect(validateEncodedCorrectionNote(encoded).ok).toBe(true)
+    const parsed = parseCorrectionNote(encoded)
+    expect(parsed.sections).toEqual(['guide-adjustments'])
+    expect(parsed.reason).toBe('메꾸기 금액 확인해 주세요')
   })
 
   it('validateEncodedCorrectionNote rejects empty and structured-without-sections', () => {

@@ -217,6 +217,7 @@ export function SettlementForm({
   )
   const [globalCorrectionSections, setGlobalCorrectionSections] = useState<CorrectionSectionId[]>([])
   const [globalCorrectionReason, setGlobalCorrectionReason] = useState('')
+  const [correctionModalError, setCorrectionModalError] = useState('')
   const [correctionJumpIndex, setCorrectionJumpIndex] = useState(0)
   const [activeJumpClientId, setActiveJumpClientId] = useState<string | null>(null)
   const correctionAutoExpanded = useRef(false)
@@ -325,6 +326,7 @@ export function SettlementForm({
   ])
 
   const openSectionCorrection = useCallback((sectionId: CorrectionSectionId) => {
+    setCorrectionModalError('')
     setCorrectionModalMode('contextual')
     setCorrectionTarget(emptyCorrectionTarget(sectionId, { kind: 'section' }))
     setShowCorrectionModal(true)
@@ -332,6 +334,7 @@ export function SettlementForm({
 
   const openRowCorrection = useCallback(
     (draft: Omit<CorrectionTarget, 'reason' | 'proposed'>) => {
+      setCorrectionModalError('')
       setCorrectionModalMode('contextual')
       setCorrectionTarget(
         emptyCorrectionTarget(draft.section, {
@@ -346,6 +349,7 @@ export function SettlementForm({
   )
 
   const openGlobalCorrection = useCallback(() => {
+    setCorrectionModalError('')
     setCorrectionModalMode('global')
     setGlobalCorrectionSections([])
     setGlobalCorrectionReason('')
@@ -729,11 +733,13 @@ export function SettlementForm({
   const handleRequestGuideCorrection = useCallback(async () => {
     if (isPreview || !isAdminReview || !adminEdit || !canRequestGuideCorrection) return
 
+    setCorrectionModalError('')
+
     let encoded = ''
     if (correctionModalMode === 'contextual') {
       const validation = validateCorrectionTargets([correctionTarget])
       if (!validation.ok) {
-        setSaveError(validation.error)
+        setCorrectionModalError(validation.error)
         return
       }
       encoded = encodeCorrectionNoteFromTargets([correctionTarget])
@@ -743,7 +749,7 @@ export function SettlementForm({
         globalCorrectionReason,
       )
       if (!validation.ok) {
-        setSaveError(validation.error)
+        setCorrectionModalError(validation.error)
         return
       }
       encoded = encodeCorrectionNoteFromTargets(
@@ -752,7 +758,10 @@ export function SettlementForm({
     }
 
     const id = useSettlementFormStore.getState().settlementId
-    if (!id) return
+    if (!id) {
+      setCorrectionModalError('정산서 ID를 찾을 수 없습니다. 페이지를 새로고침 후 다시 시도해주세요.')
+      return
+    }
 
     setPendingAction('request_edit')
     try {
@@ -762,13 +771,14 @@ export function SettlementForm({
         adminNote: encoded,
       })
       if (result.ok) {
+        setCorrectionModalError('')
         setShowCorrectionModal(false)
         router.push(adminEdit.backHref)
         return
       }
-      setSaveError(result.error ?? '가이드 수정 요청 실패')
+      setCorrectionModalError(result.error ?? '가이드 수정 요청 실패')
     } catch {
-      setSaveError('네트워크 오류가 발생했습니다.')
+      setCorrectionModalError('네트워크 오류가 발생했습니다.')
     } finally {
       setPendingAction(null)
     }
@@ -1136,7 +1146,10 @@ export function SettlementForm({
 
       <CorrectionRequestModal
         open={showCorrectionModal && isAdminReview}
-        onClose={() => setShowCorrectionModal(false)}
+        onClose={() => {
+          setShowCorrectionModal(false)
+          setCorrectionModalError('')
+        }}
         mode={correctionModalMode}
         target={correctionTarget}
         globalSections={globalCorrectionSections}
@@ -1146,6 +1159,7 @@ export function SettlementForm({
         onGlobalReasonChange={setGlobalCorrectionReason}
         onSubmit={handleRequestGuideCorrection}
         pending={pendingAction === 'request_edit'}
+        error={correctionModalError}
       />
     </div>
     </SettlementFormProvider>

@@ -58,6 +58,7 @@ export function ReviewPanel({
   )
   const [globalCorrectionSections, setGlobalCorrectionSections] = useState<CorrectionSectionId[]>([])
   const [globalCorrectionReason, setGlobalCorrectionReason] = useState('')
+  const [correctionModalError, setCorrectionModalError] = useState('')
 
   const parsedCorrection = useMemo(
     () => parseCorrectionNote(currentAdminNote),
@@ -75,20 +76,21 @@ export function ReviewPanel({
         adminNote: encoded,
       })
       if (res.ok) {
+        setCorrectionModalError('')
         setShowCorrectionModal(false)
         router.refresh()
       } else {
-        setError(res.error ?? '오류 발생')
+        setCorrectionModalError(res.error ?? '오류 발생')
       }
     })
   }
 
   const handleRequestEdit = () => {
-    setError('')
+    setCorrectionModalError('')
     if (correctionModalMode === 'contextual') {
       const validation = validateCorrectionTargets([correctionTarget])
       if (!validation.ok) {
-        setError(validation.error)
+        setCorrectionModalError(validation.error)
         return
       }
       submitCorrection(encodeCorrectionNoteFromTargets([correctionTarget]))
@@ -100,7 +102,7 @@ export function ReviewPanel({
       globalCorrectionReason,
     )
     if (!validation.ok) {
-      setError(validation.error)
+      setCorrectionModalError(validation.error)
       return
     }
     submitCorrection(
@@ -112,6 +114,7 @@ export function ReviewPanel({
 
   const openGlobalCorrection = () => {
     setError('')
+    setCorrectionModalError('')
     setCorrectionModalMode('global')
     setGlobalCorrectionSections([])
     setGlobalCorrectionReason('')
@@ -296,7 +299,10 @@ export function ReviewPanel({
 
       <CorrectionRequestModal
         open={showCorrectionModal && canRequestEdit}
-        onClose={() => setShowCorrectionModal(false)}
+        onClose={() => {
+          setShowCorrectionModal(false)
+          setCorrectionModalError('')
+        }}
         mode={correctionModalMode}
         target={correctionTarget}
         globalSections={globalCorrectionSections}
@@ -306,6 +312,7 @@ export function ReviewPanel({
         onGlobalReasonChange={setGlobalCorrectionReason}
         onSubmit={handleRequestEdit}
         pending={pending}
+        error={correctionModalError}
       />
     </>
   )

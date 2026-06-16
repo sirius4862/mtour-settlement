@@ -7,10 +7,13 @@ import {
 } from '@/lib/settlement/status-guards'
 import {
   adminMemoInputValue,
+  CORRECTION_SECTIONS,
   encodeCorrectionNote,
   encodeCorrectionNoteFromTargets,
   parseCorrectionNote,
+  sectionsToTargets,
   SEND_FOR_CONFIRMATION_WARNING,
+  validateCorrectionRequestInput,
   validateEncodedCorrectionNote,
 } from '@/lib/settlement/correction-request-meta'
 import type { SettlementStatus } from '@/types'
@@ -182,6 +185,38 @@ describe('admin contextual correction UI wiring', () => {
       ).ok,
     ).toBe(true)
     expect(validateEncodedCorrectionNote(encodeCorrectionNote(['options'], '사유')).ok).toBe(true)
+  })
+
+  it('surfaces correction modal errors inside the modal, not only the footer', () => {
+    expect(CORRECTION_MODAL).toContain('error?: string | null')
+    expect(CORRECTION_MODAL).toContain('role="alert"')
+    expect(REVIEW_PANEL).toContain('correctionModalError')
+    expect(REVIEW_PANEL).toContain('setCorrectionModalError')
+    expect(REVIEW_PANEL).toContain('error={correctionModalError}')
+    expect(REVIEW_PANEL).not.toMatch(
+      /setCorrectionModalError\(validation\.error\)[\s\S]*setError\(validation\.error\)/,
+    )
+    expect(SETTLEMENT_FORM).toContain('correctionModalError')
+    expect(SETTLEMENT_FORM).toContain('error={correctionModalError}')
+    expect(SETTLEMENT_FORM).toContain(
+      '정산서 ID를 찾을 수 없습니다. 페이지를 새로고침 후 다시 시도해주세요.',
+    )
+  })
+
+  it('modal submit stays enabled when section and reason are present (guide-adjustments)', () => {
+    const validation = validateCorrectionRequestInput(
+      ['guide-adjustments'],
+      '메꾸기 금액 확인해 주세요',
+    )
+    expect(validation.ok).toBe(true)
+    expect(CORRECTION_MODAL).toContain('disabled={pending}')
+    expect(CORRECTION_MODAL).not.toContain('disabled={!reason')
+    expect(CORRECTION_SECTIONS.find((s) => s.id === 'guide-adjustments')?.label).toBe(
+      '메꾸기·가이드 일비',
+    )
+    expect(sectionsToTargets(['guide-adjustments'], '메꾸기 금액 확인해 주세요')[0]?.section).toBe(
+      'guide-adjustments',
+    )
   })
 
   it('가이드 최종확인 요청 still calls sendForConfirmation with warning', () => {

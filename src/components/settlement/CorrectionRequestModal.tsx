@@ -48,6 +48,8 @@ export function CorrectionRequestModal({
 
   submitLabel = '가이드 수정 요청',
 
+  error = null,
+
 }: {
 
   open: boolean
@@ -73,6 +75,8 @@ export function CorrectionRequestModal({
   pending?: boolean
 
   submitLabel?: string
+
+  error?: string | null
 
 }) {
 
@@ -173,6 +177,12 @@ export function CorrectionRequestModal({
         )}
 
 
+
+        {error?.trim() ? (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2" role="alert">
+            {error}
+          </p>
+        ) : null}
 
         <div className="flex gap-2">
 

@@ -2,6 +2,14 @@
  * Maps internal/DB errors to safe user-facing messages.
  * Detailed errors are logged server-side only.
  */
+/** Non-blocking server warning for monitoring/tripwire (never throws). */
+export function logServerWarning(
+  context: string,
+  extra?: Record<string, unknown>,
+): void {
+  console.warn(context, extra ?? {})
+}
+
 export function logServerError(
   context: string,
   error: unknown,

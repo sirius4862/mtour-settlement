@@ -156,4 +156,9 @@ describe('saveSettlementDraft — stale line-item id hardening (source-level)', 
     const actions = readFileSync(ACTIONS_PATH, 'utf8')
     expect(actions).toContain('formatLineItemPersistStepLog')
   })
+
+  it('includes P0 option tripwire warnings on guide draft save', () => {
+    expect(body).toContain('runGuideOptionSaveTripwirePrePersist(')
+    expect(body).toContain('runGuideOptionSaveTripwirePostPersist(')
+  })
 })

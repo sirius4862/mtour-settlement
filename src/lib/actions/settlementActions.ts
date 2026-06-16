@@ -105,6 +105,10 @@ import {
   isGuideEditableSettlementStatus,
 } from '@/lib/settlement/noop-draft-save-fast-path'
 import {
+  runGuideOptionSaveTripwirePostPersist,
+  runGuideOptionSaveTripwirePrePersist,
+} from '@/lib/settlement/guide-option-save-tripwire'
+import {
   assertAdminReviewAction,
   assertAdminSaveSettlement,
   assertAdminSendForConfirmation,
@@ -1767,6 +1771,15 @@ export async function saveSettlementDraft(
     }
   }
 
+  const tripwireEditPath = !!(payload.settlementId && existingForItemPersist)
+  const tripwirePre = runGuideOptionSaveTripwirePrePersist({
+    settlementId: headerResult.id,
+    payloadOptions: payloadToSave.options,
+    existingOptions: existingForItemPersist?.options,
+    saveMode: saveContext,
+    isEditPath: tripwireEditPath,
+  })
+
   const itemsResult = await persistSettlementLineItems(
     supabase,
     headerResult.id,
@@ -1849,6 +1862,18 @@ export async function saveSettlementDraft(
       })
     }
   }
+
+  runGuideOptionSaveTripwirePostPersist({
+    settlementId: headerResult.id,
+    priorGuideOptionCount: tripwirePre?.priorGuideOptionCount,
+    postOptions: full?.options,
+    payloadOptions: payloadToSave.options,
+    status:
+      full?.status ?? coreSettlementRowForSkip?.status ?? existingForItemPersist?.status,
+    saveMode: saveContext,
+    explicitDeleteIntent: tripwirePre?.explicitDeleteIntent,
+    isEditPath: tripwireEditPath,
+  })
 
   logSettlementSaveTimings('[saveSettlementDraft] timings', saveTimings, {
     settlementId: headerResult.id,

@@ -1,9 +1,14 @@
+import type { SaveStatus } from './form-types'
 import type { Tour } from '@/types'
 
 export interface NewBindingPersistedState {
   settlementId: string | null
   tourId: string | null
   guideName: string
+  dirty?: boolean
+  saveStatus?: SaveStatus
+  /** Active non-deleted line-item rows across guide sections. */
+  hasLineItems?: boolean
 }
 
 export interface NewBindingDecision {
@@ -36,9 +41,20 @@ export function resolveNewSettlementBinding(
 
   if (selectedTourId) {
     const sameTour = persisted.tourId === selectedTourId
+    const preserveInProgressDraft =
+      sameTour &&
+      !guideChanged &&
+      (persisted.dirty === true ||
+        persisted.saveStatus === 'error' ||
+        persisted.saveStatus === 'saving' ||
+        persisted.hasLineItems === true)
 
     // Resume an orphan draft created by a prior partial save for this exact tour.
     if (hasExistingSettlement && sameTour && !guideChanged) {
+      return { reset: false, bindTourId: selectedTourId }
+    }
+
+    if (preserveInProgressDraft) {
       return { reset: false, bindTourId: selectedTourId }
     }
 

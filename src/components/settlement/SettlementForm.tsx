@@ -26,6 +26,13 @@ import {
   shouldShowAdminSettlementSections,
 } from '@/lib/settlement/settlement-form-sections'
 import { applyDraftSaveResult } from '@/lib/settlement/draft-save-flow'
+import {
+  canProceedToSubmit,
+  hasActiveLocalDraft,
+  shouldNavigateNewSettlementToEdit,
+  shouldPreserveClientDraftOnHydration,
+  shouldSkipNewFormBootstrapReset,
+} from '@/lib/settlement/save-integrity'
 import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
 import { submitCurrentSettlement } from '@/lib/settlement/submit-flow'
 import {
@@ -218,7 +225,7 @@ export function SettlementForm({
 
   const hydrateFromFull = useSettlementFormStore((s) => s.hydrateFromFull)
   const resetNew = useSettlementFormStore((s) => s.resetNew)
-  const setTour = useSettlementFormStore((s) => s.setTour)
+  const bindTourMetadata = useSettlementFormStore((s) => s.bindTourMetadata)
   const setSaving = useSettlementFormStore((s) => s.setSaving)
   const bindSettlementId = useSettlementFormStore((s) => s.bindSettlementId)
   const markSaved = useSettlementFormStore((s) => s.markSaved)
@@ -483,6 +490,16 @@ export function SettlementForm({
   const hydratedFromFullId = useRef<string | null>(null)
 
   useEffect(() => {
+    if (mode !== 'new') return
+    const targetTourId = initialTourId ?? useSettlementFormStore.getState().tourId
+    if (!targetTourId) return
+    const state = useSettlementFormStore.getState()
+    if (state.tourId === targetTourId && state.tour?.id === targetTourId) return
+    const tour = tours.find((t) => t.id === targetTourId)
+    if (tour) bindTourMetadata(tour)
+  }, [mode, initialTourId, tours, bindTourMetadata])
+
+  useEffect(() => {
     const bootstrap = () => {
       if (mode === 'preview') {
         if (hydratedFromFullId.current === 'preview') return
@@ -495,11 +512,16 @@ export function SettlementForm({
         if (!initialFull) return
         if (hydratedFromFullId.current === initialFull.id) return
         hydratedFromFullId.current = initialFull.id
-        // Server data must win over sessionStorage draft on edit reload
-        useSettlementFormStore.persist.clearStorage()
         const fullForRole = formRole === 'guide'
           ? sanitizeSettlementFullForGuide(initialFull)
           : initialFull
+        const clientState = useSettlementFormStore.getState()
+        if (shouldPreserveClientDraftOnHydration(clientState, initialFull.id)) {
+          hydrateFromFull(fullForRole, guideName)
+          return
+        }
+        // Server data wins over sessionStorage draft on clean edit reload
+        useSettlementFormStore.persist.clearStorage()
         hydrateFromFull(fullForRole, guideName)
         return
       }
@@ -508,25 +530,37 @@ export function SettlementForm({
       hydratedFromFullId.current = 'new'
 
       const s = useSettlementFormStore.getState()
+      const selectedTourId = initialTourId ?? null
+
+      const bindTourIfNeeded = (tourId: string | null) => {
+        if (!tourId) return
+        const tour = tours.find((t) => t.id === tourId)
+        if (tour) bindTourMetadata(tour)
+      }
+
+      if (shouldSkipNewFormBootstrapReset(s, selectedTourId, guideName)) {
+        bindTourIfNeeded(selectedTourId ?? s.tourId)
+        return
+      }
+
       const decision = resolveNewSettlementBinding(
-        { settlementId: s.settlementId, tourId: s.tourId, guideName: s.guideName },
-        initialTourId ?? null,
+        {
+          settlementId: s.settlementId,
+          tourId: s.tourId,
+          guideName: s.guideName,
+          dirty: s.dirty,
+          saveStatus: s.saveStatus,
+          hasLineItems: hasActiveLocalDraft(s),
+        },
+        selectedTourId,
         guideName,
       )
       if (decision.reset) resetNew(guideName)
-      if (decision.bindTourId) {
-        const tour = tours.find((t) => t.id === decision.bindTourId)
-        if (tour) setTour(tour)
-      }
-    }
-
-    if (useSettlementFormStore.persist.hasHydrated()) {
-      bootstrap()
-      return
+      bindTourIfNeeded(decision.bindTourId)
     }
 
     return useSettlementFormStore.persist.onFinishHydration(bootstrap)
-  }, [mode, initialFull, guideName, formRole, initialTourId, tours, hydrateFromFull, resetNew, setTour])
+  }, [mode, initialFull, guideName, formRole, initialTourId, tours, hydrateFromFull, resetNew, bindTourMetadata])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
     const actor = isAdminReview ? 'admin' : 'guide'
@@ -601,22 +635,20 @@ export function SettlementForm({
         logSaveDebugTimings(action, saveResult._debugTimings, {
           settlementId: result.settlementId,
         })
-        if (mode === 'new' && managePending && result.becameExistingSettlement) {
+        if (
+          managePending &&
+          shouldNavigateNewSettlementToEdit(
+            mode,
+            true,
+            result.becameExistingSettlement,
+            !!state.settlementId,
+          )
+        ) {
           // Drop session draft before edit route so server hydration cannot merge with stale rows.
           useSettlementFormStore.persist.clearStorage()
           router.replace(`/guide/settlements/${result.settlementId}/edit`)
         }
         return { ok: true, debugTimings: saveResult._debugTimings }
-      }
-
-      if (
-        mode === 'new' &&
-        managePending &&
-        result.settlementId &&
-        result.becameExistingSettlement
-      ) {
-        useSettlementFormStore.persist.clearStorage()
-        router.replace(`/guide/settlements/${result.settlementId}/edit`)
       }
 
       const message = useSettlementFormStore.getState().saveError ?? '저장 실패'
@@ -756,6 +788,12 @@ export function SettlementForm({
   const handleSubmit = useCallback(async () => {
     if (isPreview || isAdminReview) return
     if (saveInFlightRef.current || pendingAction !== null) return
+
+    const submitGate = canProceedToSubmit(useSettlementFormStore.getState())
+    if (!submitGate.ok) {
+      setSaveError(submitGate.error)
+      return
+    }
 
     const { ok, errors } = runValidation('submit')
     if (!ok) {

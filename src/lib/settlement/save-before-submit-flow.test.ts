@@ -177,9 +177,11 @@ describe('save-before-submit flow (guide new settlement)', () => {
   })
 
   it('G: footer keeps submit pending label during save-before-submit and resets after failure', () => {
-    const footer = readRepoFile('src/components/settlement/SettlementFormFooter.tsx')
-    expect(footer).toContain("pendingAction === 'submit' ? '저장 후 제출 중…'")
-    expect(footer).toContain("pendingAction !== 'submit'")
+    const saveIntegrity = readRepoFile('src/lib/settlement/save-integrity.ts')
+    expect(saveIntegrity).toContain("pendingAction === 'submit') return '저장 후 제출 중…'")
+    expect(readRepoFile('src/components/settlement/SettlementFormFooter.tsx')).toContain(
+      'footerStatusLabel',
+    )
     expect(readRepoFile('src/components/settlement/SettlementForm.tsx')).toContain(
       "setPendingAction(null)",
     )

@@ -17,6 +17,7 @@ export async function buildSupabaseAuthCookies(
   anonKey: string,
   email: string,
   password: string,
+  appOrigin?: string,
 ): Promise<CookieToSet[]> {
   const authClient = createClient(supabaseUrl, anonKey)
   const { data, error } = await authClient.auth.signInWithPassword({ email, password })
@@ -43,7 +44,7 @@ export async function buildSupabaseAuthCookies(
   if (sessionErr) throw new Error(sessionErr.message)
   if (!pending.length) throw new Error('No auth cookies emitted by Supabase SSR client')
 
-  const domain = new URL(PROD_URL).hostname
+  const domain = new URL(appOrigin ?? PROD_URL).hostname
   const secure = !domain.includes('localhost') && domain !== '127.0.0.1'
 
   return pending.map((c) => ({
@@ -62,8 +63,15 @@ export async function primeRole(
   anonKey: string,
   email: string,
   password: string,
+  appOrigin?: string,
 ) {
   await context.clearCookies()
-  const cookies = await buildSupabaseAuthCookies(supabaseUrl, anonKey, email, password)
+  const cookies = await buildSupabaseAuthCookies(
+    supabaseUrl,
+    anonKey,
+    email,
+    password,
+    appOrigin,
+  )
   await context.addCookies(cookies)
 }

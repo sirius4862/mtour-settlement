@@ -75,6 +75,23 @@ describe('resolveNewSettlementBinding', () => {
     expect(decision.bindTourId).toBe(TOUR_260426GA)
   })
 
+  it('preserves in-progress line-item draft for same tour before settlementId is persisted', () => {
+    const decision = resolveNewSettlementBinding(
+      {
+        settlementId: null,
+        tourId: TOUR_260426GA,
+        guideName: GUIDE,
+        dirty: true,
+        saveStatus: 'error',
+        hasLineItems: true,
+      },
+      TOUR_260426GA,
+      GUIDE,
+    )
+    expect(decision.reset).toBe(false)
+    expect(decision.bindTourId).toBe(TOUR_260426GA)
+  })
+
   it('resets when switching to a different assigned tour even without an existing settlement', () => {
     const decision = resolveNewSettlementBinding(
       { settlementId: null, tourId: TOUR_260426GA, guideName: GUIDE },
@@ -205,6 +222,7 @@ describe('guide create-flow wiring (regression source guards)', () => {
 
   it('settlement form binds new mode via resolveNewSettlementBinding (no guideName-only reset)', () => {
     expect(form).toContain('resolveNewSettlementBinding')
+    expect(form).toContain('bindTourMetadata')
     expect(form).not.toContain('if (s.guideName !== guideName) {')
   })
 })

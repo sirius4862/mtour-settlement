@@ -12,6 +12,7 @@ import {
   type SummaryAudience,
 } from '@/lib/settlement/display-labels'
 import type { SaveStatus } from '@/lib/settlement/form-types'
+import { footerStatusLabel } from '@/lib/settlement/save-integrity'
 
 export function SettlementFormFooter({
   calc,
@@ -54,16 +55,14 @@ export function SettlementFormFooter({
   sendForConfirmationLabel?: string
   requestGuideCorrectionLabel?: string
 }) {
-  const isSaving =
-    pendingAction === 'save' || (saveStatus === 'saving' && pendingAction !== 'submit')
-  const statusLabel =
-    isSaving ? '저장 중…'
-    : pendingAction === 'send' ? '처리 중…'
-    : pendingAction === 'request_edit' ? '수정요청 처리 중…'
-    : pendingAction === 'submit' ? '저장 후 제출 중…'
-    : saveStatus === 'saved' && !dirty ? `저장됨 ${lastSavedAt ? formatTime(lastSavedAt) : ''}`
-    : saveStatus === 'error' ? (saveError ?? '저장 실패')
-    : dirty ? '변경됨' : '저장됨'
+  const statusLabel = footerStatusLabel({
+    pendingAction,
+    saveStatus,
+    dirty,
+    saveError,
+    lastSavedAt,
+    formatSavedAt: formatTime,
+  })
 
   const guideSettlement = calc.summary.guide_settlement_usd
   const guidePayout = calc.summary.guide_payout_usd
@@ -147,7 +146,7 @@ export function SettlementFormFooter({
         <p className={`text-center text-xs ${
           saveStatus === 'error' ? 'text-red-500' :
           saveStatus === 'saved' && !dirty ? 'text-emerald-600' :
-          dirty ? 'text-amber-600' : 'text-gray-400'
+          dirty ? 'text-amber-600' : 'text-gray-500'
         }`}>
           {statusLabel}
         </p>

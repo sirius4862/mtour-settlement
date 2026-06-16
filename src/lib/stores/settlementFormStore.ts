@@ -13,7 +13,13 @@ import {
   emptyOtherRow,
   emptyShoppingRow,
 } from '@/lib/settlement/defaults'
-import { emptyFormState, mergeServerSync, stateFromSettlementFull, type SettlementSyncPayload } from '@/lib/settlement/mappers'
+import {
+  emptyFormState,
+  mergeServerSync,
+  stateFromSettlementFull,
+  type SettlementSyncPayload,
+} from '@/lib/settlement/mappers'
+import { shouldPreserveClientDraftOnHydration, mergePersistedSettlementDraft } from '@/lib/settlement/save-integrity'
 
 type RowArrays = Pick<
   SettlementFormState,
@@ -44,6 +50,8 @@ interface SettlementFormActions {
   hydrateFromFull: (full: SettlementFull, guideName: string) => void
   resetNew: (guideName: string, exchangeRate?: number) => void
   setTour: (tour: Tour) => void
+  /** Attach tour metadata without clearing save/dirty state (bootstrap only). */
+  bindTourMetadata: (tour: Tour) => void
   setExchangeRate: (rate: number) => void
   patchHeader: (patch: Partial<SettlementFormState['header']>) => void
   addRow: (section: LineSection) => void
@@ -84,6 +92,10 @@ const persistable = (s: SettlementFormStore) => ({
   companyExpenses: s.companyExpenses,
   shoppings: s.shoppings,
   options: s.options,
+  dirty: s.dirty,
+  saveStatus: s.saveStatus,
+  saveError: s.saveError,
+  lastSavedAt: s.lastSavedAt,
 })
 
 export const useSettlementFormStore = create<SettlementFormStore>()(
@@ -91,14 +103,30 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
     (set, get) => ({
       ...emptyFormState(''),
 
-      hydrateFromFull: (full, guideName) =>
-        set({ ...stateFromSettlementFull(full, guideName), saveStatus: 'idle', saveError: null }),
+      hydrateFromFull: (full, guideName) => {
+        const current = get()
+        if (shouldPreserveClientDraftOnHydration(current, full.id)) {
+          set({
+            settlementStatus: full.status,
+            guideSubmitSnapshotId: full.guide_submit_snapshot_id ?? null,
+            receipts: full.receipts ?? [],
+          })
+          return
+        }
+        set({ ...stateFromSettlementFull(full, guideName), saveStatus: 'idle', saveError: null })
+      },
 
       resetNew: (guideName, exchangeRate) =>
         set({ ...emptyFormState(guideName, exchangeRate), saveStatus: 'idle', saveError: null }),
 
       setTour: (tour) =>
         set({ tourId: tour.id, tour, dirty: true, saveStatus: 'idle' }),
+
+      bindTourMetadata: (tour) =>
+        set((s) => {
+          if (s.tourId === tour.id && s.tour?.id === tour.id) return s
+          return { tourId: tour.id, tour }
+        }),
 
       setExchangeRate: (exchange_rate) =>
         set({ exchange_rate, dirty: true }),
@@ -184,7 +212,7 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
           dirty: true,
         })),
 
-      bindSettlementId: (id) => set({ settlementId: id }),
+      bindSettlementId: (id) => set({ settlementId: id, dirty: true }),
 
       markSaved: (id) =>
         set({
@@ -197,7 +225,8 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
 
       setSaving: () => set({ saveStatus: 'saving', saveError: null }),
 
-      setSaveError: (msg) => set({ saveStatus: 'error', saveError: msg }),
+      setSaveError: (msg) =>
+        set({ saveStatus: 'error', saveError: msg, dirty: true }),
 
       mergeServerSync: (sync) =>
         set((s) => ({ ...mergeServerSync(s, sync) })),
@@ -216,26 +245,7 @@ export const useSettlementFormStore = create<SettlementFormStore>()(
       partialize: persistable,
       merge: (persisted, current) => ({
         ...current,
-        ...(persisted as Partial<SettlementFormState>),
-        receipts: (persisted as Partial<SettlementFormState>)?.receipts ?? current.receipts ?? [],
-        settlementStatus:
-          (persisted as Partial<SettlementFormState>)?.settlementStatus ??
-          current.settlementStatus ??
-          null,
-        guideSubmitSnapshotId:
-          (persisted as Partial<SettlementFormState>)?.guideSubmitSnapshotId ??
-          current.guideSubmitSnapshotId ??
-          null,
-        hotels: (persisted as Partial<SettlementFormState>)?.hotels ?? current.hotels ?? [],
-        meals: (persisted as Partial<SettlementFormState>)?.meals ?? current.meals ?? [],
-        entrances: (persisted as Partial<SettlementFormState>)?.entrances ?? current.entrances ?? [],
-        others: (persisted as Partial<SettlementFormState>)?.others ?? current.others ?? [],
-        companyExpenses:
-          (persisted as Partial<SettlementFormState>)?.companyExpenses ??
-          current.companyExpenses ??
-          [],
-        shoppings: (persisted as Partial<SettlementFormState>)?.shoppings ?? current.shoppings ?? [],
-        options: (persisted as Partial<SettlementFormState>)?.options ?? current.options ?? [],
+        ...mergePersistedSettlementDraft(persisted as Partial<SettlementFormState>, current),
       }),
     },
   ),

@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type SetAllCookies } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import type { BrowserContext } from '@playwright/test'
 import { PROD_URL } from './env'
@@ -30,7 +30,7 @@ export async function buildSupabaseAuthCookies(
     cookieEncoding: 'base64url',
     cookies: {
       getAll: () => [],
-      setAll: (cookies) => {
+      setAll: (cookies: Parameters<SetAllCookies>[0]) => {
         pending.length = 0
         pending.push(...cookies.map((c) => ({ name: c.name, value: c.value })))
       },

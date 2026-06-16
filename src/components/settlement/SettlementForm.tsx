@@ -67,6 +67,104 @@ import { GuideCorrectionBanner } from './GuideCorrectionBanner'
 
 export type SettlementFormMode = 'new' | 'edit' | 'preview'
 
+type CorrectionRowRef = { clientId: string; id?: string | null; label?: string | null }
+
+/** Stable row refs from server-loaded settlement — SSR/hydration-safe for correction display. */
+function correctionRowCollectionsFromFull(full: SettlementFull): Record<string, CorrectionRowRef[]> {
+  return {
+    hotels: full.hotels.map((r) => ({
+      clientId: r.id,
+      id: r.id,
+      label: r.hotel_name,
+    })),
+    meals: full.meals.map((r) => ({
+      clientId: r.id,
+      id: r.id,
+      label: r.restaurant_name,
+    })),
+    entrances: full.entrances.map((r) => ({
+      clientId: r.id,
+      id: r.id,
+      label: r.attraction_name,
+    })),
+    others: full.others.map((r) => ({
+      clientId: r.id,
+      id: r.id,
+      label: r.description,
+    })),
+    shopping: full.shoppings.map((r) => ({
+      clientId: r.id,
+      id: r.id,
+      label: r.shop_name,
+    })),
+    options: full.options
+      .filter((r) => r.is_extra_vehicle !== true)
+      .map((r) => ({
+        clientId: r.id,
+        id: r.id,
+        label: r.option_name,
+      })),
+  }
+}
+
+function buildGuideRowHighlights(
+  targets: CorrectionTarget[],
+  rowCollections: Record<string, CorrectionRowRef[]>,
+): Map<string, GuideRowCorrectionHighlight> {
+  const map = new Map<string, GuideRowCorrectionHighlight>()
+  for (const target of targets) {
+    if (target.kind !== 'row' && target.kind !== 'amount_mismatch') continue
+    const rows = rowCollections[target.section] ?? []
+    const matched = rows.find((row) => correctionTargetMatchesRow(target, row))
+    if (matched) {
+      map.set(matched.clientId, {
+        message: target.reason,
+        field: target.field,
+        proposed: target.proposed,
+      })
+    }
+  }
+  return map
+}
+
+function correctionRowCollectionsFromStore(): Record<string, CorrectionRowRef[]> {
+  const state = useSettlementFormStore.getState()
+  return {
+    hotels: state.hotels.filter((r) => !r.deleted).map((r) => ({
+      clientId: r.clientId,
+      id: r.id,
+      label: r.hotel_name,
+    })),
+    meals: state.meals.filter((r) => !r.deleted).map((r) => ({
+      clientId: r.clientId,
+      id: r.id,
+      label: r.restaurant_name,
+    })),
+    entrances: state.entrances.filter((r) => !r.deleted).map((r) => ({
+      clientId: r.clientId,
+      id: r.id,
+      label: r.attraction_name,
+    })),
+    others: state.others.filter((r) => !r.deleted).map((r) => ({
+      clientId: r.clientId,
+      id: r.id,
+      label: r.description,
+    })),
+    shopping: state.shoppings.filter((r) => !r.deleted).map((r) => ({
+      clientId: r.clientId,
+      id: r.id,
+      label: r.shop_name,
+    })),
+    options: state.options
+      .filter((r) => !r.deleted && r.is_extra_vehicle !== true)
+      .map((r) => ({
+        clientId: r.clientId,
+        id: r.id,
+        label: r.option_name,
+      })),
+  }
+}
+
 interface Props {
   tours: Tour[]
   guideName: string
@@ -129,11 +227,19 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const { sections } = calc
   const isPreview = mode === 'preview'
   const isAdminReview = !!adminEdit
-  const effectiveSettlementStatus = useMemo(
-    () => settlementStatus ?? initialFull?.status ?? null,
-    [settlementStatus, initialFull?.status],
+  const isExistingSettlementEdit = mode === 'edit' && !!initialFull?.id
+  const correctionSourceStatus = useMemo(
+    () =>
+      isExistingSettlementEdit
+        ? (initialFull?.status ?? settlementStatus ?? null)
+        : (settlementStatus ?? initialFull?.status ?? null),
+    [isExistingSettlementEdit, initialFull?.status, settlementStatus],
   )
-  const isGuideEditRequested = !isAdminReview && effectiveSettlementStatus === 'edit_requested'
+  const correctionSourceAdminNote = isExistingSettlementEdit
+    ? (initialFull?.admin_note ?? null)
+    : (initialFull?.admin_note ?? null)
+  const isGuideCorrectionDisplayActive =
+    !isAdminReview && correctionSourceStatus === 'edit_requested'
   const role: SettlementFormRole = isPreview ? 'readOnly' : (isAdminReview ? 'admin' : formRole)
   const audience = summaryAudienceFromRole(role)
   const isAdmin = role === 'admin'
@@ -157,11 +263,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     )
 
   const guideCorrection = useMemo(() => {
-    if (!isGuideEditRequested) {
+    if (!isGuideCorrectionDisplayActive) {
       return parseCorrectionNote(null)
     }
-    return parseCorrectionNote(initialFull?.admin_note)
-  }, [isGuideEditRequested, initialFull?.admin_note])
+    return parseCorrectionNote(correctionSourceAdminNote)
+  }, [isGuideCorrectionDisplayActive, correctionSourceAdminNote])
 
   const attentionSectionIds = useMemo(
     () => new Set(guideCorrection.sections),
@@ -169,63 +275,28 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   )
 
   const guideRowHighlights = useMemo(() => {
-    if (!isGuideEditRequested || guideCorrection.targets.length === 0) {
+    if (!isGuideCorrectionDisplayActive || guideCorrection.targets.length === 0) {
       return new Map<string, GuideRowCorrectionHighlight>()
     }
 
-    const state = useSettlementFormStore.getState()
-    const map = new Map<string, GuideRowCorrectionHighlight>()
+    const rowCollections =
+      isExistingSettlementEdit && initialFull
+        ? correctionRowCollectionsFromFull(initialFull)
+        : correctionRowCollectionsFromStore()
 
-    const rowCollections: Record<string, { clientId: string; id?: string | null; label?: string | null }[]> = {
-      hotels: state.hotels.filter((r) => !r.deleted).map((r) => ({
-        clientId: r.clientId,
-        id: r.id,
-        label: r.hotel_name,
-      })),
-      meals: state.meals.filter((r) => !r.deleted).map((r) => ({
-        clientId: r.clientId,
-        id: r.id,
-        label: r.restaurant_name,
-      })),
-      entrances: state.entrances.filter((r) => !r.deleted).map((r) => ({
-        clientId: r.clientId,
-        id: r.id,
-        label: r.attraction_name,
-      })),
-      others: state.others.filter((r) => !r.deleted).map((r) => ({
-        clientId: r.clientId,
-        id: r.id,
-        label: r.description,
-      })),
-      shopping: state.shoppings.filter((r) => !r.deleted).map((r) => ({
-        clientId: r.clientId,
-        id: r.id,
-        label: r.shop_name,
-      })),
-      options: state.options
-        .filter((r) => !r.deleted && r.is_extra_vehicle !== true)
-        .map((r) => ({
-          clientId: r.clientId,
-          id: r.id,
-          label: r.option_name,
-        })),
-    }
-
-    for (const target of guideCorrection.targets) {
-      if (target.kind !== 'row' && target.kind !== 'amount_mismatch') continue
-      const rows = rowCollections[target.section] ?? []
-      const matched = rows.find((row) => correctionTargetMatchesRow(target, row))
-      if (matched) {
-        map.set(matched.clientId, {
-          message: target.reason,
-          field: target.field,
-          proposed: target.proposed,
-        })
-      }
-    }
-
-    return map
-  }, [isGuideEditRequested, guideCorrection.targets, hotelRowCount, mealRowCount, entranceRowCount, otherRowCount, shoppingRowCount, optionRowCount])
+    return buildGuideRowHighlights(guideCorrection.targets, rowCollections)
+  }, [
+    isGuideCorrectionDisplayActive,
+    isExistingSettlementEdit,
+    initialFull,
+    guideCorrection.targets,
+    hotelRowCount,
+    mealRowCount,
+    entranceRowCount,
+    otherRowCount,
+    shoppingRowCount,
+    optionRowCount,
+  ])
 
   const openSectionCorrection = useCallback((sectionId: CorrectionSectionId) => {
     setCorrectionModalMode('contextual')
@@ -268,7 +339,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   )
 
   const guideCorrectionHighlight = useMemo(() => {
-    if (!isGuideEditRequested) return null
+    if (!isGuideCorrectionDisplayActive) return null
     return {
       activeJumpClientId,
       getRowHighlight: (clientId: string) => guideRowHighlights.get(clientId),
@@ -277,7 +348,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         return !!hl?.field && hl.field === field
       },
     }
-  }, [isGuideEditRequested, activeJumpClientId, guideRowHighlights])
+  }, [isGuideCorrectionDisplayActive, activeJumpClientId, guideRowHighlights])
 
   const handleJumpToCorrectionTarget = useCallback(() => {
     const jumpTargets =
@@ -298,44 +369,13 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
     setOpenSectionId(target.section)
 
-    const state = useSettlementFormStore.getState()
     let matchedClientId: string | null = target.clientId
 
     if (target.kind === 'row' || target.kind === 'amount_mismatch') {
-      const rowsBySection: Record<string, { clientId: string; id?: string | null; label?: string | null }[]> = {
-        hotels: state.hotels.filter((r) => !r.deleted).map((r) => ({
-          clientId: r.clientId,
-          id: r.id,
-          label: r.hotel_name,
-        })),
-        meals: state.meals.filter((r) => !r.deleted).map((r) => ({
-          clientId: r.clientId,
-          id: r.id,
-          label: r.restaurant_name,
-        })),
-        entrances: state.entrances.filter((r) => !r.deleted).map((r) => ({
-          clientId: r.clientId,
-          id: r.id,
-          label: r.attraction_name,
-        })),
-        others: state.others.filter((r) => !r.deleted).map((r) => ({
-          clientId: r.clientId,
-          id: r.id,
-          label: r.description,
-        })),
-        shopping: state.shoppings.filter((r) => !r.deleted).map((r) => ({
-          clientId: r.clientId,
-          id: r.id,
-          label: r.shop_name,
-        })),
-        options: state.options
-          .filter((r) => !r.deleted && r.is_extra_vehicle !== true)
-          .map((r) => ({
-            clientId: r.clientId,
-            id: r.id,
-            label: r.option_name,
-          })),
-      }
+      const rowsBySection =
+        isExistingSettlementEdit && initialFull
+          ? correctionRowCollectionsFromFull(initialFull)
+          : correctionRowCollectionsFromStore()
       const rows = rowsBySection[target.section] ?? []
       const matched = rows.find((row) => correctionTargetMatchesRow(target, row))
       matchedClientId = matched?.clientId ?? target.clientId
@@ -346,7 +386,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       sectionId: target.section,
       clientId: matchedClientId,
     }
-  }, [guideCorrection, correctionJumpIndex])
+  }, [guideCorrection, correctionJumpIndex, isExistingSettlementEdit, initialFull])
 
   useEffect(() => {
     const pending = correctionJumpPending.current
@@ -373,12 +413,12 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
   useEffect(() => {
     if (correctionAutoExpanded.current) return
-    if (!isGuideEditRequested) return
+    if (!isGuideCorrectionDisplayActive) return
     const first = guideCorrection.targets[0]?.section ?? guideCorrection.sections[0]
     if (!first) return
     correctionAutoExpanded.current = true
     setOpenSectionId(first)
-  }, [isGuideEditRequested, guideCorrection.targets, guideCorrection.sections])
+  }, [isGuideCorrectionDisplayActive, guideCorrection.targets, guideCorrection.sections])
 
   const hydratedFromFullId = useRef<string | null>(null)
 
@@ -942,7 +982,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       </div>
 
       <div className="flex-1 px-4 py-4">
-        {!isPreview && guideCorrection.reason && isGuideEditRequested && (
+        {!isPreview && guideCorrection.reason && isGuideCorrectionDisplayActive && (
           <GuideCorrectionBanner
             correction={guideCorrection}
             onJumpToTarget={handleJumpToCorrectionTarget}

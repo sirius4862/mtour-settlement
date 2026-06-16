@@ -183,33 +183,56 @@ describe('admin contextual correction UI wiring', () => {
 describe('guide targeted correction visibility wiring', () => {
   it('guide edit shows compact correction banner with jump action', () => {
     expect(SETTLEMENT_FORM).toContain('GuideCorrectionBanner')
-    expect(SETTLEMENT_FORM).toContain('isGuideEditRequested')
+    expect(SETTLEMENT_FORM).toContain('isGuideCorrectionDisplayActive')
     expect(GUIDE_CORRECTION_BANNER).toContain('관리자 수정 요청')
     expect(GUIDE_CORRECTION_BANNER).toContain('문제 항목으로 이동')
     expect(GUIDE_CORRECTION_BANNER).toContain('수정 요청')
   })
 
-  it('uses effective settlement status from initialFull when Zustand status is unset', () => {
-    expect(SETTLEMENT_FORM).toContain('effectiveSettlementStatus')
-    expect(SETTLEMENT_FORM).toContain('settlementStatus ?? initialFull?.status ?? null')
+  it('existing edit page prefers initialFull status over stale Zustand settlementStatus', () => {
+    expect(SETTLEMENT_FORM).toContain('isExistingSettlementEdit')
+    expect(SETTLEMENT_FORM).toContain('correctionSourceStatus')
+    expect(SETTLEMENT_FORM).toMatch(
+      /isExistingSettlementEdit[\s\S]*initialFull\?\.status \?\? settlementStatus \?\? null/,
+    )
     expect(SETTLEMENT_FORM).toContain(
-      "effectiveSettlementStatus === 'edit_requested'",
+      "correctionSourceStatus === 'edit_requested'",
     )
     expect(SETTLEMENT_FORM).toMatch(
-      /guideCorrection\.reason && isGuideEditRequested/,
+      /guideCorrection\.reason && isGuideCorrectionDisplayActive/,
     )
   })
 
-  it('derives guide correction from initialFull admin_note before Zustand hydration', () => {
+  it('correction display stays active when settlementStatus is stale draft or submitted', () => {
+    expect(SETTLEMENT_FORM).toContain('isExistingSettlementEdit')
     expect(SETTLEMENT_FORM).toMatch(
-      /if \(!isGuideEditRequested\)[\s\S]*parseCorrectionNote\(null\)/,
+      /isExistingSettlementEdit[\s\S]*initialFull\?\.status \?\? settlementStatus/,
     )
-    expect(SETTLEMENT_FORM).toContain('parseCorrectionNote(initialFull?.admin_note)')
+    expect(SETTLEMENT_FORM).not.toMatch(
+      /isGuideCorrectionDisplayActive[\s\S]*settlementStatus \?\? initialFull/,
+    )
+  })
+
+  it('correction display note uses initialFull.admin_note on existing edit pages', () => {
+    expect(SETTLEMENT_FORM).toContain('correctionSourceAdminNote')
+    expect(SETTLEMENT_FORM).toContain('initialFull?.admin_note ?? null')
+    expect(SETTLEMENT_FORM).toMatch(
+      /if \(!isGuideCorrectionDisplayActive\)[\s\S]*parseCorrectionNote\(null\)/,
+    )
+    expect(SETTLEMENT_FORM).toContain('parseCorrectionNote(correctionSourceAdminNote)')
     expect(SETTLEMENT_FORM).toContain('guideRowHighlights')
     expect(SETTLEMENT_FORM).toContain('guideCorrectionHighlight')
     expect(SETTLEMENT_FORM).not.toMatch(
       /guideCorrection[\s\S]*settlementStatus !== 'edit_requested'/,
     )
+  })
+
+  it('row highlights and jump use initialFull rows on existing edit pages', () => {
+    expect(SETTLEMENT_FORM).toContain('correctionRowCollectionsFromFull')
+    expect(SETTLEMENT_FORM).toMatch(
+      /isExistingSettlementEdit && initialFull[\s\S]*correctionRowCollectionsFromFull/,
+    )
+    expect(SETTLEMENT_FORM).toContain('buildGuideRowHighlights')
   })
 
   it('re-bootstraps edit mode when initialFull arrives instead of one-shot hydrated guard', () => {
@@ -221,11 +244,13 @@ describe('guide targeted correction visibility wiring', () => {
 
   it('does not show correction banner outside edit_requested', () => {
     expect(SETTLEMENT_FORM).toMatch(
-      /guideCorrection\.reason && isGuideEditRequested/,
+      /guideCorrection\.reason && isGuideCorrectionDisplayActive/,
     )
     expect(SETTLEMENT_FORM).not.toMatch(
       /guideCorrection\.reason && settlementStatus === 'edit_requested'/,
     )
+    expect(SETTLEMENT_FORM).not.toContain('isGuideEditRequested')
+    expect(SETTLEMENT_FORM).not.toContain('effectiveSettlementStatus')
   })
 
   it('highlights affected sections and supports row-level highlight props', () => {
@@ -238,9 +263,10 @@ describe('guide targeted correction visibility wiring', () => {
     expect(LINE_ITEM_SECTIONS).toContain('LineItemCorrectionAlert')
   })
 
-  it('auto-expands first affected section on guide edit', () => {
+  it('auto-expands first affected section after hydration via useEffect', () => {
     expect(SETTLEMENT_FORM).toContain('correctionAutoExpanded')
     expect(SETTLEMENT_FORM).toContain('guideCorrection.targets[0]?.section')
+    expect(SETTLEMENT_FORM).toMatch(/useEffect\(\(\) => \{[\s\S]*correctionAutoExpanded/)
   })
 
   it('v1 notes still parse for section highlight', () => {
@@ -266,7 +292,7 @@ describe('guide targeted correction visibility wiring', () => {
     expect(legacy.reason).toBe('옵션 금액 확인 필요')
     expect(legacy.sections).toEqual([])
     expect(adminMemoInputValue('옵션 금액 확인 필요')).toBe('옵션 금액 확인 필요')
-    expect(SETTLEMENT_FORM).toContain('parseCorrectionNote(initialFull?.admin_note)')
+    expect(SETTLEMENT_FORM).toContain('parseCorrectionNote(correctionSourceAdminNote)')
   })
 
   it('v2 admin_note renders guide correction targets for jump/highlight', () => {

@@ -58,6 +58,22 @@ const GUIDE_DETAIL_PAGE = readFileSync(
   join(ROOT, 'src/app/guide/settlements/[id]/page.tsx'),
   'utf8',
 )
+const GUIDE_EDIT_PAGE = readFileSync(
+  join(ROOT, 'src/app/guide/settlements/[id]/edit/page.tsx'),
+  'utf8',
+)
+const GUIDE_CORRECTION_SHELL = readFileSync(
+  join(ROOT, 'src/components/settlement/GuideCorrectionStableShell.tsx'),
+  'utf8',
+)
+const GUIDE_EDIT_FORM = readFileSync(
+  join(ROOT, 'src/components/settlement/GuideEditForm.tsx'),
+  'utf8',
+)
+const GUIDE_CORRECTION_JUMP = readFileSync(
+  join(ROOT, 'src/lib/settlement/guide-correction-jump.ts'),
+  'utf8',
+)
 
 const submitted = {
   status: 'submitted' as SettlementStatus,
@@ -217,7 +233,7 @@ describe('guide targeted correction visibility wiring', () => {
     expect(SETTLEMENT_FORM).toContain('correctionSourceAdminNote')
     expect(SETTLEMENT_FORM).toContain('initialFull?.admin_note ?? null')
     expect(SETTLEMENT_FORM).toMatch(
-      /if \(!isGuideCorrectionDisplayActive\)[\s\S]*parseCorrectionNote\(null\)/,
+      /if \(!showGuideCorrectionChrome\)[\s\S]*parseCorrectionNote\(null\)/,
     )
     expect(SETTLEMENT_FORM).toContain('parseCorrectionNote(correctionSourceAdminNote)')
     expect(SETTLEMENT_FORM).toContain('guideRowHighlights')
@@ -242,9 +258,10 @@ describe('guide targeted correction visibility wiring', () => {
     expect(SETTLEMENT_FORM).not.toContain('hydrated.current')
   })
 
-  it('does not show correction banner outside edit_requested', () => {
+  it('does not show in-form correction banner when stable shell is active', () => {
+    expect(SETTLEMENT_FORM).toContain('guideCorrectionShellActive')
     expect(SETTLEMENT_FORM).toMatch(
-      /guideCorrection\.reason && isGuideCorrectionDisplayActive/,
+      /!guideCorrectionShellActive && guideCorrection\.reason && isGuideCorrectionDisplayActive/,
     )
     expect(SETTLEMENT_FORM).not.toMatch(
       /guideCorrection\.reason && settlementStatus === 'edit_requested'/,
@@ -263,9 +280,10 @@ describe('guide targeted correction visibility wiring', () => {
     expect(LINE_ITEM_SECTIONS).toContain('LineItemCorrectionAlert')
   })
 
-  it('auto-expands first affected section after hydration via useEffect', () => {
+  it('skips auto-expand when stable shell owns the banner', () => {
     expect(SETTLEMENT_FORM).toContain('correctionAutoExpanded')
     expect(SETTLEMENT_FORM).toContain('guideCorrection.targets[0]?.section')
+    expect(SETTLEMENT_FORM).toContain('if (guideCorrectionShellActive) return')
     expect(SETTLEMENT_FORM).toMatch(/useEffect\(\(\) => \{[\s\S]*correctionAutoExpanded/)
   })
 
@@ -314,6 +332,81 @@ describe('guide targeted correction visibility wiring', () => {
     expect(parsed.sections).toContain('options')
     expect(SETTLEMENT_FORM).toContain('handleJumpToCorrectionTarget')
     expect(GUIDE_CORRECTION_BANNER).toContain('문제 항목으로 이동')
+  })
+})
+
+describe('guide correction stable shell (SSR hydration)', () => {
+  it('guide edit page renders stable shell outside SettlementForm', () => {
+    expect(GUIDE_EDIT_PAGE).toContain('GuideCorrectionStableShell')
+    expect(GUIDE_EDIT_PAGE).toContain('GuideEditForm')
+    expect(GUIDE_EDIT_PAGE).not.toContain('<SettlementForm')
+    expect(GUIDE_EDIT_PAGE).toContain('adminNote={full.admin_note}')
+    expect(GUIDE_EDIT_PAGE).toContain('status={full.status}')
+  })
+
+  it('stable shell uses server props only — no Zustand', () => {
+    expect(GUIDE_CORRECTION_SHELL).toContain('parseCorrectionNote(adminNote)')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('useSettlementFormStore')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('settlementStatus')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('sessionStorage')
+    expect(GUIDE_CORRECTION_SHELL).toContain("status === 'edit_requested'")
+    expect(GUIDE_CORRECTION_SHELL).toContain('GuideCorrectionBanner')
+  })
+
+  it('stable shell renders for edit_requested + v2 admin_note', () => {
+    const parsed = parseCorrectionNote(
+      encodeCorrectionNoteFromTargets([
+        {
+          section: 'options',
+          kind: 'amount_mismatch',
+          rowId: null,
+          clientId: null,
+          rowLabel: '보트투어',
+          field: 'unit_price_usd',
+          reason: '보트투어 옵션 금액 확인 필요',
+          proposed: null,
+        },
+      ]),
+    )
+    expect(parsed.reason).toContain('보트투어')
+    expect(GUIDE_CORRECTION_SHELL).toContain('!correction.reason.trim()')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('@@correction@@')
+  })
+
+  it('stable shell supports v1 and legacy plain admin_note', () => {
+    const v1 = parseCorrectionNote(encodeCorrectionNote(['options'], '옵션 확인'))
+    expect(v1.reason).toBe('옵션 확인')
+    const legacy = parseCorrectionNote('옵션 금액 확인 필요')
+    expect(legacy.reason).toBe('옵션 금액 확인 필요')
+    expect(GUIDE_CORRECTION_SHELL).toContain("status !== 'edit_requested'")
+  })
+
+  it('stable shell dispatches jump custom event and sets hash', () => {
+    expect(GUIDE_CORRECTION_SHELL).toContain('GUIDE_CORRECTION_JUMP_EVENT')
+    expect(GUIDE_CORRECTION_SHELL).toContain('CustomEvent')
+    expect(GUIDE_CORRECTION_SHELL).toContain('correctionHashForSection')
+    expect(GUIDE_CORRECTION_JUMP).toContain('mtour:jump-correction-target')
+  })
+
+  it('GuideEditForm loads SettlementForm client-only', () => {
+    expect(GUIDE_EDIT_FORM).toContain('ssr: false')
+    expect(GUIDE_EDIT_FORM).toContain('guideCorrectionShellActive')
+    expect(GUIDE_EDIT_FORM).not.toContain('useSettlementFormStore')
+  })
+
+  it('SettlementForm listens for jump event after mount when shell is active', () => {
+    expect(SETTLEMENT_FORM).toContain('GUIDE_CORRECTION_JUMP_EVENT')
+    expect(SETTLEMENT_FORM).toContain('applyCorrectionJump')
+    expect(SETTLEMENT_FORM).toContain('parseCorrectionSectionFromHash')
+    expect(SETTLEMENT_FORM).toContain('correctionHighlightReady')
+  })
+
+  it('highlights apply after mount via correctionHighlightReady', () => {
+    expect(SETTLEMENT_FORM).toContain('showGuideCorrectionChrome')
+    expect(SETTLEMENT_FORM).toContain('correctionHighlightReady')
+    expect(SETTLEMENT_FORM).toMatch(
+      /guideCorrectionShellActive \|\| correctionHighlightReady/,
+    )
   })
 })
 

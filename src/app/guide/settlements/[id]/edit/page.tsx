@@ -1,7 +1,8 @@
 import { notFound, redirect } from 'next/navigation'
 import { requireGuide } from '@/lib/auth/session'
 import { getAvailableTours, getSettlementFullForGuide } from '@/lib/actions/settlementActions'
-import { SettlementForm } from '@/components/settlement/SettlementForm'
+import { GuideCorrectionStableShell } from '@/components/settlement/GuideCorrectionStableShell'
+import { GuideEditForm } from '@/components/settlement/GuideEditForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,11 +26,18 @@ export default async function EditSettlementPage({
     : [full.tour, ...available]
 
   return (
-    <SettlementForm
-      tours={tours}
-      guideName={session.full_name}
-      mode="edit"
-      initialFull={full}
-    />
+    <>
+      <GuideCorrectionStableShell
+        settlementId={full.id}
+        status={full.status}
+        adminNote={full.admin_note}
+      />
+      <GuideEditForm
+        tours={tours}
+        guideName={session.full_name}
+        mode="edit"
+        initialFull={full}
+      />
+    </>
   )
 }

@@ -64,6 +64,11 @@ import type { SettlementFormRole } from '@/lib/settlement/field-ownership'
 import { SettlementFormProvider, summaryAudienceFromRole, type GuideRowCorrectionHighlight } from './SettlementFormContext'
 import { CorrectionRequestModal, type CorrectionModalMode } from './CorrectionRequestModal'
 import { GuideCorrectionBanner } from './GuideCorrectionBanner'
+import {
+  GUIDE_CORRECTION_JUMP_EVENT,
+  parseCorrectionSectionFromHash,
+  type GuideCorrectionJumpDetail,
+} from '@/lib/settlement/guide-correction-jump'
 
 export type SettlementFormMode = 'new' | 'edit' | 'preview'
 
@@ -179,9 +184,20 @@ interface Props {
     backHref: string
     actorRole?: UserRole
   }
+  /** Guide edit: banner rendered outside in GuideCorrectionStableShell. */
+  guideCorrectionShellActive?: boolean
 }
 
-export function SettlementForm({ tours, guideName, mode, initialFull, initialTourId, formRole = 'guide', adminEdit }: Props) {
+export function SettlementForm({
+  tours,
+  guideName,
+  mode,
+  initialFull,
+  initialTourId,
+  formRole = 'guide',
+  adminEdit,
+  guideCorrectionShellActive = false,
+}: Props) {
   const router = useRouter()
   const saveInFlightRef = useRef(false)
   const [pendingAction, setPendingAction] = useState<'save' | 'send' | 'submit' | 'request_edit' | null>(null)
@@ -198,6 +214,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   const [activeJumpClientId, setActiveJumpClientId] = useState<string | null>(null)
   const correctionAutoExpanded = useRef(false)
   const correctionJumpPending = useRef<{ sectionId: string; clientId: string | null } | null>(null)
+  const [correctionHighlightReady, setCorrectionHighlightReady] = useState(!guideCorrectionShellActive)
 
   const hydrateFromFull = useSettlementFormStore((s) => s.hydrateFromFull)
   const resetNew = useSettlementFormStore((s) => s.resetNew)
@@ -240,6 +257,8 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     : (initialFull?.admin_note ?? null)
   const isGuideCorrectionDisplayActive =
     !isAdminReview && correctionSourceStatus === 'edit_requested'
+  const showGuideCorrectionChrome =
+    isGuideCorrectionDisplayActive && (!guideCorrectionShellActive || correctionHighlightReady)
   const role: SettlementFormRole = isPreview ? 'readOnly' : (isAdminReview ? 'admin' : formRole)
   const audience = summaryAudienceFromRole(role)
   const isAdmin = role === 'admin'
@@ -263,11 +282,11 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     )
 
   const guideCorrection = useMemo(() => {
-    if (!isGuideCorrectionDisplayActive) {
+    if (!showGuideCorrectionChrome) {
       return parseCorrectionNote(null)
     }
     return parseCorrectionNote(correctionSourceAdminNote)
-  }, [isGuideCorrectionDisplayActive, correctionSourceAdminNote])
+  }, [showGuideCorrectionChrome, correctionSourceAdminNote])
 
   const attentionSectionIds = useMemo(
     () => new Set(guideCorrection.sections),
@@ -275,7 +294,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   )
 
   const guideRowHighlights = useMemo(() => {
-    if (!isGuideCorrectionDisplayActive || guideCorrection.targets.length === 0) {
+    if (!showGuideCorrectionChrome || guideCorrection.targets.length === 0) {
       return new Map<string, GuideRowCorrectionHighlight>()
     }
 
@@ -286,7 +305,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
 
     return buildGuideRowHighlights(guideCorrection.targets, rowCollections)
   }, [
-    isGuideCorrectionDisplayActive,
+    showGuideCorrectionChrome,
     isExistingSettlementEdit,
     initialFull,
     guideCorrection.targets,
@@ -339,7 +358,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   )
 
   const guideCorrectionHighlight = useMemo(() => {
-    if (!isGuideCorrectionDisplayActive) return null
+    if (!showGuideCorrectionChrome) return null
     return {
       activeJumpClientId,
       getRowHighlight: (clientId: string) => guideRowHighlights.get(clientId),
@@ -348,7 +367,43 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
         return !!hl?.field && hl.field === field
       },
     }
-  }, [isGuideCorrectionDisplayActive, activeJumpClientId, guideRowHighlights])
+  }, [showGuideCorrectionChrome, activeJumpClientId, guideRowHighlights])
+
+  const applyCorrectionJump = useCallback(
+    (target: Pick<CorrectionTarget, 'section' | 'kind' | 'rowId' | 'clientId' | 'rowLabel'>) => {
+      setOpenSectionId(target.section)
+
+      let matchedClientId: string | null = target.clientId
+
+      if (target.kind === 'row' || target.kind === 'amount_mismatch') {
+        const rowsBySection =
+          isExistingSettlementEdit && initialFull
+            ? correctionRowCollectionsFromFull(initialFull)
+            : correctionRowCollectionsFromStore()
+        const rows = rowsBySection[target.section] ?? []
+        const matchTarget: CorrectionTarget = {
+          section: target.section,
+          kind: target.kind,
+          rowId: target.rowId,
+          clientId: target.clientId,
+          rowLabel: target.rowLabel,
+          field: null,
+          reason: '',
+          proposed: null,
+        }
+        const matched = rows.find((row) => correctionTargetMatchesRow(matchTarget, row))
+        matchedClientId = matched?.clientId ?? target.clientId
+      }
+
+      setActiveJumpClientId(matchedClientId)
+      correctionJumpPending.current = {
+        sectionId: target.section,
+        clientId: matchedClientId,
+      }
+      setCorrectionJumpIndex((i) => i + 1)
+    },
+    [isExistingSettlementEdit, initialFull],
+  )
 
   const handleJumpToCorrectionTarget = useCallback(() => {
     const jumpTargets =
@@ -364,29 +419,33 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
     if (jumpTargets.length === 0) return
 
     const target = jumpTargets[correctionJumpIndex % jumpTargets.length]
-    const nextIndex = correctionJumpIndex + 1
-    setCorrectionJumpIndex(nextIndex)
+    applyCorrectionJump(target)
+  }, [guideCorrection, correctionJumpIndex, applyCorrectionJump])
 
-    setOpenSectionId(target.section)
+  useEffect(() => {
+    if (guideCorrectionShellActive) {
+      setCorrectionHighlightReady(true)
+    }
+  }, [guideCorrectionShellActive])
 
-    let matchedClientId: string | null = target.clientId
+  useEffect(() => {
+    if (!guideCorrectionShellActive || !initialFull?.id) return
 
-    if (target.kind === 'row' || target.kind === 'amount_mismatch') {
-      const rowsBySection =
-        isExistingSettlementEdit && initialFull
-          ? correctionRowCollectionsFromFull(initialFull)
-          : correctionRowCollectionsFromStore()
-      const rows = rowsBySection[target.section] ?? []
-      const matched = rows.find((row) => correctionTargetMatchesRow(target, row))
-      matchedClientId = matched?.clientId ?? target.clientId
+    const onJump = (event: Event) => {
+      const detail = (event as CustomEvent<GuideCorrectionJumpDetail>).detail
+      if (!detail || detail.settlementId !== initialFull.id) return
+      applyCorrectionJump(detail)
     }
 
-    setActiveJumpClientId(matchedClientId)
-    correctionJumpPending.current = {
-      sectionId: target.section,
-      clientId: matchedClientId,
+    window.addEventListener(GUIDE_CORRECTION_JUMP_EVENT, onJump)
+
+    const hashSection = parseCorrectionSectionFromHash(window.location.hash)
+    if (hashSection) {
+      setOpenSectionId(hashSection)
     }
-  }, [guideCorrection, correctionJumpIndex, isExistingSettlementEdit, initialFull])
+
+    return () => window.removeEventListener(GUIDE_CORRECTION_JUMP_EVENT, onJump)
+  }, [guideCorrectionShellActive, initialFull?.id, applyCorrectionJump])
 
   useEffect(() => {
     const pending = correctionJumpPending.current
@@ -412,13 +471,14 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
   }, [openSectionId, correctionJumpIndex, activeJumpClientId])
 
   useEffect(() => {
+    if (guideCorrectionShellActive) return
     if (correctionAutoExpanded.current) return
     if (!isGuideCorrectionDisplayActive) return
     const first = guideCorrection.targets[0]?.section ?? guideCorrection.sections[0]
     if (!first) return
     correctionAutoExpanded.current = true
     setOpenSectionId(first)
-  }, [isGuideCorrectionDisplayActive, guideCorrection.targets, guideCorrection.sections])
+  }, [isGuideCorrectionDisplayActive, guideCorrectionShellActive, guideCorrection.targets, guideCorrection.sections])
 
   const hydratedFromFullId = useRef<string | null>(null)
 
@@ -982,7 +1042,7 @@ export function SettlementForm({ tours, guideName, mode, initialFull, initialTou
       </div>
 
       <div className="flex-1 px-4 py-4">
-        {!isPreview && guideCorrection.reason && isGuideCorrectionDisplayActive && (
+        {!isPreview && !guideCorrectionShellActive && guideCorrection.reason && isGuideCorrectionDisplayActive && (
           <GuideCorrectionBanner
             correction={guideCorrection}
             onJumpToTarget={handleJumpToCorrectionTarget}

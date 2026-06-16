@@ -276,6 +276,38 @@ export function mergeGuideShoppingRowsForSave(
   })
 }
 
+export function hasMeaningfulGuideOptionRow(
+  row: Pick<
+    DraftOptionRow,
+    'option_name' | 'pax' | 'unit_price_usd' | 'expense_usd' | 'expense_vnd'
+  >,
+): boolean {
+  return (
+    row.option_name.trim().length > 0 ||
+    row.pax > 0 ||
+    row.unit_price_usd > 0 ||
+    row.expense_usd > 0 ||
+    row.expense_vnd > 0
+  )
+}
+
+/**
+ * Stale retry payloads can carry option rows stripped of ids with blank fields
+ * (sessionStorage/orphan-id cleanup). Treat as non-authoritative — keep DB rows.
+ */
+export function isSuspiciousEmptyGuideOptionsRetry(
+  incomingGuide: DraftOptionRow[],
+  existingGuide: DraftOptionRow[],
+): boolean {
+  if (existingGuide.length === 0 || incomingGuide.length === 0) return false
+  const hasIncomingId = incomingGuide.some((r) => !!r.id)
+  const hasIncomingNew = incomingGuide.some(
+    (r) => !r.id && hasMeaningfulGuideOptionRow(r),
+  )
+  const hasIncomingMeaningful = incomingGuide.some((r) => hasMeaningfulGuideOptionRow(r))
+  return !hasIncomingId && !hasIncomingNew && !hasIncomingMeaningful
+}
+
 /** Guide saves must not add or alter extra-vehicle rows. */
 export function mergeGuideOptionRowsForSave(
   incoming: DraftOptionRow[],
@@ -288,9 +320,24 @@ export function mergeGuideOptionRowsForSave(
   const existingExtra = (existing ?? []).filter(
     (r) => r.is_extra_vehicle === true && !r.deleted,
   )
-  // Empty client payload must not wipe DB guide options (e.g. stale store after sync).
-  const guideOptions = incomingGuide.length > 0 ? incomingGuide : existingGuide
-  return [...guideOptions, ...existingExtra]
+
+  if (incomingGuide.length === 0) {
+    return [...existingGuide, ...existingExtra]
+  }
+
+  const incomingWithIds = incomingGuide.filter((r) => r.id)
+  const incomingNew = incomingGuide.filter((r) => !r.id && hasMeaningfulGuideOptionRow(r))
+
+  // Stripped/stale client rows (no ids) must not replace DB guide options after failed save.
+  if (existingGuide.length > 0 && incomingWithIds.length === 0) {
+    return [...existingGuide, ...existingExtra]
+  }
+
+  if (isSuspiciousEmptyGuideOptionsRetry(incomingGuide, existingGuide)) {
+    return [...existingGuide, ...existingExtra]
+  }
+
+  return [...incomingGuide, ...existingExtra]
 }
 
 /** Header fields included in confirm-workflow diff (admin post-submit edits). */

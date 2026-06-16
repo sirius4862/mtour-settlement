@@ -6,6 +6,7 @@ import {
   GUIDE_LINE_ITEM_TABLES,
 } from './guide-line-item-persist'
 import {
+  buildGuideOptionDeleteIds,
   buildLineItemDeleteIds,
   existingLineItemRowsById,
 } from './line-item-persist-prep'
@@ -151,10 +152,7 @@ export function predictLineItemPersistAggregate(
     {
       table: 'option_items',
       rows: buildOptionDbRows(payload.options, settlementId, rate),
-      deleteIds: buildLineItemDeleteIds(
-        payload.options,
-        existing?.options.map((r) => r.id) ?? [],
-      ),
+      deleteIds: buildGuideOptionDeleteIds(payload.options, existing?.options ?? []),
       existingById: existingLineItemRowsById(existing?.options),
     },
   ]

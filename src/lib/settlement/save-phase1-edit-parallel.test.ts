@@ -64,10 +64,14 @@ describe('save phase 1 edit-path parallelization (source-level)', () => {
     expect(createBlock.indexOf('Promise.all([')).toBe(-1)
   })
 
-  it('edit save still sanitizes and strips orphan ids before line-item persist', () => {
-    expect(body).toContain('sanitizeGuideDraftPayload(payload, existingForItemPersist)')
-    expect(body).toContain('stripOrphanLineItemIdsFromPayload(')
+  it('edit save still strips orphan ids before sanitize and line-item persist', () => {
+    expect(body).toContain('stripOrphanLineItemIdsFromPayload(payload, knownLineItemIds)')
+    expect(body).toContain('sanitizeGuideDraftPayload(payloadToSave, existingForItemPersist)')
     expect(body).toContain('collectKnownLineItemIds(existingForItemPersist)')
+    const stripIdx = body.indexOf('stripOrphanLineItemIdsFromPayload(payload, knownLineItemIds)')
+    const sanitizeIdx = body.indexOf('sanitizeGuideDraftPayload(payloadToSave, existingForItemPersist)')
+    expect(stripIdx).toBeGreaterThan(-1)
+    expect(sanitizeIdx).toBeGreaterThan(stripIdx)
   })
 
   it('post-save reload remains and is tagged for diagnostics', () => {

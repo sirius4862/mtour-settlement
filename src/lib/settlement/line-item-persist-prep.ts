@@ -1,4 +1,5 @@
 import type { SettlementFull } from '@/types'
+import type { DraftOptionRow } from './form-types'
 import type { SettlementDraftPayload } from './mappers'
 
 type LineItemPayload = Pick<
@@ -209,5 +210,54 @@ export function buildLineItemDeleteIds(
   for (const id of existingIds) {
     if (!keepIds.has(id)) ids.push(id)
   }
+  return [...new Set(ids)]
+}
+
+/**
+ * Guide draft saves: do not orphan-delete normal option rows when the payload lacks
+ * explicit guide-option intent (empty/stale retry after a failed save).
+ * Extra-vehicle rows remain admin-owned and follow standard orphan rules.
+ */
+export function buildGuideOptionDeleteIds(
+  draftRows: DraftOptionRow[],
+  existingOptions: Array<{ id?: string; is_extra_vehicle?: boolean | null }>,
+): string[] {
+  const existingIds = existingOptions
+    .map((row) => row.id)
+    .filter((id): id is string => !!id)
+  const guideExistingIds = new Set(
+    existingOptions
+      .filter((row) => row.is_extra_vehicle !== true && row.id)
+      .map((row) => row.id as string),
+  )
+
+  const explicitDeletes = draftRows
+    .filter((row) => row.deleted && row.id)
+    .map((row) => row.id as string)
+  const keepIds = keepLineItemIdsFromPayload(draftRows)
+  const activeGuideDraft = draftRows.filter((row) => row.is_extra_vehicle !== true && !row.deleted)
+  const hasIncomingGuideIds = activeGuideDraft.some((row) => !!row.id)
+  const strippedRetryWithoutGuideIds =
+    guideExistingIds.size > 0 &&
+    activeGuideDraft.length > 0 &&
+    !hasIncomingGuideIds &&
+    !draftRows.some((row) => row.is_extra_vehicle !== true && row.deleted && row.id)
+  const hasExplicitGuideIntent =
+    !strippedRetryWithoutGuideIds &&
+    (activeGuideDraft.length > 0 ||
+      draftRows.some((row) => row.is_extra_vehicle !== true && row.deleted && row.id))
+
+  if (!hasExplicitGuideIntent) {
+    return [...new Set(explicitDeletes)]
+  }
+
+  const ids: string[] = [...explicitDeletes]
+
+  for (const id of existingIds) {
+    if (explicitDeletes.includes(id)) continue
+    if (guideExistingIds.has(id) && !hasExplicitGuideIntent) continue
+    if (!keepIds.has(id)) ids.push(id)
+  }
+
   return [...new Set(ids)]
 }

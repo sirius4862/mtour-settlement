@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SettlementFull } from '@/types'
 import { stateFromMock, toDraftPayload } from './mappers'
 import {
+  buildGuideOptionDeleteIds,
   buildLineItemDeleteIds,
   collectKnownLineItemIds,
   stripAllLineItemIdsForCreate,
@@ -56,5 +57,28 @@ describe('line-item persist prep', () => {
     )
     expect(deleteIds).toEqual(expect.arrayContaining(['meal-del', 'meal-orphan']))
     expect(deleteIds).not.toContain('meal-keep')
+  })
+
+  it('buildGuideOptionDeleteIds preserves guide rows on empty stale retry payload', () => {
+    const deleteIds = buildGuideOptionDeleteIds([], [
+      { id: 'opt-1', is_extra_vehicle: false },
+      { id: 'opt-extra', is_extra_vehicle: true },
+    ])
+    expect(deleteIds).toEqual([])
+  })
+
+  it('buildGuideOptionDeleteIds preserves extra-vehicle rows on empty guide retry payload', () => {
+    const deleteIds = buildGuideOptionDeleteIds([], [
+      { id: 'opt-extra', is_extra_vehicle: true },
+    ])
+    expect(deleteIds).toEqual([])
+  })
+
+  it('buildGuideOptionDeleteIds deletes guide rows only with explicit intent', () => {
+    const deleteIds = buildGuideOptionDeleteIds(
+      [{ id: 'opt-1', deleted: true, option_date: null, option_name: '삭제', unit_price_usd: 0, pax: 0, expense_usd: 0, expense_vnd: 0, clientId: 'c1' }],
+      [{ id: 'opt-1', is_extra_vehicle: false }],
+    )
+    expect(deleteIds).toEqual(['opt-1'])
   })
 })

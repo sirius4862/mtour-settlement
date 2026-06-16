@@ -8,6 +8,7 @@ import {
   type LineItemPersistStep,
 } from '@/lib/settlement/guide-line-item-persist'
 import {
+  buildGuideOptionDeleteIds,
   buildLineItemDeleteIds,
   collectKnownLineItemIds,
   diagnoseDraftLineItemDuplicates,
@@ -1473,10 +1474,7 @@ async function persistSettlementLineItems(
     {
       table: 'option_items',
       rows: buildOptionDbRows(payload.options, settlementId, rate),
-      deleteIds: buildLineItemDeleteIds(
-        payload.options,
-        existing?.options.map((r) => r.id) ?? [],
-      ),
+      deleteIds: buildGuideOptionDeleteIds(payload.options, existing?.options ?? []),
       existingById: existingLineItemRowsById(existing?.options),
     },
   ]
@@ -1678,11 +1676,9 @@ export async function saveSettlementDraft(
     if (captureDebug) preLoadTiming = preLoadLog
 
     existingForItemPersist = assembleSettlementFull(coreLoad.settlement, lineRows)
-    payloadToSave = sanitizeGuideDraftPayload(payload, existingForItemPersist)
-    payloadToSave = stripOrphanLineItemIdsFromPayload(
-      payloadToSave,
-      collectKnownLineItemIds(existingForItemPersist),
-    )
+    const knownLineItemIds = collectKnownLineItemIds(existingForItemPersist)
+    payloadToSave = stripOrphanLineItemIdsFromPayload(payload, knownLineItemIds)
+    payloadToSave = sanitizeGuideDraftPayload(payloadToSave, existingForItemPersist)
   } else {
     payloadToSave = stripAllLineItemIdsForCreate(sanitizeGuideDraftPayload(payload, null))
   }

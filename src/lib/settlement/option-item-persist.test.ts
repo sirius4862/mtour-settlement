@@ -13,6 +13,7 @@ import {
   type SettlementDraftPayload,
 } from './mappers'
 import {
+  buildGuideOptionDeleteIds,
   stripAllLineItemIdsForCreate,
   stripOrphanLineItemIdsFromPayload,
   collectKnownLineItemIds,
@@ -549,5 +550,109 @@ describe('option item persist — duplicate-create guard unaffected', () => {
 
     expect(payload.settlementId).toBe(SETTLEMENT_ID)
     expect(payload.options).toHaveLength(1)
+  })
+})
+
+describe('option item persist — P0 failed-save retry regression', () => {
+  it('omitted options preserves existing guide rows via sanitize merge', () => {
+    const existing = existingSettlementWithOptions()
+    const sanitized = sanitizeGuideDraftPayload(
+      { ...toDraftPayload(draftStateWithOptions(SETTLEMENT_ID)), options: undefined as unknown as [] },
+      existing,
+    )
+    expect(sanitized.options.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+  })
+
+  it('options: [] retry preserves existing guide rows after sanitize', () => {
+    const existing = existingSettlementWithOptions()
+    const sanitized = sanitizeGuideDraftPayload(
+      { ...toDraftPayload(draftStateWithOptions(SETTLEMENT_ID)), options: [] },
+      existing,
+    )
+    expect(sanitized.options[0]?.id).toBe('opt-db-1')
+    expect(buildGuideOptionDeleteIds(sanitized.options, existing.options)).toEqual([])
+  })
+
+  it('is_extra_vehicle=false survives save/reload round-trip', () => {
+    const hydrated = stateFromSettlementFull(existingSettlementWithOptions(), '가이드')
+    expect(hydrated.options[0]?.is_extra_vehicle).toBe(false)
+    const rows = buildOptionDbRows(
+      sanitizeGuideDraftPayload(toDraftPayload(hydrated), existingSettlementWithOptions()).options,
+      SETTLEMENT_ID,
+      26000,
+    )
+    expect(rows[0]?.is_extra_vehicle).toBe(false)
+  })
+
+  it('is_extra_vehicle=true extra rows survive guide save merge', () => {
+    const existing = existingSettlementWithOptions()
+    existing.options.push({
+      id: 'opt-extra-1',
+      settlement_id: SETTLEMENT_ID,
+      option_date: null,
+      option_name: '차량비(추가)',
+      unit_price_usd: 0,
+      pax: 0,
+      total_sale_usd: 0,
+      expense_usd: 35,
+      expense_vnd: 780000,
+      com_usd: 0,
+      is_extra_vehicle: true,
+      sort_order: 1,
+      created_at: '',
+      updated_at: '',
+    })
+    const sanitized = sanitizeGuideDraftPayload(
+      { ...toDraftPayload(draftStateWithOptions(SETTLEMENT_ID)), options: [] },
+      existing,
+    )
+    expect(sanitized.options.some((r) => r.is_extra_vehicle === true)).toBe(true)
+  })
+
+  it('failed-save retry with stripped orphan ids does not plan guide option deletes', () => {
+    const existing = existingSettlementWithOptions()
+    const payload = sanitizeGuideDraftPayload(
+      stripOrphanLineItemIdsFromPayload(
+        {
+          ...toDraftPayload(draftStateWithOptions(SETTLEMENT_ID)),
+          options: [
+            {
+              ...guideOptionRow(),
+              id: 'stale-not-in-db',
+              clientId: 'stale-client',
+            },
+          ],
+        },
+        collectKnownLineItemIds(existing),
+      ),
+      existing,
+    )
+    expect(buildGuideOptionDeleteIds(payload.options, existing.options)).toEqual([])
+    expect(payload.options.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+    expect(payload.options[0]?.id).toBe('opt-db-1')
+  })
+
+  it('new guide option row persists after save payload round-trip', () => {
+    const state = draftStateWithOptions(SETTLEMENT_ID)
+    state.options = [
+      { ...guideOptionRow(), id: 'opt-db-1' },
+      guideOptionRow({ clientId: 'new-opt', option_name: '신규 옵션' }),
+    ]
+    const sanitized = sanitizeGuideDraftPayload(toDraftPayload(state), existingSettlementWithOptions())
+    const rows = buildOptionDbRows(sanitized.options, SETTLEMENT_ID, sanitized.exchange_rate)
+    expect(rows.filter((r) => r.is_extra_vehicle === false)).toHaveLength(2)
+    expect(rows.some((r) => r.option_name === '신규 옵션')).toBe(true)
+  })
+
+  it('explicit soft-delete removes guide option rows when marked deleted', () => {
+    const existing = existingSettlementWithOptions()
+    const sanitized = sanitizeGuideDraftPayload(
+      {
+        ...toDraftPayload(draftStateWithOptions(SETTLEMENT_ID)),
+        options: [{ ...guideOptionRow(), id: 'opt-db-1', deleted: true }],
+      },
+      existing,
+    )
+    expect(buildGuideOptionDeleteIds(sanitized.options, existing.options)).toEqual(['opt-db-1'])
   })
 })

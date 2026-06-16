@@ -311,4 +311,26 @@ describe('mergeGuideOptionRowsForSave', () => {
     expect(merged.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
     expect(merged[0]?.deleted).toBe(true)
   })
+
+  it('falls back to existing guide options on suspicious stripped retry rows', () => {
+    const existing = [
+      {
+        ...emptyOptionRow(false),
+        id: 'opt-db-1',
+        clientId: 'opt-db-1',
+        option_name: '보트투어',
+        unit_price_usd: 25,
+        pax: 8,
+      },
+    ]
+
+    const merged = mergeGuideOptionRowsForSave(
+      [{ ...emptyOptionRow(false), clientId: 'stale-client' }],
+      existing,
+    )
+
+    expect(merged.filter((r) => r.is_extra_vehicle !== true)).toHaveLength(1)
+    expect(merged[0]?.id).toBe('opt-db-1')
+    expect(merged[0]?.option_name).toBe('보트투어')
+  })
 })

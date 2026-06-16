@@ -12,6 +12,15 @@ export type GuideCorrectionJumpDetail = {
   kind: CorrectionKind
 }
 
+/** Serializable jump target passed from server shell to client island. */
+export type GuideCorrectionJumpTargetPayload = {
+  section: CorrectionSectionId
+  kind: CorrectionKind
+  rowId: string | null
+  clientId: string | null
+  rowLabel: string | null
+}
+
 export function correctionHashForSection(section: CorrectionSectionId): string {
   return `correction-${section}`
 }

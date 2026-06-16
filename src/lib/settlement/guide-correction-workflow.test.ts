@@ -66,6 +66,10 @@ const GUIDE_CORRECTION_SHELL = readFileSync(
   join(ROOT, 'src/components/settlement/GuideCorrectionStableShell.tsx'),
   'utf8',
 )
+const GUIDE_CORRECTION_JUMP_BUTTON = readFileSync(
+  join(ROOT, 'src/components/settlement/GuideCorrectionJumpButton.tsx'),
+  'utf8',
+)
 const GUIDE_EDIT_FORM = readFileSync(
   join(ROOT, 'src/components/settlement/GuideEditForm.tsx'),
   'utf8',
@@ -344,13 +348,33 @@ describe('guide correction stable shell (SSR hydration)', () => {
     expect(GUIDE_EDIT_PAGE).toContain('status={full.status}')
   })
 
-  it('stable shell uses server props only — no Zustand', () => {
+  it('stable shell is a Server Component — no use client', () => {
+    expect(GUIDE_CORRECTION_SHELL).not.toMatch(/^['"]use client['"]/m)
+    expect(GUIDE_CORRECTION_SHELL).not.toContain("'use client'")
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('"use client"')
+  })
+
+  it('stable shell uses server props only — no Zustand or client hooks', () => {
     expect(GUIDE_CORRECTION_SHELL).toContain('parseCorrectionNote(adminNote)')
     expect(GUIDE_CORRECTION_SHELL).not.toContain('useSettlementFormStore')
     expect(GUIDE_CORRECTION_SHELL).not.toContain('settlementStatus')
     expect(GUIDE_CORRECTION_SHELL).not.toContain('sessionStorage')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('useEffect')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('useState')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('useMemo')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('useCallback')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('window')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('document')
     expect(GUIDE_CORRECTION_SHELL).toContain("status === 'edit_requested'")
-    expect(GUIDE_CORRECTION_SHELL).toContain('GuideCorrectionBanner')
+  })
+
+  it('stable shell renders server HTML banner with human-readable correction text', () => {
+    expect(GUIDE_CORRECTION_SHELL).toContain('관리자 수정 요청')
+    expect(GUIDE_CORRECTION_SHELL).toContain('data-guide-correction-banner="true"')
+    expect(GUIDE_CORRECTION_SHELL).toContain('reasonSnippet')
+    expect(GUIDE_CORRECTION_SHELL).toContain('수정 요청')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('GuideCorrectionBanner')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('@@correction@@')
   })
 
   it('stable shell renders for edit_requested + v2 admin_note', () => {
@@ -370,22 +394,48 @@ describe('guide correction stable shell (SSR hydration)', () => {
     )
     expect(parsed.reason).toContain('보트투어')
     expect(GUIDE_CORRECTION_SHELL).toContain('!correction.reason.trim()')
-    expect(GUIDE_CORRECTION_SHELL).not.toContain('@@correction@@')
+    expect(GUIDE_CORRECTION_SHELL).toContain('getCorrectionSectionLabel')
   })
 
-  it('stable shell supports v1 and legacy plain admin_note', () => {
+  it('stable shell supports v1 admin_note', () => {
     const v1 = parseCorrectionNote(encodeCorrectionNote(['options'], '옵션 확인'))
     expect(v1.reason).toBe('옵션 확인')
+    expect(v1.sections).toContain('options')
+    expect(GUIDE_CORRECTION_SHELL).toContain('jumpTargetsFromCorrection')
+  })
+
+  it('stable shell supports legacy plain admin_note', () => {
     const legacy = parseCorrectionNote('옵션 금액 확인 필요')
     expect(legacy.reason).toBe('옵션 금액 확인 필요')
     expect(GUIDE_CORRECTION_SHELL).toContain("status !== 'edit_requested'")
   })
 
-  it('stable shell dispatches jump custom event and sets hash', () => {
-    expect(GUIDE_CORRECTION_SHELL).toContain('GUIDE_CORRECTION_JUMP_EVENT')
-    expect(GUIDE_CORRECTION_SHELL).toContain('CustomEvent')
-    expect(GUIDE_CORRECTION_SHELL).toContain('correctionHashForSection')
+  it('stable shell renders nothing for draft/submitted status', () => {
+    expect(GUIDE_CORRECTION_SHELL).toContain("status !== 'edit_requested'")
+    expect(GUIDE_CORRECTION_SHELL).toContain('return null')
+    const draft = parseCorrectionNote(null)
+    expect(draft.reason).toBe('')
+  })
+
+  it('jump action is isolated in tiny client island with server anchor fallback', () => {
+    expect(GUIDE_CORRECTION_JUMP_BUTTON).toContain("'use client'")
+    expect(GUIDE_CORRECTION_JUMP_BUTTON).toContain('GUIDE_CORRECTION_JUMP_EVENT')
+    expect(GUIDE_CORRECTION_JUMP_BUTTON).toContain('CustomEvent')
+    expect(GUIDE_CORRECTION_JUMP_BUTTON).toContain('correctionHashForSection')
+    expect(GUIDE_CORRECTION_JUMP_BUTTON).toContain('return null')
+    expect(GUIDE_CORRECTION_SHELL).toContain('GuideCorrectionJumpButton')
+    expect(GUIDE_CORRECTION_SHELL).toContain('data-guide-correction-jump="true"')
+    expect(GUIDE_CORRECTION_SHELL).toContain('href={`#${fallbackHash}`}')
+    expect(GUIDE_CORRECTION_SHELL).not.toContain('CustomEvent')
     expect(GUIDE_CORRECTION_JUMP).toContain('mtour:jump-correction-target')
+    expect(GUIDE_CORRECTION_JUMP).toContain('GuideCorrectionJumpTargetPayload')
+  })
+
+  it('server banner remains visible without JS via anchor fallback', () => {
+    expect(GUIDE_CORRECTION_SHELL).toContain('문제 항목으로 이동')
+    expect(GUIDE_CORRECTION_SHELL).toContain('id={JUMP_ANCHOR_ID}')
+    expect(GUIDE_CORRECTION_SHELL).toContain('correctionHashForSection')
+    expect(GUIDE_CORRECTION_JUMP_BUTTON).toContain('getElementById(anchorId)')
   })
 
   it('GuideEditForm loads SettlementForm client-only', () => {

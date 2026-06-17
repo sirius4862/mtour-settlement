@@ -128,13 +128,13 @@ describe('getAdminDashboardStats — period-independent 미제출 backlog', () =
   const body = actions.slice(start, end)
 
   it('replaces the draft card count with the unsubmitted backlog total', () => {
-    expect(body).toContain('getAdminUnsubmittedSettlements(')
-    expect(body).toContain("row.status === 'draft' ? { ...row, count: unsubmitted.total } : row")
+    expect(body).toContain('getAdminUnsubmittedCount(')
+    expect(body).toContain('applyDashboardDraftCountOverride(stats, unsubmittedTotal)')
   })
 
   it('does not pass dashboard yearMonth/date filters to the unsubmitted backlog count', () => {
-    const callStart = body.indexOf('const unsubmitted = await getAdminUnsubmittedSettlements')
-    const callEnd = body.indexOf('return stats.map', callStart)
+    const callStart = body.indexOf('getAdminUnsubmittedCount(supabase, { regionId: filters?.regionId }')
+    const callEnd = body.indexOf('])', callStart)
     const callBlock = body.slice(callStart, callEnd)
 
     expect(callBlock).toContain('{ regionId: filters?.regionId }')
@@ -145,8 +145,24 @@ describe('getAdminDashboardStats — period-independent 미제출 backlog', () =
 
   it('keeps region scope shared with dashboard stats and backlog count', () => {
     expect(body).toContain('const regionId = await resolveSettlementRegionFilter(filters)')
-    expect(body).toContain('if (regionId) q = q.eq(\'branch_id\', regionId)')
+    expect(body).toContain('loadDashboardStatusBucketCounts(supabase, {')
     expect(body).toContain('regionId,')
+    expect(body).toContain('getAdminUnsubmittedCount(supabase, { regionId: filters?.regionId }, regionId)')
+  })
+
+  it('uses count-only status buckets instead of full status scan', () => {
+    expect(body).toContain('loadDashboardStatusBucketCounts')
+    expect(body).not.toContain(".select('status')")
+    expect(body).not.toContain('getAdminUnsubmittedSettlements(')
+
+    const loaderStart = actions.indexOf('async function loadDashboardStatusBucketCounts')
+    const loaderEnd = actions.indexOf('/** 관리자 정산서 목록', loaderStart)
+    const loaderBody = actions.slice(loaderStart, loaderEnd)
+    expect(loaderBody).toContain("select('*', { count: 'exact', head: true })")
+  })
+
+  it('does not call getAdminUnsubmittedSettlements from dashboard stats', () => {
+    expect(body).not.toContain('getAdminUnsubmittedSettlements(')
   })
 })
 

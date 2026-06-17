@@ -143,7 +143,9 @@ import {
   ADMIN_SETTLEMENT_PAGE_SIZE,
   ADMIN_SETTLEMENT_SELECT,
   ACTION_NEEDED_STATUSES,
-  aggregateSettlementStatusCounts,
+  aggregateSettlementStatusCountsFromBuckets,
+  applyDashboardDraftCountOverride,
+  buildDashboardWorkflowStatusBuckets,
   adminSettlementSearchHasMatches,
   buildAdminSettlementSearchOrFilter,
   escapeIlikePattern,
@@ -158,7 +160,10 @@ import {
   type AdminSettlementsPageResult,
 } from '@/lib/admin/settlement-list'
 import {
+  ADMIN_UNSUBMITTED_SETTLEMENT_COUNT_SELECT,
   ADMIN_UNSUBMITTED_TOUR_SELECT,
+  computeAdminUnsubmittedTotalFromRows,
+  countAdminUnsubmittedWithoutSearch,
   isAdminUnsubmittedOnlyStatusFilter,
   mergeAdminUnsubmittedListItems,
   type AdminUnsubmittedTourRow,
@@ -878,6 +883,113 @@ async function getAdminUnsubmittedSettlements(
   return paginateSortedAdminSettlementRows(merged, { page, pageSize })
 }
 
+async function loadAdminUnsubmittedTourRows(
+  supabase: SupabaseClient,
+  filters: AdminSettlementListFilters,
+  regionId: string | undefined,
+): Promise<AdminUnsubmittedTourRow[]> {
+  let tourQuery = supabase
+    .from('tours')
+    .select(ADMIN_UNSUBMITTED_TOUR_SELECT)
+    .not('guide_id', 'is', null)
+    .neq('assignment_status', 'recalled')
+
+  if (regionId) tourQuery = tourQuery.eq('branch_id', regionId)
+
+  const search = filters.search?.trim()
+  if (search) {
+    const scope = await resolveAdminSettlementSearchScope(supabase, search)
+    if (!adminSettlementSearchHasMatches(scope)) {
+      return []
+    }
+    const orFilter = buildAdminSettlementSearchOrFilter(scope, 'tours')
+    if (orFilter) tourQuery = tourQuery.or(orFilter)
+  }
+
+  const { data: tourRows, error: tourError } = await tourQuery
+  if (tourError) {
+    console.error('loadAdminUnsubmittedTourRows:', tourError.message)
+    return []
+  }
+
+  return (tourRows ?? []) as unknown as AdminUnsubmittedTourRow[]
+}
+
+/** Count-only 미제출 backlog — same total semantics as getAdminUnsubmittedSettlements(...).total. */
+export async function getAdminUnsubmittedCount(
+  supabase: SupabaseClient,
+  filters: AdminSettlementListFilters,
+  regionId: string | undefined,
+): Promise<number> {
+  const tours = await loadAdminUnsubmittedTourRows(supabase, filters, regionId)
+  if (tours.length === 0) return 0
+
+  const search = filters.search?.trim()
+  const tourIds = tours.map((t) => t.id)
+
+  if (search) {
+    const { data: settlementRows, error: settlementError } = await supabase
+      .from('settlements')
+      .select(ADMIN_SETTLEMENT_SELECT)
+      .in('tour_id', tourIds)
+
+    if (settlementError) {
+      console.error('getAdminUnsubmittedCount settlements:', settlementError.message)
+      return 0
+    }
+
+    return computeAdminUnsubmittedTotalFromRows(
+      tours,
+      (settlementRows ?? []) as unknown as AdminSettlementListItem[],
+      search,
+    )
+  }
+
+  const { data: settlementRows, error: settlementError } = await supabase
+    .from('settlements')
+    .select(ADMIN_UNSUBMITTED_SETTLEMENT_COUNT_SELECT)
+    .in('tour_id', tourIds)
+
+  if (settlementError) {
+    console.error('getAdminUnsubmittedCount settlements:', settlementError.message)
+    return 0
+  }
+
+  const countRows = (settlementRows ?? []).map((row) => ({
+    status: row.status as string,
+    tour: { id: row.tour_id as string },
+  }))
+
+  return countAdminUnsubmittedWithoutSearch(tours, countRows)
+}
+
+async function loadDashboardStatusBucketCounts(
+  supabase: SupabaseClient,
+  options: { regionId?: string; yearMonth?: string },
+): Promise<{ status: SettlementStatus; count: number }[]> {
+  const buckets = await Promise.all(
+    buildDashboardWorkflowStatusBuckets().map(async (workflowStatus) => {
+      const dbStatuses = expandWorkflowStatusFilter(workflowStatus)
+      let q = supabase.from('settlements').select('*', { count: 'exact', head: true })
+      if (options.regionId) q = q.eq('branch_id', options.regionId)
+      if (options.yearMonth) q = q.eq('year_month', options.yearMonth)
+      q =
+        dbStatuses.length === 1
+          ? q.eq('status', dbStatuses[0])
+          : q.in('status', [...dbStatuses])
+
+      const { count, error } = await q
+      if (error) {
+        console.error('loadDashboardStatusBucketCounts:', error.message)
+        return { status: workflowStatus, count: 0 }
+      }
+      return { status: workflowStatus, count: count ?? 0 }
+    }),
+  )
+
+  return aggregateSettlementStatusCountsFromBuckets(buckets)
+}
+
 /** 관리자 정산서 목록 (페이지네이션 + 검색) */
 export async function getAdminSettlements(
   filters?: AdminSettlementListFilters,
@@ -990,29 +1102,15 @@ export async function getAdminDashboardStats(filters?: AdminSettlementListFilter
   const supabase = await createClient()
   const regionId = await resolveSettlementRegionFilter(filters)
 
-  let q = supabase.from('settlements').select('status')
-  if (regionId) q = q.eq('branch_id', regionId)
-  if (filters?.yearMonth) q = q.eq('year_month', filters.yearMonth)
+  const [stats, unsubmittedTotal] = await Promise.all([
+    loadDashboardStatusBucketCounts(supabase, {
+      regionId,
+      yearMonth: filters?.yearMonth,
+    }),
+    getAdminUnsubmittedCount(supabase, { regionId: filters?.regionId }, regionId),
+  ])
 
-  const { data, error } = await q
-
-  if (error) {
-    console.error('getAdminDashboardStats:', error.message)
-    return aggregateSettlementStatusCounts([])
-  }
-
-  const stats = aggregateSettlementStatusCounts(data ?? [])
-  const unsubmitted = await getAdminUnsubmittedSettlements(
-    supabase,
-    { regionId: filters?.regionId },
-    1,
-    1,
-    regionId,
-  )
-
-  return stats.map((row) =>
-    row.status === 'draft' ? { ...row, count: unsubmitted.total } : row,
-  )
+  return applyDashboardDraftCountOverride(stats, unsubmittedTotal)
 }
 
 // ── 정산서 생성 / 임시저장 ─────────────────────────────────────

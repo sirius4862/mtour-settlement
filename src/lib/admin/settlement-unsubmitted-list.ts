@@ -9,6 +9,8 @@ import type { SettlementStatus } from '@/types'
 /** Synthetic list id prefix — no settlement row exists for these tours. */
 export const ADMIN_UNSUBMITTED_TOUR_ITEM_ID_PREFIX = 'tour-unsubmitted:'
 
+export const ADMIN_UNSUBMITTED_SETTLEMENT_COUNT_SELECT = 'status, tour_id'
+
 export const ADMIN_UNSUBMITTED_TOUR_SELECT = `
   id, pattern, tour_code, start_date, pax_count, branch_id, guide_id, assignment_status, created_at,
   guide:profiles!guide_id(id, full_name, email, korean_name, vietnamese_name, branch_id),
@@ -106,4 +108,62 @@ export function mergeAdminUnsubmittedListItems(
     : items
 
   return sortAdminSettlementsByTourDate(filtered)
+}
+
+/** Minimal settlement shape for unsubmitted count (no search). */
+export type AdminUnsubmittedCountSettlementRow = {
+  status: string
+  tour?: { id: string } | null
+}
+
+/**
+ * Count 미제출 backlog rows using the same rules as mergeAdminUnsubmittedListItems.
+ * When search is set, delegates to merge for exact parity with list/search behavior.
+ */
+export function computeAdminUnsubmittedTotal(
+  tours: AdminUnsubmittedTourRow[],
+  settlements: AdminSettlementListItem[],
+  search?: string,
+): number {
+  return mergeAdminUnsubmittedListItems(tours, settlements, search).length
+}
+
+/**
+ * Fast count path when search is absent — mirrors merge dedup without sorting.
+ */
+export function countAdminUnsubmittedWithoutSearch(
+  tours: AdminUnsubmittedTourRow[],
+  settlements: AdminUnsubmittedCountSettlementRow[],
+): number {
+  const settlementByTourId = new Map<string, AdminUnsubmittedCountSettlementRow>()
+  for (const row of settlements) {
+    const tourId = row.tour?.id
+    if (tourId) settlementByTourId.set(tourId, row)
+  }
+
+  let count = 0
+  for (const tour of tours) {
+    const linked = settlementByTourId.get(tour.id)
+    if (linked) {
+      if (linked.status === 'draft') count += 1
+      continue
+    }
+    count += 1
+  }
+  return count
+}
+
+export function computeAdminUnsubmittedTotalFromRows(
+  tours: AdminUnsubmittedTourRow[],
+  settlements: AdminUnsubmittedCountSettlementRow[],
+  search?: string,
+): number {
+  if (search?.trim()) {
+    return computeAdminUnsubmittedTotal(
+      tours,
+      settlements as unknown as AdminSettlementListItem[],
+      search,
+    )
+  }
+  return countAdminUnsubmittedWithoutSearch(tours, settlements)
 }

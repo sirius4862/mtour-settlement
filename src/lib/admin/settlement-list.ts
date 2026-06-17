@@ -191,6 +191,41 @@ export function aggregateSettlementStatusCounts(
   }))
 }
 
+/** Per-workflow bucket counts — parity with aggregateSettlementStatusCounts for known statuses. */
+export function countSettlementStatusesByWorkflowBucket(
+  bucketCounts: Partial<Record<SettlementStatus, number>>,
+  statuses: readonly SettlementStatus[] = DASHBOARD_STATUS_ORDER,
+): { status: SettlementStatus; count: number }[] {
+  return statuses.map((status) => ({
+    status,
+    count: bucketCounts[status] ?? 0,
+  }))
+}
+
+export function aggregateSettlementStatusCountsFromBuckets(
+  buckets: { status: SettlementStatus; count: number }[],
+): { status: SettlementStatus; count: number }[] {
+  const byStatus = new Map(buckets.map((b) => [b.status, b.count]))
+  return DASHBOARD_STATUS_ORDER.map((status) => ({
+    status,
+    count: byStatus.get(status) ?? 0,
+  }))
+}
+
+export function buildDashboardWorkflowStatusBuckets(): SettlementStatus[] {
+  return [...DASHBOARD_STATUS_ORDER]
+}
+
+/** Replace draft card count with 미제출 backlog total (dashboard stats). */
+export function applyDashboardDraftCountOverride(
+  stats: { status: SettlementStatus; count: number }[],
+  unsubmittedTotal: number,
+): { status: SettlementStatus; count: number }[] {
+  return stats.map((row) =>
+    row.status === 'draft' ? { ...row, count: unsubmittedTotal } : row,
+  )
+}
+
 /** Map legacy DB statuses into the five-status dashboard model. */
 export function normalizeStatusForDashboard(status: string): SettlementStatus {
   switch (status) {

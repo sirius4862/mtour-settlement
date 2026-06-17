@@ -5,15 +5,18 @@ import {
   buildPageLoadRunWarnings,
   classifyRouteFilter,
   isGuideEditMeasurementEnabled,
+  normalizeRoutePathForComparison,
   PAGE_LOAD_ROUTE_DEFS,
   PAGE_LOAD_WARNING_THRESHOLDS,
   parseRouteFilter,
   percentile,
+  pickSlowestNetworkRequest,
   redactSecrets,
   redactUnknown,
   resolveGroupsInScope,
   resolveMeasurementCredentials,
   routeMatchesFilter,
+  summarizeNetworkTelemetry,
   summarizeNumeric,
 } from '../../../scripts/lib/page-load-performance-summary.mjs'
 
@@ -105,6 +108,34 @@ describe('page-load route list generation', () => {
     })
     expect(plan.rolesToLogin).toEqual(['guide'])
     expect(resolveGroupsInScope('guide-vehicle-reports')).toEqual(new Set(['guide']))
+  })
+
+  it('includes admin submitted list route in catalog', () => {
+    const def = PAGE_LOAD_ROUTE_DEFS.find((d) => d.id === 'admin-settlements-submitted')
+    expect(def).toBeDefined()
+    expect(def?.path).toBe('/admin/settlements?status=submitted')
+
+    const routes = buildPageLoadRouteList({ routeFilter: 'admin-settlements-submitted' })
+    expect(routes.map((r) => r.id)).toEqual(['admin-settlements-submitted'])
+  })
+
+  it('does not flag query-string path mismatch as unexpected redirect', () => {
+    const { warnings, flags } = buildPageLoadRunWarnings({
+      routeId: 'admin-settlements-submitted',
+      path: '/admin/settlements?status=submitted',
+      finalPath: '/admin/settlements?status=submitted',
+      pageReadyMs: 1000,
+      httpStatus: 200,
+    })
+    expect(flags.unexpectedRedirect).toBe(false)
+    expect(warnings).not.toContain(expect.stringContaining('unexpected redirect'))
+  })
+
+  it('normalizes route paths with query params for comparison', () => {
+    expect(
+      normalizeRoutePathForComparison('/admin/settlements?status=submitted'),
+    ).toBe('/admin/settlements?status=submitted')
+    expect(normalizeRoutePathForComparison('/admin/settlements')).toBe('/admin/settlements')
   })
 
   it('classifies mixed route id and group tokens', () => {
@@ -223,15 +254,42 @@ describe('page-load credential requirements by route filter', () => {
 })
 
 describe('page-load summary statistics', () => {
-  it('computes avg/min/max/p50', () => {
+  it('computes avg/min/max/p50/p90', () => {
     expect(summarizeNumeric([1000, 2000, 3000])).toEqual({
       count: 3,
       avg: 2000,
       min: 1000,
       max: 3000,
       p50: 2000,
+      p90: 2800,
     })
     expect(percentile([10, 20, 30, 40], 50)).toBe(25)
+  })
+})
+
+describe('page-load network telemetry summary', () => {
+  it('picks slowest request and summarizes counts', () => {
+    const slowest = pickSlowestNetworkRequest([
+      { url: 'https://example.test/a', durationMs: 120, status: 200, resourceType: 'document' },
+      { url: 'https://example.test/b', durationMs: 450, status: 200, resourceType: 'fetch' },
+    ])
+    expect(slowest?.durationMs).toBe(450)
+    expect(slowest?.resourceType).toBe('fetch')
+
+    const summary = summarizeNetworkTelemetry([
+      { requestCount: 10, slowestRequest: slowest },
+      {
+        requestCount: 14,
+        slowestRequest: {
+          url: 'https://example.test/c',
+          durationMs: 900,
+          status: 200,
+          resourceType: 'xhr',
+        },
+      },
+    ])
+    expect(summary.requestCount.p50).toBe(12)
+    expect(summary.slowestRequestOverall?.durationMs).toBe(900)
   })
 })
 
@@ -292,6 +350,13 @@ describe('page-load report output shape', () => {
           networkIdleMs: 4100,
           httpStatus: 200,
           consoleErrors: [],
+          requestCount: 12,
+          slowestRequest: {
+            url: 'https://example.test/_next/static/chunks/main.js',
+            durationMs: 400,
+            status: 200,
+            resourceType: 'script',
+          },
         },
         {
           run: 2,
@@ -334,6 +399,7 @@ describe('page-load report output shape', () => {
     expect(report.meta.baseUrl).toBe('https://example.test')
     expect(report.routes).toHaveLength(2)
     expect(report.routes[0].summary.pageReadyMs.p50).toBeDefined()
+    expect(report.routes[0].summary.network?.requestCount.p50).toBe(12)
     expect(report.slowestRoutes[0].routeId).toBe('guide-dashboard')
     expect(report.warningFlags.pageReadyOver5000).toBe(true)
     expect(report.warningFlags.consoleError).toBe(true)

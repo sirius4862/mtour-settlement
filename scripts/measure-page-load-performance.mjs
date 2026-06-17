@@ -11,6 +11,7 @@ import {
   buildPageLoadRouteList,
   PAGE_LOAD_ROLE_ENV,
   PAGE_LOAD_ROUTE_DEFS,
+  pickSlowestNetworkRequest,
   redactSecrets,
   resolveGroupsInScope,
   resolveMeasurementCredentials,
@@ -23,6 +24,22 @@ function loadEnvLocal() {
     const m = line.match(/^([^#=]+)=(.*)$/)
     if (m && !process.env[m[1].trim()]) {
       process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, '')
+    }
+  }
+}
+
+function mapWorkflowCredentialsToPerf() {
+  const pairs = [
+    ['PERF_GUIDE_EMAIL', 'WORKFLOW_TEST_GUIDE_EMAIL'],
+    ['PERF_GUIDE_PASSWORD', 'WORKFLOW_TEST_GUIDE_PASSWORD'],
+    ['PERF_ADMIN_EMAIL', 'WORKFLOW_TEST_ADMIN_EMAIL'],
+    ['PERF_ADMIN_PASSWORD', 'WORKFLOW_TEST_ADMIN_PASSWORD'],
+    ['PERF_VEHICLE_EMAIL', 'WORKFLOW_TEST_VEHICLE_EMAIL'],
+    ['PERF_VEHICLE_PASSWORD', 'WORKFLOW_TEST_VEHICLE_PASSWORD'],
+  ]
+  for (const [perfKey, workflowKey] of pairs) {
+    if (!process.env[perfKey]?.trim() && process.env[workflowKey]?.trim()) {
+      process.env[perfKey] = process.env[workflowKey].trim()
     }
   }
 }
@@ -85,6 +102,58 @@ async function discoverFirstHref(page, baseUrl, listPath, hrefPattern) {
 }
 
 /**
+ * @returns {{
+ *   reset: () => void
+ *   detach: () => void
+ *   snapshot: () => { requestCount: number; slowestRequest?: ReturnType<typeof pickSlowestNetworkRequest> }
+ * }}
+ */
+function attachNetworkTelemetry(page) {
+  /** @type {Map<import('playwright').Request, number>} */
+  const requestStartedAt = new Map()
+  /** @type {Array<{ url: string; status?: number; resourceType?: string; durationMs: number }>} */
+  const records = []
+
+  /** @param {import('playwright').Request} request */
+  const onRequest = (request) => {
+    requestStartedAt.set(request, Date.now())
+  }
+
+  /** @param {import('playwright').Response} response */
+  const onResponse = (response) => {
+    const request = response.request()
+    const startedAt = requestStartedAt.get(request) ?? Date.now()
+    requestStartedAt.delete(request)
+    records.push({
+      url: response.url(),
+      status: response.status(),
+      resourceType: request.resourceType(),
+      durationMs: Date.now() - startedAt,
+    })
+  }
+
+  page.on('request', onRequest)
+  page.on('response', onResponse)
+
+  return {
+    reset() {
+      requestStartedAt.clear()
+      records.length = 0
+    },
+    detach() {
+      page.off('request', onRequest)
+      page.off('response', onResponse)
+    },
+    snapshot() {
+      return {
+        requestCount: records.length,
+        slowestRequest: pickSlowestNetworkRequest(records),
+      }
+    },
+  }
+}
+
+/**
  * @param {import('playwright').Page} page
  * @param {string} baseUrl
  * @param {ReturnType<typeof buildPageLoadRouteList>[number]} route
@@ -92,6 +161,7 @@ async function discoverFirstHref(page, baseUrl, listPath, hrefPattern) {
 async function measureRouteOnce(page, baseUrl, route) {
   const url = `${baseUrl}${route.path}`
   const consoleErrors = []
+  const network = attachNetworkTelemetry(page)
 
   const onConsole = (msg) => {
     if (msg.type() === 'error') {
@@ -108,6 +178,7 @@ async function measureRouteOnce(page, baseUrl, route) {
   let error
 
   try {
+    network.reset()
     response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 })
     await page.getByText(route.contentMarker, { exact: false }).first().waitFor({
       state: 'visible',
@@ -128,7 +199,10 @@ async function measureRouteOnce(page, baseUrl, route) {
     await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {})
     const networkIdleMs = Date.now() - started
     const pageReadyMs = Date.now() - started
-    const finalPath = new URL(page.url()).pathname
+    const finalUrl = page.url()
+    const finalUrlObj = new URL(finalUrl)
+    const finalPath = `${finalUrlObj.pathname}${finalUrlObj.search}`
+    const { requestCount, slowestRequest } = network.snapshot()
 
     return {
       ok: true,
@@ -140,25 +214,34 @@ async function measureRouteOnce(page, baseUrl, route) {
       mainContentMs,
       pageReadyMs,
       finalPath,
+      finalUrl: redactSecrets(finalUrl),
+      requestCount,
+      slowestRequest,
       consoleErrors,
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err)
+    const { requestCount, slowestRequest } = network.snapshot()
     return {
       ok: false,
       error: redactSecrets(error),
       httpStatus: response?.status(),
       pageReadyMs: Date.now() - started,
+      requestCount,
+      slowestRequest,
       consoleErrors,
-      finalPath: page.url() ? new URL(page.url()).pathname : undefined,
+      finalPath: page.url() ? new URL(page.url()).pathname + new URL(page.url()).search : undefined,
+      finalUrl: page.url() ? redactSecrets(page.url()) : undefined,
     }
   } finally {
     page.off('console', onConsole)
+    network.detach()
   }
 }
 
 async function main() {
   loadEnvLocal()
+  mapWorkflowCredentialsToPerf()
 
   const baseUrl = opt('PERF_BASE_URL', 'https://mtour-settlement.vercel.app').replace(/\/$/, '')
   const runCount = parseRuns()
@@ -292,7 +375,7 @@ async function main() {
           ...result,
         })
         process.stdout.write(
-          `[measure-page-load] ${route.id} run ${run}/${runCount} pageReadyMs=${result.pageReadyMs ?? 'n/a'}\n`,
+          `[measure-page-load] ${route.id} run ${run}/${runCount} pageReadyMs=${result.pageReadyMs ?? 'n/a'} requests=${result.requestCount ?? 'n/a'} slowest=${result.slowestRequest?.durationMs ?? 'n/a'}ms\n`,
         )
       }
     }

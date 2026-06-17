@@ -83,6 +83,14 @@ export const PAGE_LOAD_ROUTE_DEFS = [
     contentMarker: '정산서 목록',
   },
   {
+    id: 'admin-settlements-submitted',
+    role: 'admin',
+    group: 'admin',
+    path: '/admin/settlements?status=submitted',
+    label: 'Admin submitted settlement list',
+    contentMarker: '정산서 목록',
+  },
+  {
     id: 'admin-settlement-detail',
     role: 'admin',
     group: 'admin',
@@ -395,7 +403,14 @@ export function percentile(values, p) {
 export function summarizeNumeric(values) {
   const nums = values.filter((v) => typeof v === 'number' && Number.isFinite(v))
   if (!nums.length) {
-    return { count: 0, avg: undefined, min: undefined, max: undefined, p50: undefined }
+    return {
+      count: 0,
+      avg: undefined,
+      min: undefined,
+      max: undefined,
+      p50: undefined,
+      p90: undefined,
+    }
   }
   const sum = nums.reduce((a, b) => a + b, 0)
   return {
@@ -404,6 +419,70 @@ export function summarizeNumeric(values) {
     min: Math.min(...nums),
     max: Math.max(...nums),
     p50: Math.round(percentile(nums, 50) * 100) / 100,
+    p90: Math.round(percentile(nums, 90) * 100) / 100,
+  }
+}
+
+/**
+ * Normalize a route path for redirect comparison (pathname + sorted query when present).
+ * @param {string} urlOrPath
+ */
+export function normalizeRoutePathForComparison(urlOrPath) {
+  if (!urlOrPath) return ''
+  try {
+    const parsed = urlOrPath.startsWith('http')
+      ? new URL(urlOrPath)
+      : new URL(urlOrPath, 'https://measurement.local')
+    const params = new URLSearchParams(parsed.search)
+    const sorted = [...params.entries()].sort(([a], [b]) => a.localeCompare(b))
+    const search = sorted.length
+      ? `?${new URLSearchParams(sorted).toString()}`
+      : ''
+    return `${parsed.pathname}${search}`
+  } catch {
+    return urlOrPath
+  }
+}
+
+/**
+ * Pick slowest network request from Playwright response records.
+ * @param {Array<{ url: string; status?: number; resourceType?: string; durationMs: number }>} records
+ */
+export function pickSlowestNetworkRequest(records) {
+  if (!records?.length) return undefined
+  let slowest = records[0]
+  for (const record of records) {
+    if (record.durationMs > slowest.durationMs) slowest = record
+  }
+  return {
+    url: redactSecrets(slowest.url),
+    status: slowest.status,
+    resourceType: slowest.resourceType,
+    durationMs: Math.round(slowest.durationMs),
+  }
+}
+
+/**
+ * @param {Array<{ requestCount?: number; slowestRequest?: ReturnType<typeof pickSlowestNetworkRequest> }>} runs
+ */
+export function summarizeNetworkTelemetry(runs) {
+  const requestCounts = runs
+    .map((r) => r.requestCount)
+    .filter((v) => typeof v === 'number' && Number.isFinite(v))
+  const slowestRuns = runs.filter((r) => r.slowestRequest?.durationMs != null)
+  const slowestByRun = slowestRuns.map((r) => r.slowestRequest.durationMs)
+  const overallSlowest = pickSlowestNetworkRequest(
+    slowestRuns.map((r) => ({
+      url: r.slowestRequest.url,
+      status: r.slowestRequest.status,
+      resourceType: r.slowestRequest.resourceType,
+      durationMs: r.slowestRequest.durationMs,
+    })),
+  )
+  return {
+    requestCount: summarizeNumeric(requestCounts),
+    slowestRequestMs: summarizeNumeric(slowestByRun),
+    slowestRequestOverall: overallSlowest,
   }
 }
 
@@ -465,11 +544,13 @@ export function buildPageLoadRunWarnings(run) {
     flags.consoleError = true
     warnings.push(`console errors (${run.consoleErrors.length}) on ${run.path}`)
   }
-  if (run.finalPath && run.path && run.finalPath !== run.path) {
-    const loginRedirect = run.finalPath.includes('/login')
+  const expectedPath = normalizeRoutePathForComparison(run.path)
+  const actualPath = normalizeRoutePathForComparison(run.finalPath ?? run.finalUrl ?? '')
+  if (expectedPath && actualPath && expectedPath !== actualPath) {
+    const loginRedirect = actualPath.includes('/login')
     if (!loginRedirect) {
       flags.unexpectedRedirect = true
-      warnings.push(`unexpected redirect ${run.path} → ${run.finalPath}`)
+      warnings.push(`unexpected redirect ${run.path} → ${actualPath}`)
     }
   }
 
@@ -493,6 +574,9 @@ export function buildPageLoadRunWarnings(run) {
  *   mainContentMs?: number
  *   pageReadyMs?: number
  *   finalPath?: string
+ *   finalUrl?: string
+ *   requestCount?: number
+ *   slowestRequest?: { url: string; status?: number; resourceType?: string; durationMs: number }
  *   consoleErrors?: string[]
  * }>} runs
  * @param {{
@@ -518,11 +602,18 @@ export function buildPageLoadReport(runs, meta) {
       pageReadyMs: run.pageReadyMs,
       consoleErrors,
       finalPath: run.finalPath,
+      finalUrl: run.finalUrl,
     })
     return {
       ...run,
       consoleErrors,
       error: run.error ? redactSecrets(run.error) : undefined,
+      slowestRequest: run.slowestRequest
+        ? {
+            ...run.slowestRequest,
+            url: redactSecrets(run.slowestRequest.url),
+          }
+        : undefined,
       warnings,
       warningFlags: flags,
     }
@@ -544,6 +635,7 @@ export function buildPageLoadReport(runs, meta) {
         domContentLoadedMs: summarizeNumeric(routeRuns.map((r) => r.domContentLoadedMs)),
         loadMs: summarizeNumeric(routeRuns.map((r) => r.loadMs)),
         networkIdleMs: summarizeNumeric(routeRuns.map((r) => r.networkIdleMs)),
+        network: summarizeNetworkTelemetry(routeRuns),
       },
       warnings: [...new Set(routeRuns.flatMap((r) => r.warnings))],
     }

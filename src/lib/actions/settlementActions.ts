@@ -99,6 +99,12 @@ import { validateEncodedCorrectionNote } from '@/lib/settlement/correction-reque
 import type { FieldChangeDraft, SnapshotPayload } from '@/lib/settlement/snapshot'
 import { externalReceivableDbFields } from '@/lib/settlement/external-receivable'
 import {
+  COMPANY_EXPENSE_ITEMS_FULL_SELECT,
+  LINE_ITEM_FULL_SELECT,
+  SETTLEMENT_FULL_SELECT,
+  type LineItemFullSelectTable,
+} from '@/lib/settlement/settlement-full-select'
+import {
   aggregateLineItemPersistTimings,
   canSkipPostSaveReloadForNoopSave,
   guideHeaderUpsertDiffersFromExisting,
@@ -370,6 +376,36 @@ const LINE_ITEM_TABLES = [
 
 type LineItemTable = (typeof LINE_ITEM_TABLES)[number]
 
+function lineItemSelect(table: LineItemTable): string {
+  return LINE_ITEM_FULL_SELECT[table as LineItemFullSelectTable]
+}
+
+type SettlementLineItemLoadResult = SettlementLineItemRows & {
+  parallelBatchMs: number
+  queryTimings: GetSettlementFullQueryTiming[]
+  extraQueryMs?: number
+}
+
+function normalizeLoadedLineItemRows(
+  rows: unknown[],
+  settlementId: string,
+): Record<string, unknown>[] {
+  return rows.map((row) => ({
+    ...(row as Record<string, unknown>),
+    settlement_id: settlementId,
+  }))
+}
+
+function normalizeLoadedReceiptRows(
+  rows: unknown[],
+  settlementId: string,
+): Record<string, unknown>[] {
+  return rows.map((row) => ({
+    ...(row as Record<string, unknown>),
+    settlement_id: settlementId,
+  }))
+}
+
 function tableForAudience(base: 'settlements' | LineItemTable, useGuideRead: boolean): string {
   if (!useGuideRead) return base
   if (base === 'settlements') return GUIDE_READ.settlements
@@ -604,7 +640,7 @@ async function loadSettlementCore(
   const settlementStarted = performance.now()
   const { data: s, error: settlementError } = await supabase
     .from(tableForAudience('settlements', useGuideRead))
-    .select('*, tour:tours(*)')
+    .select(SETTLEMENT_FULL_SELECT)
     .eq('id', id)
     .single()
   const settlementQueryMs = Math.round(performance.now() - settlementStarted)
@@ -616,12 +652,14 @@ async function loadSettlementCore(
     return null
   }
 
+  const settlement = s as unknown as Record<string, unknown>
+
   const profile = await getProfile()
   const adminScope = await getAdminRegionScope()
   if (
     evaluateAdminSettlementReadAccess({
       scope: adminScope,
-      settlementBranchId: s.branch_id as string,
+      settlementBranchId: settlement.branch_id as string,
       callerRole: profile?.role,
       audience: options?.audience,
     }) === 'deny'
@@ -629,23 +667,21 @@ async function loadSettlementCore(
     return null
   }
 
-  return { settlement: s, settlementQueryMs, useGuideRead }
+  return { settlement, settlementQueryMs, useGuideRead }
 }
 
 async function loadSettlementLineItemRows(
   supabase: SupabaseClient,
   id: string,
   useGuideRead: boolean,
-): Promise<
-  SettlementLineItemRows & { parallelBatchMs: number; queryTimings: GetSettlementFullQueryTiming[] }
-> {
+): Promise<SettlementLineItemLoadResult> {
   const timer = createGetSettlementFullTimer()
 
   const fetchRows = async (table: LineItemTable, orderColumn: string, ascending = true) => {
     return timer.timedQuery(table, async () => {
       const { data, error } = await supabase
         .from(tableForAudience(table, useGuideRead))
-        .select('*')
+        .select(lineItemSelect(table))
         .eq('settlement_id', id)
         .order(orderColumn, { ascending })
       if (error) {
@@ -676,28 +712,29 @@ async function loadSettlementLineItemRows(
     const companyStarted = performance.now()
     const { data, error } = await supabase
       .from('company_expense_items')
-      .select('*')
+      .select(COMPANY_EXPENSE_ITEMS_FULL_SELECT)
       .eq('settlement_id', id)
       .order('sort_order', { ascending: true })
     extraQueryMs = Math.round(performance.now() - companyStarted)
     if (error) {
       console.error('[getSettlementFull] company_expense_items:', error.message)
     } else {
-      companyExpenses = data ?? []
+      companyExpenses = normalizeLoadedLineItemRows(data ?? [], id) as unknown as SettlementFull['company_expenses']
     }
   }
 
   return {
-    hotels,
-    meals,
-    entrances,
-    others,
-    shoppings,
-    options: optionItems,
+    hotels: normalizeLoadedLineItemRows(hotels, id) as unknown as SettlementFull['hotels'],
+    meals: normalizeLoadedLineItemRows(meals, id) as unknown as SettlementFull['meals'],
+    entrances: normalizeLoadedLineItemRows(entrances, id) as unknown as SettlementFull['entrances'],
+    others: normalizeLoadedLineItemRows(others, id) as unknown as SettlementFull['others'],
+    shoppings: normalizeLoadedLineItemRows(shoppings, id) as unknown as SettlementFull['shoppings'],
+    options: normalizeLoadedLineItemRows(optionItems, id) as unknown as SettlementFull['options'],
     company_expenses: companyExpenses,
-    receipts,
+    receipts: normalizeLoadedReceiptRows(receipts, id) as unknown as SettlementFull['receipts'],
     parallelBatchMs,
     queryTimings: timer.queries,
+    extraQueryMs: extraQueryMs > 0 ? extraQueryMs : undefined,
   }
 }
 
@@ -753,105 +790,30 @@ export async function getSettlementFull(
   options?: GetSettlementFullOptions,
 ): Promise<SettlementFull | null> {
   const supabase = await createClient()
-  const useGuideRead = await shouldUseGuideReadTables(options?.audience)
   const callPurpose = options?.callPurpose ?? 'unknown'
 
-  const settlementStarted = performance.now()
-  const { data: s, error: settlementError } = await supabase
-    .from(tableForAudience('settlements', useGuideRead))
-    .select('*, tour:tours(*)')
-    .eq('id', id)
-    .single()
-  const settlementQueryMs = Math.round(performance.now() - settlementStarted)
+  const coreLoad = await loadSettlementCore(supabase, id, options)
+  if (!coreLoad) return null
 
-  if (settlementError || !s) {
-    if (settlementError) {
-      console.error('[getSettlementFull] settlements:', settlementError.message)
-    }
-    return null
-  }
-
-  const profile = await getProfile()
-  const adminScope = await getAdminRegionScope()
-  if (
-    evaluateAdminSettlementReadAccess({
-      scope: adminScope,
-      settlementBranchId: s.branch_id as string,
-      callerRole: profile?.role,
-      audience: options?.audience,
-    }) === 'deny'
-  ) {
-    return null
-  }
-
-  const timer = createGetSettlementFullTimer()
-  const fetchRows = async (table: LineItemTable, orderColumn: string, ascending = true) => {
-    return timer.timedQuery(table, async () => {
-      const { data, error } = await supabase
-        .from(tableForAudience(table, useGuideRead))
-        .select('*')
-        .eq('settlement_id', id)
-        .order(orderColumn, { ascending })
-      if (error) {
-        console.error(`[getSettlementFull] ${table}:`, error.message)
-        return []
-      }
-      return data ?? []
-    })
-  }
-
-  timer.startParallelBatch()
-  const [
-    hotels, meals, entrances, others, shoppings, optionItems, receipts,
-  ] = await Promise.all([
-    fetchRows('hotel_items', 'sort_order'),
-    fetchRows('meal_items', 'sort_order'),
-    fetchRows('entrance_items', 'sort_order'),
-    fetchRows('other_expense_items', 'sort_order'),
-    fetchRows('shopping_items', 'sort_order'),
-    fetchRows('option_items', 'sort_order'),
-    fetchRows('receipts', 'created_at'),
-  ])
-  const parallelBatchMs = timer.endParallelBatch()
-
-  let companyExpenses: SettlementFull['company_expenses'] = []
-  let extraQueryMs = 0
-  if (!useGuideRead) {
-    const companyStarted = performance.now()
-    const { data, error } = await supabase
-      .from('company_expense_items')
-      .select('*')
-      .eq('settlement_id', id)
-      .order('sort_order', { ascending: true })
-    extraQueryMs = Math.round(performance.now() - companyStarted)
-    if (error) {
-      console.error('[getSettlementFull] company_expense_items:', error.message)
-    } else {
-      companyExpenses = data ?? []
-    }
-  }
+  const lineRows = await loadSettlementLineItemRows(
+    supabase,
+    id,
+    coreLoad.useGuideRead,
+  )
 
   const timingLog = buildGetSettlementFullTimingLog({
     settlementId: id,
     callPurpose,
-    settlementQueryMs,
-    parallelBatchMs,
-    parallelQueries: timer.queries,
-    extraQueryMs: extraQueryMs > 0 ? extraQueryMs : undefined,
+    settlementQueryMs: coreLoad.settlementQueryMs,
+    parallelBatchMs: lineRows.parallelBatchMs,
+    parallelQueries: lineRows.queryTimings,
+    extraQueryMs: lineRows.extraQueryMs,
   })
   logGetSettlementFullTimings(timingLog)
   options?.onTimingCaptured?.(timingLog)
 
-  return assembleSettlementFull(s, {
-    hotels,
-    meals,
-    entrances,
-    others,
-    shoppings,
-    options: optionItems,
-    company_expenses: companyExpenses,
-    receipts,
-  })
+  const { parallelBatchMs: _pb, queryTimings: _qt, extraQueryMs: _eq, ...rowPayload } = lineRows
+  return assembleSettlementFull(coreLoad.settlement, rowPayload)
 }
 
 function emptyAdminSettlementsPage(
@@ -1675,11 +1637,21 @@ export async function saveSettlementDraft(
       settlementQueryMs: coreLoad.settlementQueryMs,
       parallelBatchMs: preLoadParallelMs,
       parallelQueries: lineRows.queryTimings,
+      extraQueryMs: lineRows.extraQueryMs,
     })
     logGetSettlementFullTimings(preLoadLog)
     if (captureDebug) preLoadTiming = preLoadLog
 
-    existingForItemPersist = assembleSettlementFull(coreLoad.settlement, lineRows)
+    existingForItemPersist = assembleSettlementFull(coreLoad.settlement, {
+      hotels: lineRows.hotels,
+      meals: lineRows.meals,
+      entrances: lineRows.entrances,
+      others: lineRows.others,
+      shoppings: lineRows.shoppings,
+      options: lineRows.options,
+      company_expenses: lineRows.company_expenses,
+      receipts: lineRows.receipts,
+    })
     const knownLineItemIds = collectKnownLineItemIds(existingForItemPersist)
     payloadToSave = stripOrphanLineItemIdsFromPayload(payload, knownLineItemIds)
     payloadToSave = sanitizeGuideDraftPayload(payloadToSave, existingForItemPersist)

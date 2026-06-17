@@ -31,13 +31,13 @@ describe('settlement save performance and stability (source-level)', () => {
 
   it('getSettlementFull instruments per-table query timings', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
-    const start = source.indexOf('export async function getSettlementFull')
-    const end = source.indexOf('function emptyAdminSettlementsPage', start)
+    const start = source.indexOf('async function loadSettlementLineItemRows')
+    const end = source.indexOf('function assembleSettlementFull', start)
     const body = source.slice(start, end)
 
     expect(body).toContain('createGetSettlementFullTimer')
     expect(body).toContain('timer.timedQuery(')
-    expect(body).toContain('logGetSettlementFullTimings(')
+    expect(readRepoFile('src/lib/actions/settlementActions.ts')).toContain('logGetSettlementFullTimings(')
     expect(readRepoFile('src/lib/settlement/get-settlement-full-diagnostics.ts')).toContain(
       'parallelismRatio',
     )

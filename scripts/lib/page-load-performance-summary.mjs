@@ -92,6 +92,15 @@ export const PAGE_LOAD_ROUTE_DEFS = [
     dynamic: true,
   },
   {
+    id: 'admin-settlement-edit',
+    role: 'admin',
+    group: 'admin',
+    path: '/admin/settlements/__ID__/edit',
+    label: 'Admin settlement edit',
+    contentMarker: '임시저장',
+    dynamic: true,
+  },
+  {
     id: 'admin-tours',
     role: 'admin',
     group: 'admin',
@@ -326,16 +335,21 @@ export function resolveMeasurementCredentials(options = {}) {
  *   routeFilter?: string | null
  *   guideEditPath?: string
  *   adminDetailPath?: string
+ *   adminEditPath?: string
  *   vehicleReportPath?: string
  * }} options
  */
 export function buildPageLoadRouteList(options = {}) {
   const classified = classifyRouteFilter(options.routeFilter)
+  const adminDetail = options.adminDetailPath
   const overrides = {
     'guide-settlement-edit': isGuideEditMeasurementEnabled(options.guideEditPath)
       ? options.guideEditPath
       : undefined,
-    'admin-settlement-detail': options.adminDetailPath,
+    'admin-settlement-detail': adminDetail,
+    'admin-settlement-edit':
+      options.adminEditPath ??
+      (adminDetail ? `${adminDetail.replace(/\/$/, '')}/edit` : undefined),
     'vehicle-report-detail': options.vehicleReportPath,
   }
 

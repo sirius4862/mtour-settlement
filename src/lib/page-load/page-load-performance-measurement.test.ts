@@ -28,9 +28,13 @@ describe('page-load route list generation', () => {
     expect(ids).toContain('guide-dashboard')
     expect(ids).toContain('guide-settlement-edit')
     expect(ids).toContain('admin-settlement-detail')
+    expect(ids).toContain('admin-settlement-edit')
     expect(ids).toContain('vehicle-report-detail')
     expect(routes.find((r) => r.id === 'guide-settlement-edit')?.path).toBe(
       '/guide/settlements/abc/edit',
+    )
+    expect(routes.find((r) => r.id === 'admin-settlement-edit')?.path).toBe(
+      '/admin/settlements/abc/edit',
     )
   })
 
@@ -50,7 +54,19 @@ describe('page-load route list generation', () => {
   it('skips dynamic routes when override path is missing', () => {
     const routes = buildPageLoadRouteList({ routeFilter: 'admin' })
     expect(routes.map((r) => r.id)).not.toContain('admin-settlement-detail')
+    expect(routes.map((r) => r.id)).not.toContain('admin-settlement-edit')
     expect(PAGE_LOAD_ROUTE_DEFS.some((d) => d.dynamic)).toBe(true)
+  })
+
+  it('derives admin-settlement-edit from admin detail path when edit override omitted', () => {
+    const routes = buildPageLoadRouteList({
+      routeFilter: 'admin-settlement-detail,admin-settlement-edit',
+      adminDetailPath: '/admin/settlements/abc',
+    })
+    expect(routes.map((r) => r.id)).toEqual(['admin-settlement-detail', 'admin-settlement-edit'])
+    expect(routes.find((r) => r.id === 'admin-settlement-edit')?.path).toBe(
+      '/admin/settlements/abc/edit',
+    )
   })
 
   it('skips guide-settlement-edit when guide edit path is unset or skip', () => {

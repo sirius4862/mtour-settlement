@@ -107,14 +107,16 @@ describe('guide available tour loader wiring', () => {
     expect(body).not.toContain(".not('id', 'in'")
   })
 
-  it('new and edit form pages still use getAvailableTours', () => {
+  it('new settlement page uses getAvailableTours; edit page uses full.tour only', () => {
     const newPage = readFileSync(join(ROOT, 'src/app/guide/settlements/new/page.tsx'), 'utf8')
     const editPage = readFileSync(join(ROOT, 'src/app/guide/settlements/[id]/edit/page.tsx'), 'utf8')
 
     expect(newPage).toContain('getAvailableTours')
     expect(newPage).not.toContain('getGuideDashboardAvailableTours')
-    expect(editPage).toContain('getAvailableTours')
+    expect(editPage).not.toContain('getAvailableTours')
     expect(editPage).not.toContain('getGuideDashboardAvailableTours')
+    expect(editPage).toContain('getSettlementFullForGuide')
+    expect(editPage).toMatch(/tours\s*=\s*\[\s*full\.tour\s*\]/)
   })
 
   it('guide dashboard page uses getGuideDashboardAvailableTours', () => {

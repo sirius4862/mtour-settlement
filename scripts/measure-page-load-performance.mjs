@@ -177,7 +177,7 @@ async function main() {
   }
 
   const guideEditPathRaw = opt('PERF_GUIDE_SETTLEMENT_EDIT_URL', '')
-  const guideEditPath =
+  let guideEditPath =
     guideEditPathRaw && guideEditPathRaw.toLowerCase() !== 'skip'
       ? normalizePath(guideEditPathRaw)
       : undefined
@@ -196,13 +196,48 @@ async function main() {
       const page = await ctx.newPage()
       await loginRole(page, baseUrl, 'admin')
       adminDetailPath =
-        (await discoverFirstHref(page, baseUrl, '/admin/settlements', /^\/admin\/settlements\/[^/]+$/)) ??
+        (await discoverFirstHref(
+          page,
+          baseUrl,
+          '/admin/settlements?status=submitted',
+          /^\/admin\/settlements\/[^/]+$/,
+        )) ??
+        (await discoverFirstHref(
+          page,
+          baseUrl,
+          '/admin/settlements',
+          /^\/admin\/settlements\/[^/]+$/,
+        )) ??
         ''
       await ctx.close()
       if (!adminDetailPath) {
         skippedRoutes.push({
           id: 'admin-settlement-detail',
           reason: 'no admin settlement link found; set PERF_ADMIN_SETTLEMENT_DETAIL_URL',
+        })
+        skippedRoutes.push({
+          id: 'admin-settlement-edit',
+          reason: 'no admin settlement link found; set PERF_ADMIN_SETTLEMENT_DETAIL_URL',
+        })
+      }
+    }
+
+    if (groupsInScope.has('guide') && rolesToLogin.has('guide') && !guideEditPath) {
+      const ctx = await browser.newContext()
+      const page = await ctx.newPage()
+      await loginRole(page, baseUrl, 'guide')
+      guideEditPath =
+        (await discoverFirstHref(
+          page,
+          baseUrl,
+          '/guide/settlements',
+          /^\/guide\/settlements\/[^/]+\/edit$/,
+        )) ?? ''
+      await ctx.close()
+      if (!guideEditPath) {
+        skippedRoutes.push({
+          id: 'guide-settlement-edit',
+          reason: 'no guide editable settlement found; set PERF_GUIDE_SETTLEMENT_EDIT_URL',
         })
       }
     }

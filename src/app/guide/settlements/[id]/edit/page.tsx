@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { requireGuide } from '@/lib/auth/session'
-import { getAvailableTours, getSettlementFullForGuide } from '@/lib/actions/settlementActions'
+import { getSettlementFullForGuide } from '@/lib/actions/settlementActions'
 import { GuideCorrectionStableShell } from '@/components/settlement/GuideCorrectionStableShell'
 import { GuideEditForm } from '@/components/settlement/GuideEditForm'
 
@@ -20,10 +20,8 @@ export default async function EditSettlementPage({
   if (!full || full.guide_id !== session.id) notFound()
   if (!EDITABLE.has(full.status)) redirect(`/guide/settlements/${id}`)
 
-  const available = await getAvailableTours()
-  const tours = available.some((t) => t.id === full.tour_id)
-    ? available
-    : [full.tour, ...available]
+  // Existing edit: tour is read-only in the form; full.tour from getSettlementFull is sufficient.
+  const tours = [full.tour]
 
   return (
     <>

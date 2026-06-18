@@ -7,17 +7,152 @@ import { emptyFormState, stateFromSettlementFull } from './mappers'
 import { shouldPreserveClientDraftOnHydration } from './save-integrity'
 import { sanitizeSettlementFullForGuide } from './snapshot'
 import {
+  applyAdminServerWinsState,
   applyEditFormBootstrapPlan,
   expectedAdminHydratedState,
   hydratedLineItemCounts,
   isCleanDraftState,
   resolveEditFormBootstrap,
+  runPersistAwareBootstrap,
   serverLineItemCounts,
+  shouldAdminEditRebootstrap,
 } from './settlement-form-edit-bootstrap'
 import type { SettlementFormState } from './form-types'
 
 const ROOT = process.cwd()
 const SETTLEMENT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+const PROD_SETTLEMENT_ID = '0c8e98e5-8cc6-4137-9764-f51bafc471f9'
+
+function buildCountedRow(
+  prefix: string,
+  count: number,
+  factory: (index: number) => Record<string, unknown>,
+) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${prefix}-${index}`,
+    settlement_id: PROD_SETTLEMENT_ID,
+    sort_order: index,
+    created_at: '',
+    updated_at: '',
+    ...factory(index),
+  }))
+}
+
+/** Production-like fixture: meals 8, entrances 11, others 10, shoppings 4, options 2. */
+function buildProductionRegressionFixture(): SettlementFull {
+  return {
+    id: PROD_SETTLEMENT_ID,
+    tour_id: 'tour-prod',
+    guide_id: 'guide-prod',
+    branch_id: 'branch-prod',
+    status: 'submitted',
+    year_month: '2026-04',
+    exchange_rate: 26000,
+    advance_vnd: 40000000,
+    tour_fee_usd: 0,
+    ground_fee_usd: 1622,
+    charming_other_usd: 0,
+    tip_received_usd: 0,
+    option_receivable_usd: 0,
+    tip_transfer_usd: 0,
+    option_credit_usd: 0,
+    vehicle_fee_usd: 0,
+    head_tax_usd: 0,
+    seoul_biz_fee_usd: 0,
+    tc_guide_usd: 0,
+    tc_company_usd: 0,
+    megugi_usd: 0,
+    guide_daily_fee_usd: 0,
+    settlement_ratio: 0.5,
+    guide_note: null,
+    admin_note: null,
+    reject_reason: null,
+    submitted_at: '2026-04-10T00:00:00Z',
+    reviewed_at: null,
+    paid_at: null,
+    edit_requested_at: null,
+    reviewed_by: null,
+    edit_requested_by: null,
+    sent_for_confirmation_at: null,
+    sent_for_confirmation_by: null,
+    guide_confirmed_at: null,
+    guide_confirmed_by: null,
+    clarification_requested_at: null,
+    clarification_message: null,
+    active_confirmation_id: null,
+    guide_submit_snapshot_id: 'snap-prod',
+    calc_summary_json: null,
+    created_at: '',
+    updated_at: '',
+    tour: {
+      id: 'tour-prod',
+      tour_code: 'PROD-001',
+      pattern: 'Production tour',
+      agency_name: 'Agency',
+      start_date: '2026-04-01',
+      end_date: '2026-04-05',
+      nights: 4,
+      pax_count: 18,
+      vehicle_type: '29',
+      guide_id: 'guide-prod',
+      tc_name: null,
+      branch_id: 'branch-prod',
+      assignment_status: 'assigned',
+      recalled_at: null,
+      recalled_by: null,
+      created_by: 'admin',
+      created_at: '',
+      updated_at: '',
+    },
+    hotels: [],
+    meals: buildCountedRow('meal', 8, (index) => ({
+      meal_date: `2026-04-0${(index % 9) + 1}`,
+      restaurant_name: index === 0 ? '마담차' : `Restaurant ${index + 1}`,
+      pax: 4,
+      unit_price_vnd: 85000,
+      amount_vnd: 340000,
+    })) as SettlementFull['meals'],
+    entrances: buildCountedRow('ent', 11, (index) => ({
+      visit_date: `2026-04-${String(index + 1).padStart(2, '0')}`,
+      attraction_name: `Attraction ${index + 1}`,
+      pax: 18,
+      unit_price_vnd: 150000,
+      amount_vnd: 2700000,
+    })) as SettlementFull['entrances'],
+    others: buildCountedRow('other', 10, (index) => ({
+      description: `Other ${index + 1}`,
+      days: null,
+      pax: 0,
+      unit_price_usd: 0,
+      unit_price_vnd: 0,
+      amount_usd: 20,
+      amount_vnd: 0,
+      is_tip: false,
+      entry_mode: 'flat' as const,
+      note: null,
+    })) as SettlementFull['others'],
+    shoppings: buildCountedRow('shop', 4, (index) => ({
+      visit_date: null,
+      shop_name: `Shop ${index + 1}`,
+      sale_usd: 100,
+      com_usd: 20,
+      kb_usd: 5,
+    })) as SettlementFull['shoppings'],
+    options: buildCountedRow('opt', 2, (index) => ({
+      option_date: null,
+      option_name: `Option ${index + 1}`,
+      unit_price_usd: 25,
+      pax: 8,
+      total_sale_usd: 200,
+      expense_usd: 20,
+      expense_vnd: 520000,
+      com_usd: 36,
+      is_extra_vehicle: false,
+    })) as SettlementFull['options'],
+    company_expenses: [],
+    receipts: [],
+  }
+}
 
 function buildFixtureFull(): SettlementFull {
   return {
@@ -240,7 +375,7 @@ function createMockStore(initial: SettlementFormState): MockStore {
   }
 }
 
-/** Mirrors settlementFormStore.hydrateFromFull for integration-style tests. */
+/** Mirrors settlementFormStore.hydrateFromFull for guide-path tests. */
 function hydrateFromFullLikeStore(
   store: MockStore,
   full: SettlementFull,
@@ -319,24 +454,16 @@ describe('resolveEditFormBootstrap', () => {
   })
 })
 
-describe('applyEditFormBootstrapPlan — admin edit hydration', () => {
+describe('applyAdminServerWinsState', () => {
   const full = buildFixtureFull()
 
-  it('ignores stale session draft and hydrates server rows for admin review', () => {
+  it('directly replaces store rows even when dirty/error would trigger preserve via hydrateFromFull', () => {
     const store = createMockStore(staleEmptyDraftState(full.id))
-    const plan = resolveEditFormBootstrap({
-      isAdminReview: true,
-      formRole: 'admin',
-      initialFull: full,
-      guideName: 'Admin',
-      clientState: store.getState(),
-    })
+    const hydrateSpy = vi.fn(hydrateFromFullLikeStore)
 
-    applyEditFormBootstrapPlan(store, plan, 'Admin', (f, name) =>
-      hydrateFromFullLikeStore(store, f, name),
-    )
+    applyAdminServerWinsState(store, full, 'Admin')
 
-    expect(store.persist.clearStorage).toHaveBeenCalledOnce()
+    expect(hydrateSpy).not.toHaveBeenCalled()
     const state = store.getState()
     expect(isCleanDraftState(state)).toBe(true)
     expect(hydratedLineItemCounts(state)).toEqual({
@@ -347,11 +474,35 @@ describe('applyEditFormBootstrapPlan — admin edit hydration', () => {
       shoppings: 1,
       options: 1,
     })
+    expect(state.meals[0]?.restaurant_name).toBe('Pho Place')
     expect(state.companyExpenses).toHaveLength(1)
+  })
+})
+
+describe('applyEditFormBootstrapPlan — admin edit hydration', () => {
+  const full = buildFixtureFull()
+
+  it('admin_server_wins bypasses hydrateFromFull and applies direct server state', () => {
+    const store = createMockStore(staleEmptyDraftState(full.id))
+    const plan = resolveEditFormBootstrap({
+      isAdminReview: true,
+      formRole: 'admin',
+      initialFull: full,
+      guideName: 'Admin',
+      clientState: store.getState(),
+    })
+    const hydrateSpy = vi.fn()
+
+    applyEditFormBootstrapPlan(store, plan, 'Admin', hydrateSpy)
+
+    expect(store.persist.clearStorage).toHaveBeenCalledOnce()
+    expect(hydrateSpy).not.toHaveBeenCalled()
+    const state = store.getState()
+    expect(isCleanDraftState(state)).toBe(true)
     expect(state.meals[0]?.restaurant_name).toBe('Pho Place')
   })
 
-  it('guide preserve path keeps client rows when save failed', () => {
+  it('guide preserve path still uses hydrateFromFull and keeps client rows when save failed', () => {
     const clientDraft = {
       ...staleEmptyDraftState(full.id),
       options: [
@@ -396,36 +547,94 @@ describe('applyEditFormBootstrapPlan — admin edit hydration', () => {
     expect(state.meals).toHaveLength(0)
   })
 
-  it('admin detail/edit parity — hydrated counts match server initialFull', () => {
-    const store = createMockStore(staleEmptyDraftState(full.id))
+  it('production regression fixture hydrates meals 8 / entrances 11 / others 10 / shoppings 4 / options 2', () => {
+    const prodFull = buildProductionRegressionFixture()
+    const store = createMockStore(staleEmptyDraftState(prodFull.id))
     const plan = resolveEditFormBootstrap({
       isAdminReview: true,
       formRole: 'admin',
-      initialFull: full,
+      initialFull: prodFull,
       guideName: 'Admin',
       clientState: store.getState(),
     })
-    applyEditFormBootstrapPlan(store, plan, 'Admin', (f, name) =>
-      hydrateFromFullLikeStore(store, f, name),
-    )
 
-    const serverCounts = serverLineItemCounts(full)
-    const hydrated = hydratedLineItemCounts(store.getState())
-    expect(hydrated.hotels).toBe(serverCounts.hotels)
-    expect(hydrated.meals).toBe(serverCounts.meals)
-    expect(hydrated.entrances).toBe(serverCounts.entrances)
-    expect(hydrated.others).toBe(serverCounts.others)
-    expect(hydrated.shoppings).toBe(serverCounts.shoppings)
-    expect(hydrated.options).toBe(serverCounts.options)
-    expect(store.getState().companyExpenses).toHaveLength(serverCounts.companyExpenses)
+    applyEditFormBootstrapPlan(store, plan, 'Admin', vi.fn())
+
+    const counts = hydratedLineItemCounts(store.getState())
+    expect(counts).toEqual({
+      hotels: 0,
+      meals: 8,
+      entrances: 11,
+      others: 10,
+      shoppings: 4,
+      options: 2,
+    })
+    expect(store.getState().meals[0]?.restaurant_name).toBe('마담차')
+  })
+})
+
+describe('runPersistAwareBootstrap', () => {
+  it('runs immediately when persist has already hydrated', () => {
+    const bootstrap = vi.fn()
+    const persist = {
+      hasHydrated: () => true,
+      onFinishHydration: vi.fn(() => () => {}),
+    }
+
+    runPersistAwareBootstrap(persist, bootstrap)
+
+    expect(bootstrap).toHaveBeenCalledOnce()
+    expect(persist.onFinishHydration).toHaveBeenCalledOnce()
   })
 
-  it('expectedAdminHydratedState matches full server hydration shape', () => {
-    const expected = expectedAdminHydratedState(full, 'Admin')
-    expect(expected.meals).toHaveLength(1)
-    expect(expected.companyExpenses).toHaveLength(1)
-    expect(expected.dirty).toBe(false)
-    expect(expected.saveStatus).toBe('idle')
+  it('runs after finish hydration when persist has not hydrated yet', () => {
+    const bootstrap = vi.fn()
+    let finishListener: (() => void) | null = null
+    const persist = {
+      hasHydrated: () => false,
+      onFinishHydration: vi.fn((fn: () => void) => {
+        finishListener = fn
+        return () => {}
+      }),
+    }
+
+    runPersistAwareBootstrap(persist, bootstrap)
+
+    expect(bootstrap).not.toHaveBeenCalled()
+    expect(finishListener).not.toBeNull()
+    finishListener!()
+    expect(bootstrap).toHaveBeenCalledOnce()
+  })
+})
+
+describe('shouldAdminEditRebootstrap', () => {
+  const prodFull = buildProductionRegressionFixture()
+
+  it('detects empty store with non-empty server rows for same settlement', () => {
+    expect(
+      shouldAdminEditRebootstrap(prodFull, staleEmptyDraftState(prodFull.id)),
+    ).toBe(true)
+  })
+
+  it('returns false once store rows are populated', () => {
+    const store = createMockStore(staleEmptyDraftState(prodFull.id))
+    applyAdminServerWinsState(store, prodFull, 'Admin')
+    expect(shouldAdminEditRebootstrap(prodFull, store.getState())).toBe(false)
+  })
+
+  it('safety re-bootstrap applies server state once when first attempt left store empty', () => {
+    const prodFull = buildProductionRegressionFixture()
+    const store = createMockStore(staleEmptyDraftState(prodFull.id))
+    let rebootstrapAttempted = false
+
+    if (shouldAdminEditRebootstrap(prodFull, store.getState()) && !rebootstrapAttempted) {
+      rebootstrapAttempted = true
+      applyAdminServerWinsState(store, prodFull, 'Admin')
+    }
+
+    expect(rebootstrapAttempted).toBe(true)
+    expect(hydratedLineItemCounts(store.getState()).meals).toBe(8)
+    expect(shouldAdminEditRebootstrap(prodFull, store.getState())).toBe(false)
   })
 })
 
@@ -436,13 +645,26 @@ describe('SettlementForm wiring (static)', () => {
     'utf8',
   )
 
-  it('uses resolveEditFormBootstrap and applyEditFormBootstrapPlan for edit mode', () => {
-    expect(form).toContain('resolveEditFormBootstrap')
-    expect(form).toContain('applyEditFormBootstrapPlan')
-    expect(form).toContain('isAdminReview')
+  it('uses direct admin server-wins state and persist-aware bootstrap', () => {
+    expect(form).toContain('applyAdminServerWinsState')
+    expect(form).toContain('runPersistAwareBootstrap')
+    expect(form).toContain('shouldAdminEditRebootstrap')
+    expect(form).toContain('isAdminEditHydrationBroken')
   })
 
   it('admin edit page passes formRole="admin"', () => {
     expect(adminEditPage).toContain('formRole="admin"')
+  })
+})
+
+describe('expectedAdminHydratedState', () => {
+  it('matches full server hydration shape', () => {
+    const full = buildFixtureFull()
+    const expected = expectedAdminHydratedState(full, 'Admin')
+    expect(expected.meals).toHaveLength(1)
+    expect(expected.companyExpenses).toHaveLength(1)
+    expect(expected.dirty).toBe(false)
+    expect(expected.saveStatus).toBe('idle')
+    expect(serverLineItemCounts(full).meals).toBe(1)
   })
 })

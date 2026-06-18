@@ -37,6 +37,21 @@ export type EditFormBootstrapPlan =
       resetDraftFlags: false
     }
 
+export type EditBootstrapStore = {
+  getState: () => SettlementFormState
+  setState: (
+    partial:
+      | Partial<SettlementFormState>
+      | ((state: SettlementFormState) => Partial<SettlementFormState>),
+  ) => void
+  persist: { clearStorage: () => void }
+}
+
+export type PersistHydrationApi = {
+  hasHydrated: () => boolean
+  onFinishHydration: (fn: () => void) => () => void
+}
+
 /** Resolve edit-mode bootstrap: admin review always hydrates from server initialFull. */
 export function resolveEditFormBootstrap(input: EditFormBootstrapInput): EditFormBootstrapPlan {
   const { isAdminReview, formRole, initialFull, clientState } = input
@@ -70,14 +85,22 @@ export function resolveEditFormBootstrap(input: EditFormBootstrapInput): EditFor
   }
 }
 
-type EditBootstrapStore = {
-  getState: () => SettlementFormState
-  setState: (
-    partial:
-      | Partial<SettlementFormState>
-      | ((state: SettlementFormState) => Partial<SettlementFormState>),
-  ) => void
-  persist: { clearStorage: () => void }
+/** Replace store state from server initialFull — bypasses hydrateFromFull preserve guards. */
+export function applyAdminServerWinsState(
+  store: EditBootstrapStore,
+  full: SettlementFull,
+  guideName: string,
+): void {
+  const nextState = stateFromSettlementFull(full, guideName)
+  store.setState({
+    ...nextState,
+    dirty: false,
+    saveStatus: 'idle',
+    saveError: null,
+    settlementStatus: full.status,
+    guideSubmitSnapshotId: full.guide_submit_snapshot_id ?? null,
+    receipts: full.receipts ?? [],
+  })
 }
 
 /** Apply an edit bootstrap plan to the settlement form store. */
@@ -90,10 +113,28 @@ export function applyEditFormBootstrapPlan(
   if (plan.clearStorage) {
     store.persist.clearStorage()
   }
+
+  if (plan.kind === 'admin_server_wins') {
+    applyAdminServerWinsState(store, plan.full, guideName)
+    return
+  }
+
   if (plan.resetDraftFlags) {
     store.setState({ dirty: false, saveStatus: 'idle', saveError: null })
   }
   hydrateFromFull(plan.full, guideName)
+}
+
+/** Run bootstrap immediately when persist already hydrated, and again after hydration finishes. */
+export function runPersistAwareBootstrap(
+  persist: PersistHydrationApi,
+  bootstrap: () => void,
+): () => void {
+  const unsubscribe = persist.onFinishHydration(bootstrap)
+  if (persist.hasHydrated()) {
+    bootstrap()
+  }
+  return unsubscribe
 }
 
 /** Count active (non-deleted) rows per line-item section after hydration. */
@@ -116,6 +157,23 @@ export function hydratedLineItemCounts(
   }
 }
 
+export function storeLineItemCountSum(
+  state: Pick<
+    SettlementFormState,
+    'settlementId' | 'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options'
+  >,
+): number {
+  const counts = hydratedLineItemCounts(state)
+  return (
+    counts.hotels +
+    counts.meals +
+    counts.entrances +
+    counts.others +
+    counts.shoppings +
+    counts.options
+  )
+}
+
 /** Server row counts for parity checks between initialFull and hydrated store. */
 export function serverLineItemCounts(full: SettlementFull) {
   return {
@@ -127,6 +185,31 @@ export function serverLineItemCounts(full: SettlementFull) {
     options: full.options.length,
     companyExpenses: (full.company_expenses ?? []).length,
   }
+}
+
+export function serverLineItemCountSum(full: SettlementFull): number {
+  const counts = serverLineItemCounts(full)
+  return (
+    counts.hotels +
+    counts.meals +
+    counts.entrances +
+    counts.others +
+    counts.shoppings +
+    counts.options
+  )
+}
+
+/** True when admin edit loaded server rows but the store still has zero line items. */
+export function shouldAdminEditRebootstrap(
+  full: SettlementFull,
+  state: Pick<
+    SettlementFormState,
+    'settlementId' | 'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options'
+  >,
+): boolean {
+  if (state.settlementId !== full.id) return false
+  if (serverLineItemCountSum(full) === 0) return false
+  return storeLineItemCountSum(state) === 0
 }
 
 /** Expected store state after a full admin edit hydration from server data. */
@@ -169,4 +252,14 @@ export function isCleanDraftState(input: {
   saveError: string | null
 }): boolean {
   return input.dirty === false && input.saveStatus === 'idle' && input.saveError === null
+}
+
+export function isAdminEditHydrationBroken(
+  full: SettlementFull,
+  state: Pick<
+    SettlementFormState,
+    'settlementId' | 'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings' | 'options'
+  >,
+): boolean {
+  return shouldAdminEditRebootstrap(full, state)
 }

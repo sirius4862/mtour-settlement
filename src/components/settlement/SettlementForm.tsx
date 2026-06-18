@@ -37,7 +37,11 @@ import {
 } from '@/lib/settlement/save-integrity'
 import {
   applyEditFormBootstrapPlan,
+  applyAdminServerWinsState,
+  isAdminEditHydrationBroken,
   resolveEditFormBootstrap,
+  runPersistAwareBootstrap,
+  shouldAdminEditRebootstrap,
 } from '@/lib/settlement/settlement-form-edit-bootstrap'
 import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
 import { submitCurrentSettlement } from '@/lib/settlement/submit-flow'
@@ -522,6 +526,11 @@ export function SettlementForm({
   }, [isGuideCorrectionDisplayActive, guideCorrectionShellActive, guideCorrection.targets, guideCorrection.sections])
 
   const hydratedFromFullId = useRef<string | null>(null)
+  const adminRebootstrapAttemptedRef = useRef(false)
+
+  useEffect(() => {
+    adminRebootstrapAttemptedRef.current = false
+  }, [initialFull?.id])
 
   useEffect(() => {
     if (mode !== 'new') return
@@ -544,10 +553,39 @@ export function SettlementForm({
 
       if (mode === 'edit') {
         if (!initialFull) return
+
+        if (isAdminReview) {
+          const plan = resolveEditFormBootstrap({
+            isAdminReview: true,
+            formRole,
+            initialFull,
+            guideName,
+            clientState: useSettlementFormStore.getState(),
+          })
+          applyEditFormBootstrapPlan(
+            useSettlementFormStore,
+            plan,
+            guideName,
+            hydrateFromFull,
+          )
+
+          const reapplyAdminServerStateIfNeeded = () => {
+            if (shouldAdminEditRebootstrap(initialFull, useSettlementFormStore.getState())) {
+              applyAdminServerWinsState(useSettlementFormStore, initialFull, guideName)
+            }
+          }
+          reapplyAdminServerStateIfNeeded()
+          if (!adminRebootstrapAttemptedRef.current) {
+            adminRebootstrapAttemptedRef.current = true
+            queueMicrotask(reapplyAdminServerStateIfNeeded)
+          }
+          return
+        }
+
         if (hydratedFromFullId.current === initialFull.id) return
         hydratedFromFullId.current = initialFull.id
         const plan = resolveEditFormBootstrap({
-          isAdminReview,
+          isAdminReview: false,
           formRole,
           initialFull,
           guideName,
@@ -595,7 +633,7 @@ export function SettlementForm({
       bindTourIfNeeded(decision.bindTourId)
     }
 
-    return useSettlementFormStore.persist.onFinishHydration(bootstrap)
+    return runPersistAwareBootstrap(useSettlementFormStore.persist, bootstrap)
   }, [mode, initialFull, guideName, formRole, isAdminReview, initialTourId, tours, hydrateFromFull, resetNew, bindTourMetadata])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
@@ -616,6 +654,24 @@ export function SettlementForm({
     if (saveInFlightRef.current) return { ok: false }
 
     const action: SettlementFormAction = options?.action ?? 'save_only'
+
+    if (
+      isAdminReview &&
+      isExistingSettlementEdit &&
+      initialFull &&
+      isAdminEditHydrationBroken(initialFull, useSettlementFormStore.getState())
+    ) {
+      const message = '정산 데이터를 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.'
+      setSaveError(message)
+      logSubmitFlowAction({
+        action,
+        validationStep: 'admin_hydration',
+        settlementId: initialFull.id,
+        error: message,
+      })
+      return { ok: false }
+    }
+
     const { ok, errors } = runValidation('draft')
     if (!ok) {
       const message = errors[0]?.message ?? '입력 내용을 확인해주세요.'
@@ -719,6 +775,8 @@ export function SettlementForm({
   }, [
     isPreview,
     isAdminReview,
+    isExistingSettlementEdit,
+    initialFull,
     mode,
     router,
     runValidation,

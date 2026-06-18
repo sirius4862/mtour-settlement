@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import type { SettlementFull, Tour, UserRole } from '@/types'
 import { saveSettlementDraft, saveAdminSettlementEdits, sendForConfirmation, submitSettlement, reviewSettlement } from '@/lib/actions/settlementActions'
 import { toDraftPayload, stateFromMock } from '@/lib/settlement/mappers'
-import { sanitizeSettlementFullForGuide } from '@/lib/settlement/snapshot'
 import {
   assertAdminSendForConfirmation,
   canAdminRequestEditOnSettlement,
@@ -34,9 +33,12 @@ import {
   canProceedToSubmit,
   hasActiveLocalDraft,
   shouldNavigateNewSettlementToEdit,
-  shouldPreserveClientDraftOnHydration,
   shouldSkipNewFormBootstrapReset,
 } from '@/lib/settlement/save-integrity'
+import {
+  applyEditFormBootstrapPlan,
+  resolveEditFormBootstrap,
+} from '@/lib/settlement/settlement-form-edit-bootstrap'
 import { resolveNewSettlementBinding } from '@/lib/settlement/new-settlement-binding'
 import { submitCurrentSettlement } from '@/lib/settlement/submit-flow'
 import {
@@ -544,17 +546,19 @@ export function SettlementForm({
         if (!initialFull) return
         if (hydratedFromFullId.current === initialFull.id) return
         hydratedFromFullId.current = initialFull.id
-        const fullForRole = formRole === 'guide'
-          ? sanitizeSettlementFullForGuide(initialFull)
-          : initialFull
-        const clientState = useSettlementFormStore.getState()
-        if (shouldPreserveClientDraftOnHydration(clientState, initialFull.id)) {
-          hydrateFromFull(fullForRole, guideName)
-          return
-        }
-        // Server data wins over sessionStorage draft on clean edit reload
-        useSettlementFormStore.persist.clearStorage()
-        hydrateFromFull(fullForRole, guideName)
+        const plan = resolveEditFormBootstrap({
+          isAdminReview,
+          formRole,
+          initialFull,
+          guideName,
+          clientState: useSettlementFormStore.getState(),
+        })
+        applyEditFormBootstrapPlan(
+          useSettlementFormStore,
+          plan,
+          guideName,
+          hydrateFromFull,
+        )
         return
       }
 
@@ -592,7 +596,7 @@ export function SettlementForm({
     }
 
     return useSettlementFormStore.persist.onFinishHydration(bootstrap)
-  }, [mode, initialFull, guideName, formRole, initialTourId, tours, hydrateFromFull, resetNew, bindTourMetadata])
+  }, [mode, initialFull, guideName, formRole, isAdminReview, initialTourId, tours, hydrateFromFull, resetNew, bindTourMetadata])
 
   const runValidation = useCallback((intent: 'draft' | 'submit') => {
     const actor = isAdminReview ? 'admin' : 'guide'

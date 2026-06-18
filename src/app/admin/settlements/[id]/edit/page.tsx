@@ -55,6 +55,7 @@ export default async function AdminSettlementEditPage({
         tours={[full.tour]}
         guideName={formatGuideDisplayName(guide)}
         mode="edit"
+        formRole="admin"
         initialFull={full}
         adminEdit={{ backHref: `/admin/settlements/${id}`, actorRole: session.role }}
       />

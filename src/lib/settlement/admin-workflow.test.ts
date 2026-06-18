@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyHotelRow } from './defaults'
-import { sanitizeAdminDraftPayload, stateFromSettlementFull, toDraftPayload } from './mappers'
+import { sanitizeAdminDraftPayload, stateFromSettlementFull, toDraftPayload, emptyFormState } from './mappers'
 import {
   buildSnapshotPayload,
   diffSnapshotPayloads,
@@ -146,6 +146,138 @@ describe('admin draft save payload', () => {
     expect(sanitized.header.megugi_usd).toBe(99)
     expect(sanitized.hotels).toHaveLength(1)
     expect(sanitized.hotels[0].unit_price_sgl_usd).toBe(40)
+  })
+
+  it('empty UI payload with populated existing preserves guide line items and company expenses from payload only', () => {
+    const existing: SettlementFull = {
+      ...mockSubmittedSettlement(),
+      hotels: [
+        {
+          id: 'h1',
+          settlement_id: 'settlement-1',
+          hotel_name: 'Hotel A',
+          check_in_date: null,
+          nights: 2,
+          sgl_count: 1,
+          twn_count: 0,
+          trp_count: 0,
+          unit_price_sgl_usd: 50,
+          unit_price_trp_usd: 0,
+          company_amount_usd: 50,
+          guide_amount_usd: 10,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      meals: [
+        {
+          id: 'm1',
+          settlement_id: 'settlement-1',
+          meal_date: null,
+          restaurant_name: 'R1',
+          pax: 10,
+          unit_price_vnd: 0,
+          amount_vnd: 100000,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      entrances: [
+        {
+          id: 'e1',
+          settlement_id: 'settlement-1',
+          visit_date: null,
+          attraction_name: 'A1',
+          pax: 5,
+          unit_price_vnd: 0,
+          amount_vnd: 50000,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      others: [
+        {
+          id: 'o1',
+          settlement_id: 'settlement-1',
+          description: 'Other',
+          days: null,
+          pax: 0,
+          unit_price_usd: 0,
+          unit_price_vnd: 0,
+          amount_usd: 20,
+          amount_vnd: 0,
+          is_tip: false,
+          entry_mode: 'flat',
+          note: null,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      shoppings: [
+        {
+          id: 's1',
+          settlement_id: 'settlement-1',
+          visit_date: null,
+          shop_name: 'Shop',
+          sale_usd: 100,
+          com_usd: 20,
+          kb_usd: 5,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      options: [
+        {
+          id: 'opt1',
+          settlement_id: 'settlement-1',
+          option_date: null,
+          option_name: 'Opt',
+          unit_price_usd: 25,
+          pax: 8,
+          total_sale_usd: 200,
+          expense_usd: 0,
+          expense_vnd: 0,
+          com_usd: 36,
+          is_extra_vehicle: false,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      company_expenses: [
+        {
+          id: 'ce1',
+          settlement_id: 'settlement-1',
+          description: 'Co exp',
+          amount_usd: 10,
+          amount_vnd: 0,
+          note: null,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    }
+
+    const emptyUi = {
+      ...emptyFormState('Admin'),
+      settlementId: existing.id,
+      tourId: existing.tour_id,
+    }
+    const sanitized = sanitizeAdminDraftPayload(toDraftPayload(emptyUi), existing)
+
+    expect(sanitized.meals).toHaveLength(1)
+    expect(sanitized.entrances).toHaveLength(1)
+    expect(sanitized.others).toHaveLength(1)
+    expect(sanitized.hotels).toHaveLength(1)
+    expect(sanitized.shoppings).toHaveLength(1)
+    expect(sanitized.options).toHaveLength(1)
+    expect(sanitized.companyExpenses).toEqual([])
   })
 })
 

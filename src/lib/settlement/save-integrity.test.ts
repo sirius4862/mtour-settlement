@@ -301,6 +301,22 @@ describe('SettlementForm save failure path (static)', () => {
     )
     expect(form).toContain('canProceedToSubmit(useSettlementFormStore.getState())')
   })
+
+  it('admin edit bootstrap delegates to settlement-form-edit-bootstrap helpers', () => {
+    const form = readFileSync(
+      join(ROOT, 'src/components/settlement/SettlementForm.tsx'),
+      'utf8',
+    )
+    const bootstrap = readFileSync(
+      join(ROOT, 'src/lib/settlement/settlement-form-edit-bootstrap.ts'),
+      'utf8',
+    )
+    expect(form).toContain('resolveEditFormBootstrap')
+    expect(form).toContain('applyEditFormBootstrapPlan')
+    expect(bootstrap).toContain('admin_server_wins')
+    expect(bootstrap).toContain('shouldPreserveClientDraftOnHydration')
+    expect(bootstrap).toContain('sanitizeSettlementFullForGuide')
+  })
 })
 
 describe('store hydrate preserves dirty failed client draft', () => {

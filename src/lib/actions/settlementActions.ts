@@ -110,6 +110,7 @@ import {
   guideHeaderUpsertDiffersFromExisting,
   isGuideEditableSettlementStatus,
 } from '@/lib/settlement/noop-draft-save-fast-path'
+import { assertAdminCompanyExpenseSaveAllowed } from '@/lib/settlement/save-integrity'
 import {
   runGuideOptionSaveTripwirePostPersist,
   runGuideOptionSaveTripwirePrePersist,
@@ -2027,6 +2028,14 @@ export async function saveAdminSettlementEdits(
 
   const statusGuard = assertAdminSaveSettlement(profile.role, existing.status)
   if (!statusGuard.ok) return { ok: false, error: statusGuard.error }
+
+  const companyExpenseGuard = assertAdminCompanyExpenseSaveAllowed(
+    existing,
+    payload.companyExpenses,
+  )
+  if (!companyExpenseGuard.ok) {
+    return { ok: false, error: companyExpenseGuard.error }
+  }
 
   const sanitized = sanitizeAdminDraftPayload(payload, existing)
   const currentStatus = existing.status

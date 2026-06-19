@@ -1,7 +1,28 @@
-import type { SaveStatus, SettlementFormState } from './form-types'
+import type { SaveStatus, SettlementFormState, DraftCompanyExpenseRow } from './form-types'
+import type { SettlementFull } from '@/types'
 
 export const SAVE_FAILED_SUBMIT_BLOCKED =
   '저장에 실패했습니다. 임시저장을 완료한 뒤 제출해주세요.'
+
+export const ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR =
+  '관리자 입력 항목이 정상적으로 불러오지 않았습니다. 새로고침 후 다시 시도해주세요.'
+
+/** Reject admin saves that would wipe DB company expenses via an empty hydration-failure payload. */
+export function assertAdminCompanyExpenseSaveAllowed(
+  existing: Pick<SettlementFull, 'company_expenses'>,
+  payloadCompanyExpenses: DraftCompanyExpenseRow[] | undefined,
+): { ok: true } | { ok: false; error: string } {
+  const existingCount = (existing.company_expenses ?? []).length
+  if (existingCount === 0) return { ok: true }
+
+  const rows = payloadCompanyExpenses ?? []
+  // Broken hydration sends no row shells; intentional delete-all still sends soft-deleted rows.
+  if (rows.length === 0) {
+    return { ok: false, error: ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR }
+  }
+
+  return { ok: true }
+}
 
 type LineItemDraft = { deleted?: boolean }
 

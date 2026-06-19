@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { emptyHotelRow } from './defaults'
-import { sanitizeAdminDraftPayload, stateFromSettlementFull, toDraftPayload, emptyFormState } from './mappers'
+import { emptyHotelRow, emptyCompanyExpenseRow } from './defaults'
+import {
+  buildCompanyExpenseDbRows,
+  sanitizeAdminDraftPayload,
+  stateFromSettlementFull,
+  toDraftPayload,
+  emptyFormState,
+} from './mappers'
+import {
+  assertAdminCompanyExpenseSaveAllowed,
+  ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR,
+} from './save-integrity'
 import {
   buildSnapshotPayload,
   diffSnapshotPayloads,
@@ -278,6 +288,99 @@ describe('admin draft save payload', () => {
     expect(sanitized.shoppings).toHaveLength(1)
     expect(sanitized.options).toHaveLength(1)
     expect(sanitized.companyExpenses).toEqual([])
+    expect(assertAdminCompanyExpenseSaveAllowed(existing, sanitized.companyExpenses)).toEqual({
+      ok: false,
+      error: ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR,
+    })
+    expect(buildCompanyExpenseDbRows(sanitized.companyExpenses, existing.id)).toEqual([])
+  })
+
+  it('server guard allows legitimate company expense update and does not preserve stale rows in payload', () => {
+    const existing: SettlementFull = {
+      ...mockSubmittedSettlement(),
+      company_expenses: [
+        {
+          id: 'ce1',
+          settlement_id: 'settlement-1',
+          description: 'Old deposit',
+          amount_usd: 10,
+          amount_vnd: 0,
+          note: null,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    }
+    const state = stateFromSettlementFull(existing, 'Admin')
+    state.companyExpenses = [
+      {
+        ...emptyCompanyExpenseRow(),
+        id: 'ce1',
+        description: 'Updated deposit',
+        amount_usd: 99,
+        amount_vnd: 0,
+      },
+    ]
+
+    const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
+    expect(assertAdminCompanyExpenseSaveAllowed(existing, sanitized.companyExpenses)).toEqual({
+      ok: true,
+    })
+    expect(sanitized.companyExpenses).toHaveLength(1)
+    expect(sanitized.companyExpenses[0].description).toBe('Updated deposit')
+    expect(sanitized.companyExpenses[0].amount_usd).toBe(99)
+  })
+
+  it('server guard allows settlements with no company expenses', () => {
+    const existing = mockSubmittedSettlement()
+    const state = stateFromSettlementFull(existing, 'Admin')
+    const sanitized = sanitizeAdminDraftPayload(toDraftPayload(state), existing)
+    expect(assertAdminCompanyExpenseSaveAllowed(existing, sanitized.companyExpenses)).toEqual({
+      ok: true,
+    })
+    expect(sanitized.companyExpenses).toEqual([])
+  })
+
+  it('guide-owned line items remain preserved when admin payload is empty (independent of company guard)', () => {
+    const existing: SettlementFull = {
+      ...mockSubmittedSettlement(),
+      meals: [
+        {
+          id: 'm1',
+          settlement_id: 'settlement-1',
+          meal_date: null,
+          restaurant_name: 'R1',
+          pax: 10,
+          unit_price_vnd: 0,
+          amount_vnd: 100000,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      company_expenses: [
+        {
+          id: 'ce1',
+          settlement_id: 'settlement-1',
+          description: 'Co exp',
+          amount_usd: 10,
+          amount_vnd: 0,
+          note: null,
+          sort_order: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    }
+    const emptyUi = {
+      ...emptyFormState('Admin'),
+      settlementId: existing.id,
+      tourId: existing.tour_id,
+    }
+    const sanitized = sanitizeAdminDraftPayload(toDraftPayload(emptyUi), existing)
+    expect(sanitized.meals).toHaveLength(1)
+    expect(assertAdminCompanyExpenseSaveAllowed(existing, sanitized.companyExpenses).ok).toBe(false)
   })
 })
 

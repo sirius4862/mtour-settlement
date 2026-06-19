@@ -5,6 +5,8 @@ import { applyDraftSaveResult } from './draft-save-flow'
 import { emptyEntranceRow, emptyOptionRow } from './defaults'
 import { emptyFormState, stateFromSettlementFull } from './mappers'
 import {
+  ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR,
+  assertAdminCompanyExpenseSaveAllowed,
   canProceedToSubmit,
   footerStatusLabel,
   hasActiveLocalDraft,
@@ -14,6 +16,7 @@ import {
   shouldPreserveClientDraftOnHydration,
   shouldSkipNewFormBootstrapReset,
 } from './save-integrity'
+import { emptyCompanyExpenseRow } from './defaults'
 import type { SettlementFormState } from './form-types'
 import type { SettlementFull } from '@/types'
 
@@ -277,6 +280,90 @@ describe('applyDraftSaveResult failure integrity', () => {
     expect(bindSettlementId).toHaveBeenCalledWith('settlement-new')
     expect(markSaved).not.toHaveBeenCalled()
     expect(setSaveError).toHaveBeenCalledWith('child persist failed')
+  })
+})
+
+describe('assertAdminCompanyExpenseSaveAllowed', () => {
+  const existingWithCompanyExpense = {
+    company_expenses: [
+      {
+        id: 'ce1',
+        settlement_id: 's1',
+        description: 'Deposit',
+        amount_usd: 50,
+        amount_vnd: 0,
+        note: null,
+        sort_order: 0,
+        created_at: '',
+        updated_at: '',
+      },
+    ],
+  }
+
+  it('rejects empty payload when existing company expenses exist (hydration failure)', () => {
+    expect(assertAdminCompanyExpenseSaveAllowed(existingWithCompanyExpense, [])).toEqual({
+      ok: false,
+      error: ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR,
+    })
+    expect(assertAdminCompanyExpenseSaveAllowed(existingWithCompanyExpense, undefined)).toEqual({
+      ok: false,
+      error: ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR,
+    })
+  })
+
+  it('allows hydrated update with company expense rows', () => {
+    const rows = [
+      {
+        ...emptyCompanyExpenseRow(),
+        id: 'ce1',
+        description: 'Updated deposit',
+        amount_usd: 75,
+        amount_vnd: 0,
+      },
+    ]
+    expect(assertAdminCompanyExpenseSaveAllowed(existingWithCompanyExpense, rows)).toEqual({
+      ok: true,
+    })
+  })
+
+  it('allows intentional delete-all via soft-deleted row shells', () => {
+    const rows = [
+      {
+        ...emptyCompanyExpenseRow(),
+        id: 'ce1',
+        description: 'Deposit',
+        amount_usd: 50,
+        amount_vnd: 0,
+        deleted: true,
+      },
+    ]
+    expect(assertAdminCompanyExpenseSaveAllowed(existingWithCompanyExpense, rows)).toEqual({
+      ok: true,
+    })
+  })
+
+  it('allows empty payload when settlement has no company expenses', () => {
+    expect(assertAdminCompanyExpenseSaveAllowed({ company_expenses: [] }, [])).toEqual({
+      ok: true,
+    })
+  })
+})
+
+describe('saveAdminSettlementEdits company expense guard (static)', () => {
+  it('saveAdminSettlementEdits calls assertAdminCompanyExpenseSaveAllowed before persist', () => {
+    const actions = readFileSync(
+      join(ROOT, 'src/lib/actions/settlementActions.ts'),
+      'utf8',
+    )
+    const fnStart = actions.indexOf('export async function saveAdminSettlementEdits')
+    const fnBody = actions.slice(fnStart, actions.indexOf('export async function', fnStart + 1))
+    const guardIdx = fnBody.indexOf('assertAdminCompanyExpenseSaveAllowed')
+    const sanitizeIdx = fnBody.indexOf('sanitizeAdminDraftPayload')
+    const headerUpdateIdx = fnBody.indexOf(".from('settlements')")
+    expect(guardIdx).toBeGreaterThan(-1)
+    expect(guardIdx).toBeLessThan(sanitizeIdx)
+    expect(sanitizeIdx).toBeLessThan(headerUpdateIdx)
+    expect(fnBody).not.toContain('isAdminEditHydrationBroken')
   })
 })
 

@@ -162,11 +162,13 @@ import {
 } from '@/lib/admin/settlement-list'
 import {
   ADMIN_UNSUBMITTED_SETTLEMENT_COUNT_SELECT,
+  ADMIN_UNSUBMITTED_TOUR_COUNT_SELECT,
   ADMIN_UNSUBMITTED_TOUR_SELECT,
   computeAdminUnsubmittedTotalFromRows,
   countAdminUnsubmittedWithoutSearch,
   isAdminUnsubmittedOnlyStatusFilter,
   mergeAdminUnsubmittedListItems,
+  type AdminUnsubmittedTourIdRow,
   type AdminUnsubmittedTourRow,
 } from '@/lib/admin/settlement-unsubmitted-list'
 import {
@@ -837,31 +839,7 @@ async function getAdminUnsubmittedSettlements(
   pageSize: number,
   regionId: string | undefined,
 ): Promise<AdminSettlementsPageResult> {
-  let tourQuery = supabase
-    .from('tours')
-    .select(ADMIN_UNSUBMITTED_TOUR_SELECT)
-    .not('guide_id', 'is', null)
-    .neq('assignment_status', 'recalled')
-
-  if (regionId) tourQuery = tourQuery.eq('branch_id', regionId)
-
-  const search = filters.search?.trim()
-  if (search) {
-    const scope = await resolveAdminSettlementSearchScope(supabase, search)
-    if (!adminSettlementSearchHasMatches(scope)) {
-      return emptyAdminSettlementsPage(page, pageSize)
-    }
-    const orFilter = buildAdminSettlementSearchOrFilter(scope, 'tours')
-    if (orFilter) tourQuery = tourQuery.or(orFilter)
-  }
-
-  const { data: tourRows, error: tourError } = await tourQuery
-  if (tourError) {
-    console.error('getAdminUnsubmittedSettlements tours:', tourError.message)
-    return emptyAdminSettlementsPage(page, pageSize)
-  }
-
-  const tours = (tourRows ?? []) as unknown as AdminUnsubmittedTourRow[]
+  const tours = await loadAdminUnsubmittedTourRows(supabase, filters, regionId)
   if (tours.length === 0) return emptyAdminSettlementsPage(page, pageSize)
 
   const tourIds = tours.map((t) => t.id)
@@ -878,20 +856,22 @@ async function getAdminUnsubmittedSettlements(
   const merged = mergeAdminUnsubmittedListItems(
     tours,
     (settlementRows ?? []) as unknown as AdminSettlementListItem[],
-    search,
+    filters.search?.trim(),
   )
 
   return paginateSortedAdminSettlementRows(merged, { page, pageSize })
 }
 
-async function loadAdminUnsubmittedTourRows(
+async function queryAdminUnsubmittedTours<T extends AdminUnsubmittedTourIdRow>(
   supabase: SupabaseClient,
   filters: AdminSettlementListFilters,
   regionId: string | undefined,
-): Promise<AdminUnsubmittedTourRow[]> {
+  select: string,
+  logLabel: string,
+): Promise<T[]> {
   let tourQuery = supabase
     .from('tours')
-    .select(ADMIN_UNSUBMITTED_TOUR_SELECT)
+    .select(select)
     .not('guide_id', 'is', null)
     .neq('assignment_status', 'recalled')
 
@@ -909,11 +889,39 @@ async function loadAdminUnsubmittedTourRows(
 
   const { data: tourRows, error: tourError } = await tourQuery
   if (tourError) {
-    console.error('loadAdminUnsubmittedTourRows:', tourError.message)
+    console.error(`${logLabel}:`, tourError.message)
     return []
   }
 
-  return (tourRows ?? []) as unknown as AdminUnsubmittedTourRow[]
+  return (tourRows ?? []) as unknown as T[]
+}
+
+async function loadAdminUnsubmittedTourRows(
+  supabase: SupabaseClient,
+  filters: AdminSettlementListFilters,
+  regionId: string | undefined,
+): Promise<AdminUnsubmittedTourRow[]> {
+  return queryAdminUnsubmittedTours(
+    supabase,
+    filters,
+    regionId,
+    ADMIN_UNSUBMITTED_TOUR_SELECT,
+    'loadAdminUnsubmittedTourRows',
+  )
+}
+
+async function loadAdminUnsubmittedTourIdRows(
+  supabase: SupabaseClient,
+  filters: AdminSettlementListFilters,
+  regionId: string | undefined,
+): Promise<AdminUnsubmittedTourIdRow[]> {
+  return queryAdminUnsubmittedTours(
+    supabase,
+    filters,
+    regionId,
+    ADMIN_UNSUBMITTED_TOUR_COUNT_SELECT,
+    'loadAdminUnsubmittedTourIdRows',
+  )
 }
 
 /** Count-only 미제출 backlog — same total semantics as getAdminUnsubmittedSettlements(...).total. */
@@ -922,13 +930,13 @@ export async function getAdminUnsubmittedCount(
   filters: AdminSettlementListFilters,
   regionId: string | undefined,
 ): Promise<number> {
-  const tours = await loadAdminUnsubmittedTourRows(supabase, filters, regionId)
-  if (tours.length === 0) return 0
-
   const search = filters.search?.trim()
-  const tourIds = tours.map((t) => t.id)
 
   if (search) {
+    const tours = await loadAdminUnsubmittedTourRows(supabase, filters, regionId)
+    if (tours.length === 0) return 0
+
+    const tourIds = tours.map((t) => t.id)
     const { data: settlementRows, error: settlementError } = await supabase
       .from('settlements')
       .select(ADMIN_SETTLEMENT_SELECT)
@@ -946,6 +954,10 @@ export async function getAdminUnsubmittedCount(
     )
   }
 
+  const tours = await loadAdminUnsubmittedTourIdRows(supabase, filters, regionId)
+  if (tours.length === 0) return 0
+
+  const tourIds = tours.map((t) => t.id)
   const { data: settlementRows, error: settlementError } = await supabase
     .from('settlements')
     .select(ADMIN_UNSUBMITTED_SETTLEMENT_COUNT_SELECT)

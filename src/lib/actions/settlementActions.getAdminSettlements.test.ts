@@ -166,6 +166,47 @@ describe('getAdminDashboardStats — period-independent 미제출 backlog', () =
   })
 })
 
+describe('getAdminUnsubmittedCount — lightweight dashboard tour query', () => {
+  const actions = readFileSync('src/lib/actions/settlementActions.ts', 'utf8')
+  const start = actions.indexOf('export async function getAdminUnsubmittedCount')
+  const end = actions.indexOf('async function loadDashboardStatusBucketCounts', start)
+  const body = actions.slice(start, end)
+  const loaderStart = actions.indexOf('async function loadAdminUnsubmittedTourIdRows')
+  const loaderEnd = actions.indexOf('/** Count-only 미제출 backlog', loaderStart)
+  const idLoaderBody = actions.slice(loaderStart, loaderEnd)
+
+  it('uses id-only tour select on the dashboard count path (no search)', () => {
+    expect(body).toContain('loadAdminUnsubmittedTourIdRows')
+    expect(idLoaderBody).toContain('ADMIN_UNSUBMITTED_TOUR_COUNT_SELECT')
+    expect(body).toContain('if (search)')
+    expect(body).toContain('loadAdminUnsubmittedTourRows')
+  })
+
+  it('keeps full tour select for search parity with the list page', () => {
+    const searchStart = body.indexOf('if (search) {')
+    const searchEnd = body.indexOf('loadAdminUnsubmittedTourIdRows', searchStart)
+    const searchBranch = body.slice(searchStart, searchEnd)
+    expect(searchBranch).toContain('loadAdminUnsubmittedTourRows')
+    expect(searchBranch).toContain('ADMIN_SETTLEMENT_SELECT')
+    expect(searchBranch).not.toContain('loadAdminUnsubmittedTourIdRows')
+  })
+
+  it('keeps minimal settlement select on the count-only path', () => {
+    const noSearchBranch = body.slice(body.indexOf('loadAdminUnsubmittedTourIdRows'))
+    expect(noSearchBranch).toContain('ADMIN_UNSUBMITTED_SETTLEMENT_COUNT_SELECT')
+    expect(noSearchBranch).toContain('countAdminUnsubmittedWithoutSearch')
+  })
+
+  it('list loader still uses full tour select with guide/branch joins', () => {
+    const listStart = actions.indexOf('async function getAdminUnsubmittedSettlements')
+    const listEnd = actions.indexOf('async function queryAdminUnsubmittedTours', listStart)
+    const listBody = actions.slice(listStart, listEnd)
+    expect(listBody).toContain('loadAdminUnsubmittedTourRows')
+    expect(listBody).not.toContain('loadAdminUnsubmittedTourIdRows')
+    expect(listBody).toContain('ADMIN_SETTLEMENT_SELECT')
+  })
+})
+
 describe('getAdminSettlements — shared admin search helper', () => {
   const actions = readFileSync('src/lib/actions/settlementActions.ts', 'utf8')
 

@@ -181,6 +181,15 @@ describe('getAdminUnsubmittedCount parity (pure simulation)', () => {
       2,
     )
   })
+
+  it('count-only path accepts id-only tour rows', () => {
+    const tours = [{ id: 'tour-a' }, { id: 'tour-b' }]
+    const settlements = [{ status: 'draft', tour: { id: 'tour-b' } }]
+    expect(countAdminUnsubmittedWithoutSearch(tours, settlements)).toBe(2)
+    expect(computeAdminUnsubmittedTotalFromRows(tours as AdminUnsubmittedTourRow[], settlements)).toBe(
+      2,
+    )
+  })
 })
 
 describe('getAdminUnsubmittedCount randomized parity', () => {

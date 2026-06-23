@@ -11,11 +11,18 @@ export const ADMIN_UNSUBMITTED_TOUR_ITEM_ID_PREFIX = 'tour-unsubmitted:'
 
 export const ADMIN_UNSUBMITTED_SETTLEMENT_COUNT_SELECT = 'status, tour_id'
 
+/** Dashboard count-only — no guide/branch joins. */
+export const ADMIN_UNSUBMITTED_TOUR_COUNT_SELECT = 'id'
+
 export const ADMIN_UNSUBMITTED_TOUR_SELECT = `
   id, pattern, tour_code, start_date, pax_count, branch_id, guide_id, assignment_status, created_at,
   guide:profiles!guide_id(id, full_name, email, korean_name, vietnamese_name, branch_id),
   branch:branches!branch_id(id, name, code)
 `
+
+export type AdminUnsubmittedTourIdRow = {
+  id: string
+}
 
 export type AdminUnsubmittedTourRow = {
   id: string
@@ -132,7 +139,7 @@ export function computeAdminUnsubmittedTotal(
  * Fast count path when search is absent — mirrors merge dedup without sorting.
  */
 export function countAdminUnsubmittedWithoutSearch(
-  tours: AdminUnsubmittedTourRow[],
+  tours: ReadonlyArray<AdminUnsubmittedTourIdRow>,
   settlements: AdminUnsubmittedCountSettlementRow[],
 ): number {
   const settlementByTourId = new Map<string, AdminUnsubmittedCountSettlementRow>()

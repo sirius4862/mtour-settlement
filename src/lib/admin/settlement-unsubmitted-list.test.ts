@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AdminSettlementListItem } from './settlement-list'
 import {
+  ADMIN_UNSUBMITTED_TOUR_COUNT_SELECT,
   ADMIN_UNSUBMITTED_TOUR_ITEM_ID_PREFIX,
   buildAdminUnsubmittedTourListItem,
   isAdminUnsubmittedOnlyStatusFilter,
@@ -190,6 +191,10 @@ describe('settlementStatusAllowsUnsubmittedList', () => {
 
 describe('getAdminSettlements unsubmitted path (source-level)', () => {
   const actions = readFileSync(join(process.cwd(), 'src/lib/actions/settlementActions.ts'), 'utf8')
+
+  it('exports lightweight tour count select for dashboard stats', () => {
+    expect(ADMIN_UNSUBMITTED_TOUR_COUNT_SELECT).toBe('id')
+  })
 
   it('branches to tour-based 미제출 loader for draft with or without date range', () => {
     expect(actions).toContain('getAdminUnsubmittedSettlements')

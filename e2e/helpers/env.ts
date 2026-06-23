@@ -46,3 +46,11 @@ export const PROD_URL =
   process.env.PROD_SMOKE_URL?.trim() || 'https://mtour-settlement.vercel.app'
 
 export const CARD_LABELS = ['미제출', '제출됨', '최종확인', '수정요청', '지급완료'] as const
+
+export {
+  PRODUCTION_SUPABASE_REF,
+  assertLegacyProductionWorkflowSupabase,
+  assertStagingSupabaseNotProduction,
+  extractSupabaseProjectRef,
+  isProductionSupabaseRef,
+} from '../../src/lib/supabase/project-ref'

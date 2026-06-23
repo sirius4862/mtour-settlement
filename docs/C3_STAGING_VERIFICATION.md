@@ -1,5 +1,7 @@
 # C3 — Staging Verification Record
 
+> **Historical — mislabeled target:** This record used Supabase project `xqkdsgjwftfaacvppxag`, which is now **production**. Do not treat that ref as staging. For guide-confirm atomic work, see [`guide-confirm-staging-operator-checklist.md`](guide-confirm-staging-operator-checklist.md).
+
 **Status:** CLOSED  
 **Date:** 2026-06-02  
 **Target:** https://xqkdsgjwftfaacvppxag.supabase.co  

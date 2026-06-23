@@ -16,13 +16,17 @@ import {
   signInSupabase,
   type WorkflowFixture,
 } from './helpers/supabase-workflow'
-import { getSupabaseEnv, getTestCreds, loadEnvLocal } from './helpers/env'
+import {
+  assertLegacyProductionWorkflowSupabase,
+  getSupabaseEnv,
+  getTestCreds,
+  loadEnvLocal,
+} from './helpers/env'
 
 loadEnvLocal()
 
 const creds = getTestCreds()
 const supabaseEnv = getSupabaseEnv()
-const STAGING_REF = 'xqkdsgjwftfaacvppxag'
 
 /** Vehicle fee (O79) under 회사 입력 항목 — tracked in confirm diff. */
 function vehicleFeeInput(page: Page) {
@@ -38,11 +42,10 @@ let fixture: WorkflowFixture | null = null
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
-  if (!supabaseEnv.url.includes(STAGING_REF)) {
-    throw new Error(
-      `Refusing guide-confirmation-integrity E2E: Supabase URL must include staging ref ${STAGING_REF}`,
-    )
-  }
+  assertLegacyProductionWorkflowSupabase(
+    supabaseEnv.url,
+    'guide-confirmation-integrity E2E',
+  )
 
   const { client } = await signInSupabase(
     supabaseEnv.url,

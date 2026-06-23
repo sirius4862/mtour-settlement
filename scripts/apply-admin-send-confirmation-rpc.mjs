@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 /**
  * Apply settlement_workflow_v1_admin_send_confirmation_rpc.sql via POSTGRES_URL / DATABASE_URL.
- * Staging only (xqkdsgjwftfaacvppxag).
+ * Staging only — refuses production ref xqkdsgjwftfaacvppxag.
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import postgres from 'postgres'
-
-const STAGING_REF = 'xqkdsgjwftfaacvppxag'
+import {
+  PRODUCTION_SUPABASE_REF,
+  refuseProductionDbUrl,
+} from './lib/supabase-project-ref.mjs'
 
 function loadEnvLocal() {
   const p = join(process.cwd(), '.env.local')
@@ -27,8 +29,17 @@ const dbUrl =
   process.env.SUPABASE_DB_URL ??
   ''
 
-if (!dbUrl.includes(STAGING_REF)) {
-  console.error(`Refusing: DB URL must include ${STAGING_REF}`)
+const guard = refuseProductionDbUrl(dbUrl, 'apply-admin-send-confirmation-rpc')
+if (!guard.ok) {
+  console.error(guard.error)
+  console.error(
+    `Configure DATABASE_URL for a non-production Supabase project (not ${PRODUCTION_SUPABASE_REF}).`,
+  )
+  process.exit(1)
+}
+
+if (!dbUrl.trim()) {
+  console.error('Refusing: DATABASE_URL / POSTGRES_URL missing.')
   process.exit(1)
 }
 

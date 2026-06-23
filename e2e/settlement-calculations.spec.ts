@@ -6,14 +6,18 @@ import {
   TEST_MARKER,
   type WorkflowFixture,
 } from './helpers/supabase-workflow'
-import { getSupabaseEnv, getTestCreds, loadEnvLocal } from './helpers/env'
+import {
+  assertLegacyProductionWorkflowSupabase,
+  getSupabaseEnv,
+  getTestCreds,
+  loadEnvLocal,
+} from './helpers/env'
 import { formatUsd } from '../src/lib/settlement/format-currency'
 
 loadEnvLocal()
 
 const creds = getTestCreds()
 const supabaseEnv = getSupabaseEnv()
-const STAGING_REF = 'xqkdsgjwftfaacvppxag'
 
 type ScenarioInputs = {
   tcCompanyUsd: number
@@ -97,11 +101,7 @@ const fixtures: WorkflowFixture[] = []
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(() => {
-  if (!supabaseEnv.url.includes(STAGING_REF)) {
-    throw new Error(
-      `Refusing settlement calculation E2E: Supabase URL must include staging ref ${STAGING_REF}`,
-    )
-  }
+  assertLegacyProductionWorkflowSupabase(supabaseEnv.url, 'settlement-calculations E2E')
 })
 
 test.afterAll(async () => {

@@ -1,5 +1,5 @@
 /**
- * P0-A save-integrity browser reproduction (local dev + staging Supabase).
+ * P0-A save-integrity browser reproduction (local dev + production Supabase until true staging exists).
  *
  * Failure injection: a negative-COM option row reaches the real saveSettlementDraft
  * path. Header insert succeeds; option_items insert fails on DB chk_opt_com.
@@ -7,7 +7,12 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { getSupabaseEnv, getTestCreds, loadEnvLocal } from './helpers/env'
+import {
+  assertLegacyProductionWorkflowSupabase,
+  getSupabaseEnv,
+  getTestCreds,
+  loadEnvLocal,
+} from './helpers/env'
 import { primeRole } from './helpers/storage-state'
 import { cleanupWorkflowFixture, signInSupabase, TEST_MARKER } from './helpers/supabase-workflow'
 import { SAVE_FAILED_SUBMIT_BLOCKED } from '../src/lib/settlement/save-integrity'
@@ -17,7 +22,6 @@ loadEnvLocal()
 const creds = getTestCreds()
 const supabaseEnv = getSupabaseEnv()
 const baseURL = process.env.P0A_E2E_BASE_URL?.trim() || 'http://127.0.0.1:3000'
-const STAGING_REF = 'xqkdsgjwftfaacvppxag'
 const MARKER = `${TEST_MARKER}-P0A-SAVE-INT`
 
 type DraftStorage = {
@@ -38,9 +42,7 @@ let orphanSettlementId: string | null = null
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(() => {
-  if (!supabaseEnv.url.includes(STAGING_REF)) {
-    throw new Error(`P0-A E2E requires staging Supabase ref ${STAGING_REF}`)
-  }
+  assertLegacyProductionWorkflowSupabase(supabaseEnv.url, 'P0-A save-integrity E2E')
 })
 
 test.afterAll(async () => {

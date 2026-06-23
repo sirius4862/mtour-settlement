@@ -11,13 +11,18 @@ import {
   TEST_MARKER,
   type WorkflowFixture,
 } from './helpers/supabase-workflow'
-import { getSupabaseEnv, getTestCreds, loadEnvLocal } from './helpers/env'
+import {
+  assertLegacyProductionWorkflowSupabase,
+  getSupabaseEnv,
+  getTestCreds,
+  loadEnvLocal,
+  PRODUCTION_SUPABASE_REF,
+} from './helpers/env'
 
 loadEnvLocal()
 
 const creds = getTestCreds()
 const supabaseEnv = getSupabaseEnv()
-const STAGING_REF = 'xqkdsgjwftfaacvppxag'
 const DUPLICATE_DESC = `${TEST_MARKER}-dup-parking`
 
 async function loginViaForm(page: Page, email: string, password: string, pathFragment: string) {
@@ -34,11 +39,7 @@ let fixture: WorkflowFixture | null = null
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(() => {
-  if (!supabaseEnv.url.includes(STAGING_REF)) {
-    throw new Error(
-      `Refusing guide-save-then-submit E2E: Supabase URL must include staging ref ${STAGING_REF}`,
-    )
-  }
+  assertLegacyProductionWorkflowSupabase(supabaseEnv.url, 'guide-save-then-submit E2E')
 })
 
 test.afterAll(async () => {
@@ -94,7 +95,7 @@ test('Scenario A: save-then-submit persists other_expense_items correction', asy
   const guideDeleteOk = await guideCanDeleteOtherExpenseItem(guideClient, settlementId)
   test.skip(
     !guideDeleteOk,
-    'Staging DB: guide DELETE on other_expense_items blocked. Run workflow v1 migrations (P2a) on xqkdsgjwftfaacvppxag.',
+    `Production DB (${PRODUCTION_SUPABASE_REF}): guide DELETE on other_expense_items blocked. Run workflow v1 migrations (P2a).`,
   )
 
   const insertedOthers = await insertOtherExpenseItems(guideClient, settlementId, [

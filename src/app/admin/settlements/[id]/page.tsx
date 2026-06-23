@@ -201,6 +201,10 @@ export default async function AdminSettlementDetailPage({
         m.restaurant_name, m.meal_date ?? '', `${m.pax}명`, fmtV(m.amount_vnd)
       ])} headers={['식당명', '날짜', '인원', '금액(VND)']} />}
 
+      {entrances.length > 0 && <ItemTable title="입장료" rows={entrances.map(e => [
+        e.attraction_name, e.visit_date ?? '', `${e.pax}명`, fmtV(e.amount_vnd)
+      ])} headers={['내역', '날짜', '인원', '금액(VND)']} />}
+
       {others.length > 0 && <ItemTable title="기타지출" rows={others.map(o => {
         const amounts = normalizeOtherAmountsFromDb(o)
         return [

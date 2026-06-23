@@ -195,12 +195,9 @@ import {
 // ── 인증 헬퍼 ─────────────────────────────────────────────────
 
 async function getProfile() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  const { data } = await supabase
-    .from('profiles').select('id,role,branch_id').eq('id', user.id).single()
-  return data as { id: string; role: UserRole; branch_id: string | null } | null
+  const session = await getSession()
+  if (!session) return null
+  return { id: session.id, role: session.role, branch_id: session.branch_id }
 }
 
 async function getAdminRegionScope(): Promise<AdminRegionScope | null> {

@@ -20,6 +20,7 @@ import { validateCreateTourTextLengths } from '@/lib/tour/create-tour-validation
 import { assertCanRecallTourAssignment } from '@/lib/tour/assignment-recall'
 import { isVehicleRecallCleanupPending } from '@/lib/tour/vehicle-recall-dead-end'
 import { assertAdminCanAccessSettlementBranch } from '@/lib/region/settlement-access'
+import { getSession } from '@/lib/auth/session'
 import { createClient } from '@/lib/supabase/server'
 import type { Branch, SettlementStatus, Tour, TourAssignmentStatus } from '@/types'
 
@@ -58,21 +59,13 @@ export interface CreateTourInput {
 }
 
 async function requireAdminProfile() {
+  const session = await getSession()
+  if (!session || !isAdminTier(session.role)) return null
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  const { data } = await supabase
-    .from('profiles')
-    .select('id, role, branch_id')
-    .eq('id', user.id)
-    .single()
-
-  if (!data || !isAdminTier(data.role as import('@/types').UserRole)) return null
   return {
-    id: data.id as string,
-    role: data.role as import('@/types').UserRole,
-    branch_id: data.branch_id as string | null,
+    id: session.id,
+    role: session.role,
+    branch_id: session.branch_id,
     supabase,
   }
 }

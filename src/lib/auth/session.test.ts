@@ -46,3 +46,15 @@ describe('guide auth session caching', () => {
     expect(homePathForRole('vehicle_company')).toBe('/vehicle')
   })
 })
+
+describe('admin auth session caching', () => {
+  it('requireAdmin uses cached getSession', () => {
+    const sessionSrc = readFileSync(join(ROOT, 'src/lib/auth/session.ts'), 'utf8')
+    const requireAdminStart = sessionSrc.indexOf('export async function requireAdmin()')
+    const requireAdminEnd = sessionSrc.indexOf('export async function requireMasterAdmin', requireAdminStart)
+    const body = sessionSrc.slice(requireAdminStart, requireAdminEnd)
+
+    expect(body).toContain('requireAuth()')
+    expect(body).toContain('canAccessAdminRoutes(session.role)')
+  })
+})

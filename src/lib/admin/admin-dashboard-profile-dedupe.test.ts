@@ -53,10 +53,15 @@ describe('admin dashboard profile dedupe', () => {
     expect(body).toContain('scope.assignedRegionId')
   })
 
-  it('admin dashboard page still uses requireAdmin and getBranches', () => {
+  it('admin dashboard page still uses requireAdmin, getBranches, and getAdminDashboardStats', () => {
     expect(ADMIN_PAGE).toContain('requireAdmin()')
     expect(ADMIN_PAGE).toContain('getBranches()')
     expect(ADMIN_PAGE).toContain('getAdminDashboardStats')
+  })
+
+  it('admin dashboard page parallelizes branches and stats after regionId resolution', () => {
+    expect(ADMIN_PAGE).toContain('const [regions, stats, settlements] = await Promise.all([')
+    expect(ADMIN_PAGE).not.toMatch(/const regions = await timed\('admin dashboard regions'/)
   })
 })
 

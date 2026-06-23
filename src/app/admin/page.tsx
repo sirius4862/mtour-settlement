@@ -45,7 +45,6 @@ export default async function AdminPage({
 }) {
   const session = await timed('admin dashboard auth/profile', () => requireAdmin())
   const params = await searchParams
-  const regions = await timed('admin dashboard regions', () => getBranches())
   const parsedStatus = parseDashboardStatusFilter(params.status)
   const activeStatus = parsedStatus && ADMIN_DASHBOARD_STATUS_ORDER.includes(parsedStatus)
     ? parsedStatus
@@ -62,7 +61,8 @@ export default async function AdminPage({
     view,
   })
 
-  const [stats, settlements] = await Promise.all([
+  const [regions, stats, settlements] = await Promise.all([
+    timed('admin dashboard regions', () => getBranches()),
     timed('admin dashboard settlement status counts', () =>
       getAdminDashboardStats({ regionId: regionId || undefined }),
     ),

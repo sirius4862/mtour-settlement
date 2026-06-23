@@ -527,12 +527,32 @@ describe('main admin dashboard settlement list behavior', () => {
     expect(source.slice(listHeader)).not.toContain('ADMIN_DASHBOARD_PAID_HISTORY_LABEL')
   })
 
+  it('loads branches and dashboard stats in parallel after regionId is resolved', () => {
+    const source = readFileSync('src/app/admin/page.tsx', 'utf8')
+
+    expect(source).not.toMatch(
+      /const regions = await timed\('admin dashboard regions'/,
+    )
+
+    const parallelStart = source.indexOf('const [regions, stats, settlements] = await Promise.all([')
+    expect(parallelStart).toBeGreaterThan(-1)
+    const parallelEnd = source.indexOf('])', parallelStart)
+    const parallelBlock = source.slice(parallelStart, parallelEnd)
+
+    expect(parallelBlock).toContain("timed('admin dashboard regions'")
+    expect(parallelBlock).toContain('getBranches()')
+    expect(parallelBlock).toContain("timed('admin dashboard settlement status counts'")
+    expect(parallelBlock).toContain('getAdminDashboardStats({ regionId: regionId || undefined })')
+    expect(source.indexOf('resolveDashboardRegionFilter')).toBeLessThan(parallelStart)
+  })
+
   it('admin screens provide route loading UI and dev-only timing labels', () => {
     const dashboard = readFileSync('src/app/admin/page.tsx', 'utf8')
     const list = readFileSync('src/app/admin/settlements/page.tsx', 'utf8')
     const dashboardLoading = readFileSync('src/app/admin/loading.tsx', 'utf8')
     const listLoading = readFileSync('src/app/admin/settlements/loading.tsx', 'utf8')
 
+    expect(dashboard).toContain("timed('admin dashboard regions'")
     expect(dashboard).toContain("timed('admin dashboard settlement status counts'")
     expect(dashboard).toContain("timed('admin dashboard settlement list'")
     expect(list).toContain("timed('admin settlement list rows'")

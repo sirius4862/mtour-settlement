@@ -6,6 +6,15 @@ node_modules/
 # testing
 /coverage
 /artifacts/
+/test-results/
+/playwright-report/
+/blob-report/
+
+# local audit exports and read-only probe output (keep outside git)
+/audit-export/
+
+# dangerous local-only cleanup SQL (never commit execute variant)
+supabase/manual_cleanup_business_data_execute.sql
 
 # next.js
 /.next/

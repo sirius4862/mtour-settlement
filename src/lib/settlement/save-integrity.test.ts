@@ -3,15 +3,20 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { applyDraftSaveResult } from './draft-save-flow'
 import { emptyEntranceRow, emptyOptionRow } from './defaults'
-import { emptyFormState, stateFromSettlementFull } from './mappers'
+import { emptyFormState, stateFromSettlementFull, toDraftPayload } from './mappers'
 import {
   ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR,
   assertAdminCompanyExpenseSaveAllowed,
+  assertGuideLineItemSectionSaveAllowed,
+  assertGuideLineItemSectionsSaveAllowed,
   canProceedToSubmit,
+  firstLineItemSectionLoadFailure,
   footerStatusLabel,
   hasActiveLocalDraft,
+  LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR,
   mergePersistedSettlementDraft,
   SAVE_FAILED_SUBMIT_BLOCKED,
+  SETTLEMENT_LINE_ITEM_LOAD_ERROR,
   shouldNavigateNewSettlementToEdit,
   shouldPreserveClientDraftOnHydration,
   shouldSkipNewFormBootstrapReset,
@@ -346,6 +351,90 @@ describe('assertAdminCompanyExpenseSaveAllowed', () => {
     expect(assertAdminCompanyExpenseSaveAllowed({ company_expenses: [] }, [])).toEqual({
       ok: true,
     })
+  })
+})
+
+describe('assertGuideLineItemSectionSaveAllowed', () => {
+  it('rejects bare empty payload when existing section rows exist', () => {
+    expect(assertGuideLineItemSectionSaveAllowed([{ id: 'h1' }], [])).toEqual({
+      ok: false,
+      error: LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR,
+    })
+    expect(assertGuideLineItemSectionSaveAllowed([{ id: 'h1' }], undefined)).toEqual({
+      ok: false,
+      error: LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR,
+    })
+  })
+
+  it('allows legitimate empty section when DB is also empty', () => {
+    expect(assertGuideLineItemSectionSaveAllowed([], [])).toEqual({ ok: true })
+  })
+
+  it('allows intentional delete-all via soft-deleted row shells', () => {
+    expect(
+      assertGuideLineItemSectionSaveAllowed([{ id: 'm1' }], [{ id: 'm1', deleted: true }]),
+    ).toEqual({ ok: true })
+  })
+
+  it('rejects stripped retry payload with active rows but no persisted ids', () => {
+    expect(
+      assertGuideLineItemSectionSaveAllowed(
+        [{ id: 'm1' }],
+        [{ restaurant_name: 'New only' } as { id?: string; deleted?: boolean }],
+      ),
+    ).toEqual({
+      ok: false,
+      error: LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR,
+    })
+  })
+
+  it('allows normal update when payload includes persisted ids', () => {
+    expect(
+      assertGuideLineItemSectionSaveAllowed(
+        [{ id: 'm1' }],
+        [{ id: 'm1', restaurant_name: 'Updated' } as { id?: string; deleted?: boolean }],
+      ),
+    ).toEqual({ ok: true })
+  })
+})
+
+describe('assertGuideLineItemSectionsSaveAllowed', () => {
+  it('checks all guide line-item sections', () => {
+    const existing = minimalFull('s1')
+    existing.hotels = [{ id: 'h1' } as never]
+    const payload = toDraftPayload(stateFromSettlementFull(existing, 'Test Guide'))
+    payload.hotels = []
+    expect(assertGuideLineItemSectionsSaveAllowed(existing, payload)).toEqual({
+      ok: false,
+      error: LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR,
+    })
+  })
+})
+
+describe('firstLineItemSectionLoadFailure', () => {
+  it('returns first failed table error', () => {
+    expect(
+      firstLineItemSectionLoadFailure([
+        { table: 'hotel_items' },
+        { table: 'meal_items', error: 'permission denied' },
+        { table: 'option_items', error: 'later' },
+      ]),
+    ).toEqual({ table: 'meal_items', message: 'permission denied' })
+  })
+
+  it('returns null when all sections succeed', () => {
+    expect(
+      firstLineItemSectionLoadFailure([
+        { table: 'hotel_items' },
+        { table: 'meal_items' },
+      ]),
+    ).toBeNull()
+  })
+})
+
+describe('settlement line-item load user message', () => {
+  it('exports a safe load failure message', () => {
+    expect(SETTLEMENT_LINE_ITEM_LOAD_ERROR).toContain('불러오지 못했습니다')
   })
 })
 

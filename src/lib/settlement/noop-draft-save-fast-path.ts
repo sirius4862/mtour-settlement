@@ -6,8 +6,8 @@ import {
   GUIDE_LINE_ITEM_TABLES,
 } from './guide-line-item-persist'
 import {
+  buildGuideLineItemDeleteIds,
   buildGuideOptionDeleteIds,
-  buildLineItemDeleteIds,
   existingLineItemRowsById,
 } from './line-item-persist-prep'
 import {
@@ -107,45 +107,45 @@ export function predictLineItemPersistAggregate(
     {
       table: 'hotel_items',
       rows: buildHotelDbRows(payload.hotels, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.hotels,
-        existing?.hotels.map((r) => r.id) ?? [],
+        existing?.hotels ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.hotels),
     },
     {
       table: 'meal_items',
       rows: buildMealDbRows(payload.meals, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.meals,
-        existing?.meals.map((r) => r.id) ?? [],
+        existing?.meals ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.meals),
     },
     {
       table: 'entrance_items',
       rows: buildEntranceDbRows(payload.entrances, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.entrances,
-        existing?.entrances.map((r) => r.id) ?? [],
+        existing?.entrances ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.entrances),
     },
     {
       table: 'other_expense_items',
       rows: buildOtherDbRows(payload.others, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.others,
-        existing?.others.map((r) => r.id) ?? [],
+        existing?.others ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.others),
     },
     {
       table: 'shopping_items',
       rows: buildShoppingDbRows(payload.shoppings, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.shoppings,
-        existing?.shoppings.map((r) => r.id) ?? [],
+        existing?.shoppings ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.shoppings),
     },

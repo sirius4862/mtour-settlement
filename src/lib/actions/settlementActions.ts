@@ -8,8 +8,8 @@ import {
   type LineItemPersistStep,
 } from '@/lib/settlement/guide-line-item-persist'
 import {
+  buildGuideLineItemDeleteIds,
   buildGuideOptionDeleteIds,
-  buildLineItemDeleteIds,
   collectKnownLineItemIds,
   diagnoseDraftLineItemDuplicates,
   existingLineItemRowsById,
@@ -110,7 +110,12 @@ import {
   guideHeaderUpsertDiffersFromExisting,
   isGuideEditableSettlementStatus,
 } from '@/lib/settlement/noop-draft-save-fast-path'
-import { assertAdminCompanyExpenseSaveAllowed } from '@/lib/settlement/save-integrity'
+import {
+  assertAdminCompanyExpenseSaveAllowed,
+  assertGuideLineItemSectionsSaveAllowed,
+  firstLineItemSectionLoadFailure,
+  SETTLEMENT_LINE_ITEM_LOAD_ERROR,
+} from '@/lib/settlement/save-integrity'
 import {
   runGuideOptionSaveTripwirePostPersist,
   runGuideOptionSaveTripwirePrePersist,
@@ -389,6 +394,7 @@ type SettlementLineItemLoadResult = SettlementLineItemRows & {
   parallelBatchMs: number
   queryTimings: GetSettlementFullQueryTiming[]
   extraQueryMs?: number
+  loadError?: { table: string; message: string }
 }
 
 function normalizeLoadedLineItemRows(
@@ -691,15 +697,15 @@ async function loadSettlementLineItemRows(
         .order(orderColumn, { ascending })
       if (error) {
         console.error(`[getSettlementFull] ${table}:`, error.message)
-        return []
+        return { rows: [] as unknown[], error: error.message }
       }
-      return data ?? []
+      return { rows: data ?? [] }
     })
   }
 
   timer.startParallelBatch()
   const [
-    hotels, meals, entrances, others, shoppings, optionItems, receipts,
+    hotelsRes, mealsRes, entrancesRes, othersRes, shoppingsRes, optionItemsRes, receiptsRes,
   ] = await Promise.all([
     fetchRows('hotel_items', 'sort_order'),
     fetchRows('meal_items', 'sort_order'),
@@ -711,8 +717,19 @@ async function loadSettlementLineItemRows(
   ])
   const parallelBatchMs = timer.endParallelBatch()
 
+  const parallelFailure = firstLineItemSectionLoadFailure([
+    { table: 'hotel_items', error: hotelsRes.error },
+    { table: 'meal_items', error: mealsRes.error },
+    { table: 'entrance_items', error: entrancesRes.error },
+    { table: 'other_expense_items', error: othersRes.error },
+    { table: 'shopping_items', error: shoppingsRes.error },
+    { table: 'option_items', error: optionItemsRes.error },
+    { table: 'receipts', error: receiptsRes.error },
+  ])
+
   let companyExpenses: SettlementFull['company_expenses'] = []
   let extraQueryMs = 0
+  let companyLoadError: string | undefined
   if (!useGuideRead) {
     const companyStarted = performance.now()
     const { data, error } = await supabase
@@ -723,23 +740,31 @@ async function loadSettlementLineItemRows(
     extraQueryMs = Math.round(performance.now() - companyStarted)
     if (error) {
       console.error('[getSettlementFull] company_expense_items:', error.message)
+      companyLoadError = error.message
     } else {
       companyExpenses = normalizeLoadedLineItemRows(data ?? [], id) as unknown as SettlementFull['company_expenses']
     }
   }
 
+  const loadError =
+    parallelFailure ??
+    (companyLoadError
+      ? { table: 'company_expense_items', message: companyLoadError }
+      : undefined)
+
   return {
-    hotels: normalizeLoadedLineItemRows(hotels, id) as unknown as SettlementFull['hotels'],
-    meals: normalizeLoadedLineItemRows(meals, id) as unknown as SettlementFull['meals'],
-    entrances: normalizeLoadedLineItemRows(entrances, id) as unknown as SettlementFull['entrances'],
-    others: normalizeLoadedLineItemRows(others, id) as unknown as SettlementFull['others'],
-    shoppings: normalizeLoadedLineItemRows(shoppings, id) as unknown as SettlementFull['shoppings'],
-    options: normalizeLoadedLineItemRows(optionItems, id) as unknown as SettlementFull['options'],
+    hotels: normalizeLoadedLineItemRows(hotelsRes.rows, id) as unknown as SettlementFull['hotels'],
+    meals: normalizeLoadedLineItemRows(mealsRes.rows, id) as unknown as SettlementFull['meals'],
+    entrances: normalizeLoadedLineItemRows(entrancesRes.rows, id) as unknown as SettlementFull['entrances'],
+    others: normalizeLoadedLineItemRows(othersRes.rows, id) as unknown as SettlementFull['others'],
+    shoppings: normalizeLoadedLineItemRows(shoppingsRes.rows, id) as unknown as SettlementFull['shoppings'],
+    options: normalizeLoadedLineItemRows(optionItemsRes.rows, id) as unknown as SettlementFull['options'],
     company_expenses: companyExpenses,
-    receipts: normalizeLoadedReceiptRows(receipts, id) as unknown as SettlementFull['receipts'],
+    receipts: normalizeLoadedReceiptRows(receiptsRes.rows, id) as unknown as SettlementFull['receipts'],
     parallelBatchMs,
     queryTimings: timer.queries,
     extraQueryMs: extraQueryMs > 0 ? extraQueryMs : undefined,
+    ...(loadError ? { loadError } : {}),
   }
 }
 
@@ -806,6 +831,15 @@ export async function getSettlementFull(
     coreLoad.useGuideRead,
   )
 
+  if (lineRows.loadError) {
+    logServerError(
+      '[getSettlementFull] line item load failed',
+      lineRows.loadError.message,
+      { settlementId: id, table: lineRows.loadError.table },
+    )
+    return null
+  }
+
   const timingLog = buildGetSettlementFullTimingLog({
     settlementId: id,
     callPurpose,
@@ -817,7 +851,8 @@ export async function getSettlementFull(
   logGetSettlementFullTimings(timingLog)
   options?.onTimingCaptured?.(timingLog)
 
-  const { parallelBatchMs: _pb, queryTimings: _qt, extraQueryMs: _eq, ...rowPayload } = lineRows
+  const { parallelBatchMs: _pb, queryTimings: _qt, extraQueryMs: _eq, loadError: _le, ...rowPayload } =
+    lineRows
   return assembleSettlementFull(coreLoad.settlement, rowPayload)
 }
 
@@ -1492,6 +1527,13 @@ async function persistSettlementLineItems(
   timings?: SettlementSaveTiming[]
   totalRequests?: number
 }> {
+  if (existing) {
+    const sectionGuard = assertGuideLineItemSectionsSaveAllowed(existing, payload)
+    if (!sectionGuard.ok) {
+      return { ok: false, error: sectionGuard.error }
+    }
+  }
+
   const rate = payload.exchange_rate
 
   const itemTables: {
@@ -1503,45 +1545,45 @@ async function persistSettlementLineItems(
     {
       table: 'hotel_items',
       rows: buildHotelDbRows(payload.hotels, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.hotels,
-        existing?.hotels.map((r) => r.id) ?? [],
+        existing?.hotels ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.hotels),
     },
     {
       table: 'meal_items',
       rows: buildMealDbRows(payload.meals, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.meals,
-        existing?.meals.map((r) => r.id) ?? [],
+        existing?.meals ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.meals),
     },
     {
       table: 'entrance_items',
       rows: buildEntranceDbRows(payload.entrances, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.entrances,
-        existing?.entrances.map((r) => r.id) ?? [],
+        existing?.entrances ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.entrances),
     },
     {
       table: 'other_expense_items',
       rows: buildOtherDbRows(payload.others, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.others,
-        existing?.others.map((r) => r.id) ?? [],
+        existing?.others ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.others),
     },
     {
       table: 'shopping_items',
       rows: buildShoppingDbRows(payload.shoppings, settlementId),
-      deleteIds: buildLineItemDeleteIds(
+      deleteIds: buildGuideLineItemDeleteIds(
         payload.shoppings,
-        existing?.shoppings.map((r) => r.id) ?? [],
+        existing?.shoppings ?? [],
       ),
       existingById: existingLineItemRowsById(existing?.shoppings),
     },
@@ -1749,6 +1791,22 @@ export async function saveSettlementDraft(
     })
     logGetSettlementFullTimings(preLoadLog)
     if (captureDebug) preLoadTiming = preLoadLog
+
+    if (lineRows.loadError) {
+      logServerError(
+        '[saveSettlementDraft] line item pre-load failed',
+        lineRows.loadError.message,
+        formatSettlementSaveStepLog('load_existing_settlement', {
+          settlementId: payload.settlementId,
+          table: lineRows.loadError.table,
+        }),
+      )
+      return {
+        ok: false,
+        id: payload.settlementId,
+        error: SETTLEMENT_LINE_ITEM_LOAD_ERROR,
+      }
+    }
 
     existingForItemPersist = assembleSettlementFull(coreLoad.settlement, {
       hotels: lineRows.hotels,
@@ -2054,11 +2112,12 @@ export async function saveAdminSettlementEdits(
     sanitized.header,
     profile.id,
   )
-  let { error: headerErr } = await supabase
+  let { data: headerRows, error: headerErr } = await supabase
     .from('settlements')
     .update(headerPatch)
     .eq('id', payload.settlementId)
     .eq('status', currentStatus)
+    .select('id')
 
   if (headerErr && isMissingDbColumnError(headerErr.message, 'ground_fee_usd')) {
     const legacyPatch = buildAdminSettlementHeaderPatch(
@@ -2067,11 +2126,12 @@ export async function saveAdminSettlementEdits(
       profile.id,
       { legacyGroundFeeInTourFee: true },
     )
-    ;({ error: headerErr } = await supabase
+    ;({ data: headerRows, error: headerErr } = await supabase
       .from('settlements')
       .update(legacyPatch)
       .eq('id', payload.settlementId)
-      .eq('status', currentStatus))
+      .eq('status', currentStatus)
+      .select('id'))
   }
 
   if (headerErr) {
@@ -2079,6 +2139,11 @@ export async function saveAdminSettlementEdits(
       settlementId: payload.settlementId,
     })
     return { ok: false, error: SAVE_SETTLEMENT_GENERIC_ERROR }
+  }
+
+  const headerRowCheck = assertSingleOptimisticUpdate(headerRows)
+  if (!headerRowCheck.ok) {
+    return { ok: false, error: headerRowCheck.error }
   }
 
   const saveTimings: SettlementSaveTiming[] = []

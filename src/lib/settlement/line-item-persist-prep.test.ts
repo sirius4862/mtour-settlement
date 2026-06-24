@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SettlementFull } from '@/types'
 import { stateFromMock, toDraftPayload } from './mappers'
 import {
+  buildGuideLineItemDeleteIds,
   buildGuideOptionDeleteIds,
   buildLineItemDeleteIds,
   collectKnownLineItemIds,
@@ -80,5 +81,26 @@ describe('line-item persist prep', () => {
       [{ id: 'opt-1', is_extra_vehicle: false }],
     )
     expect(deleteIds).toEqual(['opt-1'])
+  })
+
+  it('buildGuideLineItemDeleteIds preserves rows on empty stale retry payload', () => {
+    const deleteIds = buildGuideLineItemDeleteIds([], [{ id: 'hotel-1' }])
+    expect(deleteIds).toEqual([])
+  })
+
+  it('buildGuideLineItemDeleteIds deletes with explicit soft-delete intent', () => {
+    const deleteIds = buildGuideLineItemDeleteIds(
+      [{ id: 'meal-1', deleted: true }],
+      [{ id: 'meal-1' }],
+    )
+    expect(deleteIds).toEqual(['meal-1'])
+  })
+
+  it('buildGuideLineItemDeleteIds orphan-deletes only with explicit hydrated intent', () => {
+    const deleteIds = buildGuideLineItemDeleteIds(
+      [{ id: 'meal-keep' }],
+      [{ id: 'meal-keep' }, { id: 'meal-orphan' }],
+    )
+    expect(deleteIds).toEqual(['meal-orphan'])
   })
 })

@@ -1,11 +1,87 @@
 import type { SaveStatus, SettlementFormState, DraftCompanyExpenseRow } from './form-types'
 import type { SettlementFull } from '@/types'
+import type { SettlementDraftPayload } from './mappers'
 
 export const SAVE_FAILED_SUBMIT_BLOCKED =
   '저장에 실패했습니다. 임시저장을 완료한 뒤 제출해주세요.'
 
 export const ADMIN_COMPANY_EXPENSE_HYDRATION_SAVE_ERROR =
   '관리자 입력 항목이 정상적으로 불러오지 않았습니다. 새로고침 후 다시 시도해주세요.'
+
+export const LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR =
+  '정산 항목이 정상적으로 불러오지 않았습니다. 새로고침 후 다시 시도해주세요.'
+
+export const SETTLEMENT_LINE_ITEM_LOAD_ERROR =
+  '정산서 항목을 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'
+
+type LineItemSectionKey = 'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings'
+
+const GUIDE_LINE_ITEM_SECTIONS: LineItemSectionKey[] = [
+  'hotels',
+  'meals',
+  'entrances',
+  'others',
+  'shoppings',
+]
+
+/** Reject saves that would wipe a section via empty/stale hydration payload. */
+export function assertGuideLineItemSectionSaveAllowed(
+  existingRows: Array<{ id?: string }>,
+  payloadRows: Array<{ id?: string; deleted?: boolean }> | undefined,
+): { ok: true } | { ok: false; error: string } {
+  const existingCount = existingRows.length
+  if (existingCount === 0) return { ok: true }
+
+  const rows = payloadRows ?? []
+  if (rows.length === 0) {
+    return { ok: false, error: LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR }
+  }
+
+  const activeRows = rows.filter((row) => !row.deleted)
+  const hasAnyPersistedId = rows.some((row) => !!row.id)
+  if (activeRows.length > 0 && !hasAnyPersistedId) {
+    return { ok: false, error: LINE_ITEM_SECTION_HYDRATION_SAVE_ERROR }
+  }
+
+  return { ok: true }
+}
+
+export function assertGuideLineItemSectionsSaveAllowed(
+  existing: Pick<
+    SettlementFull,
+    'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings'
+  >,
+  payload: Pick<
+    SettlementDraftPayload,
+    'hotels' | 'meals' | 'entrances' | 'others' | 'shoppings'
+  >,
+): { ok: true } | { ok: false; error: string } {
+  for (const section of GUIDE_LINE_ITEM_SECTIONS) {
+    const guard = assertGuideLineItemSectionSaveAllowed(
+      existing[section] ?? [],
+      payload[section],
+    )
+    if (!guard.ok) return guard
+  }
+  return { ok: true }
+}
+
+export type LineItemSectionLoadFailure = {
+  table: string
+  message: string
+}
+
+/** First failed section query — used to abort loads/saves instead of treating as empty. */
+export function firstLineItemSectionLoadFailure(
+  results: Array<{ table: string; error?: string }>,
+): LineItemSectionLoadFailure | null {
+  for (const result of results) {
+    if (result.error) {
+      return { table: result.table, message: result.error }
+    }
+  }
+  return null
+}
 
 /** Reject admin saves that would wipe DB company expenses via an empty hydration-failure payload. */
 export function assertAdminCompanyExpenseSaveAllowed(

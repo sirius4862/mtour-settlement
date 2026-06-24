@@ -384,7 +384,7 @@ describe('predictLineItemPersistAggregate — option_items no-change requestCoun
     ).toBeGreaterThan(0)
   })
 
-  it('predicts delete request when child row removed', () => {
+  it('does not plan deletes for bare empty section (save blocked by hydration guard)', () => {
     const existing = existingSettlement()
     const hydrated = draftStateFromExisting()
     hydrated.meals = []
@@ -392,6 +392,20 @@ describe('predictLineItemPersistAggregate — option_items no-change requestCoun
       sanitizeGuideDraftPayload(toDraftPayload(hydrated), existing),
       collectKnownLineItemIds(existing),
     )
+
+    expect(
+      predictLineItemPersistAggregate(SETTLEMENT_ID, payload, existing).plannedDeletes,
+    ).toBe(0)
+  })
+
+  it('predicts delete request for intentional soft-delete-all', () => {
+    const existing = existingSettlement()
+    const hydrated = draftStateFromExisting()
+    hydrated.meals = hydrated.meals.map((row) => ({
+      ...row,
+      deleted: true,
+    }))
+    const payload = toDraftPayload(hydrated)
 
     expect(
       predictLineItemPersistAggregate(SETTLEMENT_ID, payload, existing).plannedDeletes,

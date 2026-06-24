@@ -214,6 +214,48 @@ export function buildLineItemDeleteIds(
 }
 
 /**
+ * Guide/admin draft saves: do not orphan-delete rows when the payload lacks explicit
+ * section intent (empty/stale retry after a failed save or broken hydration).
+ */
+export function buildGuideLineItemDeleteIds(
+  draftRows: Array<{ id?: string; deleted?: boolean }>,
+  existingRows: Array<{ id?: string }>,
+): string[] {
+  const existingIds = existingRows
+    .map((row) => row.id)
+    .filter((id): id is string => !!id)
+  const existingIdSet = new Set(existingIds)
+
+  const explicitDeletes = draftRows
+    .filter((row) => row.deleted && row.id)
+    .map((row) => row.id as string)
+  const keepIds = keepLineItemIdsFromPayload(draftRows)
+  const activeDraft = draftRows.filter((row) => !row.deleted)
+  const hasIncomingIds = activeDraft.some((row) => !!row.id)
+  const strippedRetryWithoutIds =
+    existingIdSet.size > 0 &&
+    activeDraft.length > 0 &&
+    !hasIncomingIds &&
+    !draftRows.some((row) => row.deleted && row.id)
+  const hasExplicitIntent =
+    !strippedRetryWithoutIds &&
+    (activeDraft.length > 0 || draftRows.some((row) => row.deleted && row.id))
+
+  if (!hasExplicitIntent) {
+    return [...new Set(explicitDeletes)]
+  }
+
+  const ids: string[] = [...explicitDeletes]
+
+  for (const id of existingIds) {
+    if (explicitDeletes.includes(id)) continue
+    if (!keepIds.has(id)) ids.push(id)
+  }
+
+  return [...new Set(ids)]
+}
+
+/**
  * Guide draft saves: do not orphan-delete normal option rows when the payload lacks
  * explicit guide-option intent (empty/stale retry after a failed save).
  * Extra-vehicle rows remain admin-owned and follow standard orphan rules.

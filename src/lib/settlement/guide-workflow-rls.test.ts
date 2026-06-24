@@ -59,7 +59,7 @@ describe('guide workflow RLS regression', () => {
 
   it('persistSettlementLineItems passes explicit delete ids to persist helper', () => {
     const source = readRepoFile('src/lib/actions/settlementActions.ts')
-    expect(source).toContain('buildLineItemDeleteIds')
+    expect(source).toContain('buildGuideLineItemDeleteIds')
     expect(source).toContain('persistGuideLineItemTable(')
     expect(source).toContain('existingById')
   })
